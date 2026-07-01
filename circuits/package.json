@@ -9,7 +9,7 @@
     "test": "mocha --require tsx/cjs test/**/*.test.js --timeout 120000"
   },
   "dependencies": {
-    "circomlib": "2.0.5"
+    "poseidon-bls12381-circom": "1.0.0"
   },
   "devDependencies": {
     "chai": "6.2.2",

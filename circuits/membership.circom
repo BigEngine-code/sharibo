@@ -1,6 +1,15 @@
 pragma circom 2.1.6;
 
-include "circomlib/circuits/poseidon.circom";
+// NOTE: this circuit is compiled with `--prime bls12381` (see
+// scripts/compile.sh), not circom's default bn128. Stellar's Soroban host
+// only exposes accelerated pairing operations for BLS12-381, not BN254 — a
+// pure-Rust BN254 pairing check was measured (via Stellar's own
+// `import_ark_bn254` example) at ~560M CPU instructions for a SINGLE
+// pairing against a 100M budget, i.e. infeasible. So the whole pipeline
+// targets BLS12-381 instead, using a third-party Poseidon parameterization
+// for that field (circomlib's Poseidon constants are BN254-only) — see
+// NOTES.md for the full reasoning and provenance.
+include "poseidon-bls12381-circom/circuits/poseidon255.circom";
 
 // Standard fixed-depth Merkle inclusion proof (the same shape used by
 // Tornado Cash / Semaphore). At each level, pathIndices[i] selects whether
@@ -30,9 +39,9 @@ template MerkleTreeChecker(levels) {
         left[i] <== (pathElements[i] - levelHashes[i]) * pathIndices[i] + levelHashes[i];
         right[i] <== (levelHashes[i] - pathElements[i]) * pathIndices[i] + pathElements[i];
 
-        hashers[i] = Poseidon(2);
-        hashers[i].inputs[0] <== left[i];
-        hashers[i].inputs[1] <== right[i];
+        hashers[i] = Poseidon255(2);
+        hashers[i].in[0] <== left[i];
+        hashers[i].in[1] <== right[i];
 
         levelHashes[i + 1] <== hashers[i].out;
     }
@@ -55,15 +64,21 @@ template Sharibo(levels) {
 
     // public inputs (checked in the contract)
     signal input root;              // circle's committed member set
-    signal input externalNullifier; // = Poseidon(circleId, roundIndex)
+    // = SHA-256(circleId, roundIndex) mod r, reduced into the contract by
+    // the same rule (see NOTES.md — this is SHA-256, not Poseidon, by
+    // design: it binds the proof to a round outside the circuit's
+    // constraint system, where Soroban has a native accelerated SHA-256 but
+    // no native Poseidon; Poseidon is kept for everything hashed *inside*
+    // the circuit, where constraint-efficiency actually matters).
+    signal input externalNullifier;
 
     // public output (recorded by the contract)
     signal output nullifierHash;    // Poseidon(identityNullifier, externalNullifier)
 
     // 1. leaf = Poseidon(identityNullifier, identitySecret)
-    component commitmentHasher = Poseidon(2);
-    commitmentHasher.inputs[0] <== identityNullifier;
-    commitmentHasher.inputs[1] <== identitySecret;
+    component commitmentHasher = Poseidon255(2);
+    commitmentHasher.in[0] <== identityNullifier;
+    commitmentHasher.in[1] <== identitySecret;
 
     // 2. Merkle-prove leaf hashes up to `root`
     component tree = MerkleTreeChecker(levels);
@@ -75,9 +90,9 @@ template Sharibo(levels) {
     }
 
     // 3. nullifierHash = Poseidon(identityNullifier, externalNullifier)
-    component nullifierHasher = Poseidon(2);
-    nullifierHasher.inputs[0] <== identityNullifier;
-    nullifierHasher.inputs[1] <== externalNullifier;
+    component nullifierHasher = Poseidon255(2);
+    nullifierHasher.in[0] <== identityNullifier;
+    nullifierHasher.in[1] <== externalNullifier;
     nullifierHash <== nullifierHasher.out;
 }
 

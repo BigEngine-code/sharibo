@@ -12,20 +12,20 @@ const { MerkleTree } = require("../../packages/client/src/tree.ts");
 
 const LEVELS = 4;
 const CLAIMANT_INDEX = 1;
-const CIRCLE_ID = 1n;
+// circle_id=0 matches the first circle a fresh contract instance assigns,
+// which is what contracts/sharibo/src/test.rs's fixtures are built against.
+const CIRCLE_ID = 0n;
 const ROUND = 0n;
 
-async function main() {
-  const identities = await Promise.all(
-    Array.from({ length: 3 }, () => generateIdentity()),
-  );
-  const tree = await MerkleTree.create(
+function main() {
+  const identities = Array.from({ length: 3 }, () => generateIdentity());
+  const tree = MerkleTree.create(
     LEVELS,
     identities.map((id) => id.commitment),
   );
   const identity = identities[CLAIMANT_INDEX];
   const merkleProof = tree.proof(CLAIMANT_INDEX);
-  const externalNullifier = await computeExternalNullifier(CIRCLE_ID, ROUND);
+  const externalNullifier = computeExternalNullifier(CIRCLE_ID, ROUND);
 
   const input = {
     identityNullifier: identity.identityNullifier.toString(),
@@ -44,7 +44,4 @@ async function main() {
   console.log(input);
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+main();

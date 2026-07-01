@@ -3,21 +3,40 @@
 extern crate std;
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, panic_with_error, token, Address, Bytes,
-    BytesN, Env, Vec,
+    contract, contracterror, contractimpl, contracttype,
+    crypto::bls12_381::{Fr, G1Affine, G2Affine},
+    panic_with_error, token, vec, Address, Bytes, Env, Vec,
 };
+
+#[contracttype]
+#[derive(Clone)]
+pub struct VerificationKey {
+    pub alpha: G1Affine,
+    pub beta: G2Affine,
+    pub gamma: G2Affine,
+    pub delta: G2Affine,
+    pub ic: Vec<G1Affine>,
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub struct Proof {
+    pub a: G1Affine,
+    pub b: G2Affine,
+    pub c: G1Affine,
+}
 
 #[contracttype]
 #[derive(Clone)]
 pub struct Circle {
     pub admin: Address,
     pub token: Address,
-    pub root: BytesN<32>,
+    pub root: Fr,
     pub contribution: i128,
     pub size: u32,
     pub round: u32,
     pub pot: i128,
-    pub vk: Bytes,
+    pub vk: VerificationKey,
 }
 
 #[contracttype]
@@ -25,7 +44,7 @@ pub struct Circle {
 pub enum DataKey {
     NextCircleId,
     Circle(u64),
-    Nullifier(u64, BytesN<32>),
+    Nullifier(u64, Fr),
 }
 
 #[contracterror]
@@ -51,10 +70,10 @@ impl Contract {
         env: Env,
         admin: Address,
         token: Address,
-        root: BytesN<32>,
+        root: Fr,
         contribution: i128,
         size: u32,
-        vk: Bytes,
+        vk: VerificationKey,
     ) -> u64 {
         admin.require_auth();
 
@@ -110,9 +129,9 @@ impl Contract {
         env: Env,
         circle_id: u64,
         recipient: Address,
-        nullifier_hash: BytesN<32>,
-        external_nullifier: BytesN<32>,
-        proof: Bytes,
+        nullifier_hash: Fr,
+        external_nullifier: Fr,
+        proof: Proof,
     ) {
         let key = DataKey::Circle(circle_id);
         let mut circle: Circle = env
@@ -139,10 +158,12 @@ impl Contract {
         }
 
         // 4. the ZK proof itself must verify against the circle's committed root
-        let mut public_inputs = Vec::new(&env);
-        public_inputs.push_back(nullifier_hash.clone());
-        public_inputs.push_back(circle.root.clone());
-        public_inputs.push_back(external_nullifier.clone());
+        let public_inputs = vec![
+            &env,
+            nullifier_hash.clone(),
+            circle.root.clone(),
+            external_nullifier,
+        ];
         if !Self::verify_groth16(&env, &circle.vk, &proof, &public_inputs) {
             panic_with_error!(&env, Error::InvalidProof);
         }
@@ -171,32 +192,60 @@ impl Contract {
             .unwrap_or_else(|| panic_with_error!(&env, Error::CircleNotFound))
     }
 
-    // ---- PHASE 2 STUBS (see NOTES.md) ----
-    // TODO(phase-3): replace both of these with the real cryptography.
-
-    // DEMO MOCK: binds the proof to (circle_id, round) with SHA-256 rather
-    // than Poseidon, since the circuit-side Poseidon params aren't wired to
-    // an on-chain host function yet. This is still a real hash over
-    // (circle_id, round) — not a no-op — so wrong-round-tag rejection and
-    // cross-round nullifier reuse are both genuinely enforced already; only
-    // the specific hash function changes in Phase 3.
-    fn compute_external_nullifier(env: &Env, circle_id: u64, round: u32) -> BytesN<32> {
+    // Binds a proof to (circle_id, round) with SHA-256 (a native, accelerated
+    // Soroban host function), reduced into the BLS12-381 scalar field via
+    // `Fr::from_bytes` (which reduces mod r automatically). This is a
+    // deliberate, permanent choice, not a placeholder: Soroban has no native
+    // Poseidon host function, so hashing this check with Poseidon would mean
+    // hand-porting a Poseidon permutation into pure Rust for no security
+    // benefit — SHA-256 is equally sound for binding a proof to a round.
+    // Poseidon is used where it actually earns its keep: *inside* the
+    // circuit's constraint system (commitment + nullifierHash), where a
+    // SNARK-unfriendly hash like SHA-256 would cost far more constraints.
+    // See NOTES.md.
+    fn compute_external_nullifier(env: &Env, circle_id: u64, round: u32) -> Fr {
         let mut bytes = Bytes::new(env);
         bytes.extend_from_array(&circle_id.to_be_bytes());
         bytes.extend_from_array(&round.to_be_bytes());
-        env.crypto().sha256(&bytes).to_bytes()
+        let digest = env.crypto().sha256(&bytes).to_bytes();
+        Fr::from_bytes(digest)
     }
 
-    // DEMO MOCK: always returns true. Phase 3 replaces this with a real
-    // on-chain Groth16 verification (BN254 pairing check) so this must be
-    // gone before the project can claim its ZK is load-bearing.
+    // Real on-chain Groth16 verification over BLS12-381, using Soroban's
+    // native accelerated pairing host functions (see NOTES.md for why
+    // BLS12-381 rather than BN254 — a pure-Rust BN254 pairing check does not
+    // fit the CPU budget). Checks the standard Groth16 pairing equation:
+    // e(-A, B) * e(alpha, beta) * e(vk_x, gamma) * e(C, delta) == 1
+    // where vk_x = ic[0] + sum(public_inputs[i] * ic[i+1]).
     fn verify_groth16(
-        _env: &Env,
-        _vk: &Bytes,
-        _proof: &Bytes,
-        _public_inputs: &Vec<BytesN<32>>,
+        env: &Env,
+        vk: &VerificationKey,
+        proof: &Proof,
+        public_inputs: &Vec<Fr>,
     ) -> bool {
-        true
+        if public_inputs.len() + 1 != vk.ic.len() {
+            return false;
+        }
+
+        let bls = env.crypto().bls12_381();
+
+        let mut vk_x = vk.ic.get(0).unwrap();
+        for i in 0..public_inputs.len() {
+            let term = bls.g1_mul(&vk.ic.get(i + 1).unwrap(), &public_inputs.get(i).unwrap());
+            vk_x = bls.g1_add(&vk_x, &term);
+        }
+
+        let neg_a = -proof.a.clone();
+        let vp1 = vec![
+            env,
+            neg_a,
+            vk.alpha.clone(),
+            vk_x,
+            proof.c.clone(),
+        ];
+        let vp2 = vec![env, proof.b.clone(), vk.beta.clone(), vk.gamma.clone(), vk.delta.clone()];
+
+        bls.pairing_check(vp1, vp2)
     }
 }
 

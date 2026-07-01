@@ -10,7 +10,7 @@ const { MerkleTree } = require("../../packages/client/src/tree.ts");
 
 const LEVELS = 4;
 
-describe("Sharibo membership circuit", function () {
+describe("Sharibo membership circuit (BLS12-381)", function () {
   this.timeout(120000);
 
   let circuit;
@@ -20,24 +20,20 @@ describe("Sharibo membership circuit", function () {
   before(async () => {
     circuit = await wasm_tester(path.join(__dirname, "..", "membership.circom"), {
       include: path.join(__dirname, "..", "..", "node_modules"),
+      prime: "bls12381",
     });
 
-    identities = await Promise.all(
-      Array.from({ length: 5 }, () => generateIdentity()),
-    );
-    tree = await MerkleTree.create(
+    identities = Array.from({ length: 5 }, () => generateIdentity());
+    tree = MerkleTree.create(
       LEVELS,
       identities.map((id) => id.commitment),
     );
   });
 
-  async function buildInput(memberIndex, circleId, round) {
+  function buildInput(memberIndex, circleId, round) {
     const identity = identities[memberIndex];
     const merkleProof = tree.proof(memberIndex);
-    const externalNullifier = await computeExternalNullifier(
-      BigInt(circleId),
-      BigInt(round),
-    );
+    const externalNullifier = computeExternalNullifier(BigInt(circleId), BigInt(round));
     return {
       identityNullifier: identity.identityNullifier.toString(),
       identitySecret: identity.identitySecret.toString(),
@@ -59,11 +55,11 @@ describe("Sharibo membership circuit", function () {
   }
 
   it("accepts a genuine member and outputs the correct nullifierHash", async () => {
-    const input = await buildInput(2, 1, 0);
+    const input = buildInput(2, 1, 0);
     const witness = await circuit.calculateWitness(input, true);
     await circuit.checkConstraints(witness);
 
-    const expected = await computeNullifierHash(
+    const expected = computeNullifierHash(
       identities[2].identityNullifier,
       BigInt(input.externalNullifier),
     );
@@ -71,13 +67,13 @@ describe("Sharibo membership circuit", function () {
   });
 
   it("rejects a wrong root", async () => {
-    const input = await buildInput(2, 1, 0);
+    const input = buildInput(2, 1, 0);
     input.root = (BigInt(input.root) + 1n).toString();
     await expectThrows(() => circuit.calculateWitness(input, true));
   });
 
   it("rejects a non-member (tampered Merkle path)", async () => {
-    const input = await buildInput(2, 1, 0);
+    const input = buildInput(2, 1, 0);
     input.pathElements[0] = (BigInt(input.pathElements[0]) + 1n).toString();
     await expectThrows(() => circuit.calculateWitness(input, true));
   });
@@ -86,9 +82,9 @@ describe("Sharibo membership circuit", function () {
     await circuit.loadSymbols();
     const varIdx = circuit.symbols["main.nullifierHash"].varIdx;
 
-    const inputA = await buildInput(3, 7, 0);
-    const inputB = await buildInput(3, 7, 0);
-    const inputNextRound = await buildInput(3, 7, 1);
+    const inputA = buildInput(3, 7, 0);
+    const inputB = buildInput(3, 7, 0);
+    const inputNextRound = buildInput(3, 7, 1);
 
     const witnessA = await circuit.calculateWitness(inputA, true);
     const witnessB = await circuit.calculateWitness(inputB, true);
@@ -101,7 +97,7 @@ describe("Sharibo membership circuit", function () {
   });
 
   it("rejects a non-boolean pathIndices entry", async () => {
-    const input = await buildInput(2, 1, 0);
+    const input = buildInput(2, 1, 0);
     input.pathIndices[0] = 2;
     await expectThrows(() => circuit.calculateWitness(input, true));
   });

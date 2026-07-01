@@ -1,4 +1,4 @@
-import { poseidon2 } from "./identity.js";
+import { poseidon } from "./identity.js";
 
 // Fixed placeholder for unused leaves when padding the tree out to full
 // capacity (2**levels). 0 can never equal a real commitment Poseidon(a, b)
@@ -26,7 +26,7 @@ export class MerkleTree {
     this.layers = layers;
   }
 
-  static async create(levels: number, leaves: bigint[]): Promise<MerkleTree> {
+  static create(levels: number, leaves: bigint[]): MerkleTree {
     const capacity = 2 ** levels;
     if (leaves.length > capacity) {
       throw new Error(
@@ -42,7 +42,7 @@ export class MerkleTree {
     for (let level = 0; level < levels; level++) {
       const next: bigint[] = [];
       for (let i = 0; i < current.length; i += 2) {
-        next.push(await poseidon2(current[i], current[i + 1]));
+        next.push(poseidon(current[i], current[i + 1]));
       }
       layers.push(next);
       current = next;

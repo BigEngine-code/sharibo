@@ -1,18 +1,145 @@
 #![cfg(test)]
 
 use super::*;
-use soroban_sdk::testutils::Address as _;
+use ark_bls12_381::{Fq, Fq2, Fr as ArkFr};
+use ark_ff::{BigInteger, PrimeField};
+use ark_serialize::CanonicalSerialize;
+use core::str::FromStr;
+use soroban_sdk::{
+    crypto::bls12_381::{G1_SERIALIZED_SIZE, G2_SERIALIZED_SIZE},
+    testutils::Address as _,
+    BytesN, U256,
+};
 use std::vec::Vec as StdVec;
+
+// ---- BLS12-381 test fixture helpers ----
+// The vk/proof/public-signal decimal coordinates below were produced by the
+// real Phase 1 pipeline (circuits/scripts/{compile,setup,prove}.sh) for a
+// genuine member of a 3-member circle at circle_id=0, round=0 — see
+// circuits/verification_key.json and circuits/build/{proof,public}.json.
+// This mirrors the pattern in Stellar's own groth16_verifier reference
+// example (stellar/soroban-examples), which also hand-copies snarkjs
+// decimal coordinates into ark_bls12_381 test fixtures.
+
+fn g1_from_coords(env: &Env, x: &str, y: &str) -> G1Affine {
+    let ark_g1 = ark_bls12_381::G1Affine::new(Fq::from_str(x).unwrap(), Fq::from_str(y).unwrap());
+    let mut buf = [0u8; G1_SERIALIZED_SIZE];
+    ark_g1.serialize_uncompressed(&mut buf[..]).unwrap();
+    G1Affine::from_array(env, &buf)
+}
+
+fn g2_from_coords(env: &Env, x1: &str, x2: &str, y1: &str, y2: &str) -> G2Affine {
+    let x = Fq2::new(Fq::from_str(x1).unwrap(), Fq::from_str(x2).unwrap());
+    let y = Fq2::new(Fq::from_str(y1).unwrap(), Fq::from_str(y2).unwrap());
+    let ark_g2 = ark_bls12_381::G2Affine::new(x, y);
+    let mut buf = [0u8; G2_SERIALIZED_SIZE];
+    ark_g2.serialize_uncompressed(&mut buf[..]).unwrap();
+    G2Affine::from_array(env, &buf)
+}
+
+fn fr_from_dec_str(env: &Env, s: &str) -> Fr {
+    let ark_fr = ArkFr::from_str(s).unwrap();
+    let be_bytes = ark_fr.into_bigint().to_bytes_be();
+    let mut buf = [0u8; 32];
+    buf[32 - be_bytes.len()..].copy_from_slice(&be_bytes);
+    Fr::from_bytes(BytesN::from_array(env, &buf))
+}
+
+fn real_verification_key(env: &Env) -> VerificationKey {
+    VerificationKey {
+        alpha: g1_from_coords(
+            env,
+            "1151103813686702670269560426972537615253723909179986658696264230739792718498157532050816457434960302183816446643642",
+            "2264278419421030329175907976054147167790018368373903507517289863181729348732997145562393982010652254896115276313615",
+        ),
+        beta: g2_from_coords(
+            env,
+            "234715770815633506086876921775332881288881052225543236297905676400069922158500877154699132474175457598380425222782",
+            "3305393283011938985382092861733522723974543802747257178218608747718267902286556196852282734837644244360170541159935",
+            "218541127215008476487596590292634126552582077478272530353193596224995381682430953762052403998127371323829472216931",
+            "3472177617825914068429071422901138564916107942636399548688833555975205972364256420268690345427377488835425312495997",
+        ),
+        gamma: g2_from_coords(
+            env,
+            "352701069587466618187139116011060144890029952792775240219908644239793785735715026873347600343865175952761926303160",
+            "3059144344244213709971259814753781636986470325476647558659373206291635324768958432433509563104347017837885763365758",
+            "1985150602287291935568054521177171638300868978215655730859378665066344726373823718423869104263333984641494340347905",
+            "927553665492332455747201965776037880757740193453592970025027978793976877002675564980949289727957565575433344219582",
+        ),
+        delta: g2_from_coords(
+            env,
+            "1505663480440247367152274210534686704190808084502194263833763278218856322654435528468927287357012676094418832423740",
+            "2217923485159127127358054503577598077067766532546569462988068791681035084120318859382637751335894429351377069493125",
+            "201312034288505666799421355352986088320094318705596465895187137127289771723259790407432255968766382867575840805717",
+            "2346025562149068308649760588360970027304594675678744818331923474605513300552094262642782296771200201388233281265374",
+        ),
+        ic: Vec::from_array(
+            env,
+            [
+                g1_from_coords(
+                    env,
+                    "2221368706166660739597546727074260123281775003540941966931835158612081330822382179488852200096434901680516793712392",
+                    "2404014037212414881167456460714355715416704233282862833716099779331158640973633758980226197491483021600744297772191",
+                ),
+                g1_from_coords(
+                    env,
+                    "1198160149030616374398274215183513043584950980067873401134193238044496098609747659763085151397985797374645000957006",
+                    "3614419462164841247653425346411975433607429668303430144210238084452200375330796493724357191539115142864347073904259",
+                ),
+                g1_from_coords(
+                    env,
+                    "852316935886900058982967980013011638039951973864299630550149495121850204895787786975443699750375111333318850419951",
+                    "1230987228089004764819399384472966074704351230098676072845721586570076864863307052458464544670345593450273305129595",
+                ),
+                g1_from_coords(
+                    env,
+                    "1139639735249734389716550152334771925368743101551174618639126933146950882148738629034742548110661371468474272052506",
+                    "602183753303311254514069927726945031108676267537368074300846024773039689216672925642441569139153167028473300165854",
+                ),
+            ],
+        ),
+    }
+}
+
+fn real_valid_proof(env: &Env) -> Proof {
+    Proof {
+        a: g1_from_coords(
+            env,
+            "2907069310268506927967653105234275070128268344932018799202307568638524243743685053819117893057927396712794237316271",
+            "373130779600397549851649388857830331983209375623014019669740756591312681846818289558274106749604172549278685616298",
+        ),
+        b: g2_from_coords(
+            env,
+            "88687641291656924342265046438282117906532557593586688258818110902634093761012368761408789865139551195758735245472",
+            "2931727804921883042059339460132555811421644726178059935370544903705955682853915205767903973665758044084730052160807",
+            "2495955506873325069736028596530775888523406662790722846362297674001660972217424902520084516088106660827329404981087",
+            "493319590447739050326655214026524052634978631462133268976994138913317832516574873176083417782594509620067368433873",
+        ),
+        c: g1_from_coords(
+            env,
+            "1428615700984090449265189612110816848213500721015641443537106955299716003865429364687909580866203102480536327191699",
+            "3928728866305584943415909200313916008044539956249419707814958809263031740910968235443475490085625971983080252158446",
+        ),
+    }
+}
+
+// Real public signals for the proof above: (nullifier_hash, root, external_nullifier).
+fn real_root(env: &Env) -> Fr {
+    fr_from_dec_str(env, "26209293814355131390889932661322725195394840191932303091376020297848638697892")
+}
+fn real_nullifier_hash(env: &Env) -> Fr {
+    fr_from_dec_str(env, "21226719646080371019275358926522886326845061441166218142415794470695116145494")
+}
+fn real_external_nullifier_round0(env: &Env) -> Fr {
+    fr_from_dec_str(env, "9916401131788634118796694467337109503795060207059715207260235684299224251787")
+}
 
 fn create_token(env: &Env, admin: &Address) -> Address {
     env.register_stellar_asset_contract_v2(admin.clone()).address()
 }
 
-fn expected_external_nullifier(env: &Env, circle_id: u64, round: u32) -> BytesN<32> {
-    let mut bytes = Bytes::new(env);
-    bytes.extend_from_array(&circle_id.to_be_bytes());
-    bytes.extend_from_array(&round.to_be_bytes());
-    env.crypto().sha256(&bytes).to_bytes()
+fn expected_external_nullifier(env: &Env, circle_id: u64, round: u32) -> Fr {
+    Contract::compute_external_nullifier(env, circle_id, round)
 }
 
 struct Setup {
@@ -37,9 +164,13 @@ fn setup(size: u32, contribution: i128) -> Setup {
     let token = create_token(&env, &token_admin);
     let token_admin_client = token::StellarAssetClient::new(&env, &token);
 
-    let root = BytesN::from_array(&env, &[7u8; 32]);
-    let vk = Bytes::from_array(&env, &[0u8; 4]);
+    // this is the FIRST circle registered against a fresh contract, so it
+    // is assigned circle_id=0 — matching the real proof fixtures above,
+    // which were generated for circle_id=0.
+    let root = real_root(&env);
+    let vk = real_verification_key(&env);
     let circle_id = client.create_circle(&admin, &token, &root, &contribution, &size, &vk);
+    assert_eq!(circle_id, 0);
 
     let mut members: StdVec<Address> = StdVec::new();
     for _ in 0..size {
@@ -73,9 +204,9 @@ fn happy_path_round_pays_out_and_advances() {
     assert_eq!(circle.pot, s.contribution * (s.size as i128));
 
     let recipient = Address::generate(&s.env); // fresh, unrelated to any funder
-    let nullifier_hash = BytesN::from_array(&s.env, &[42u8; 32]);
-    let external_nullifier = expected_external_nullifier(&s.env, s.circle_id, 0);
-    let proof = Bytes::from_array(&s.env, &[0u8; 4]);
+    let nullifier_hash = real_nullifier_hash(&s.env);
+    let external_nullifier = real_external_nullifier_round0(&s.env);
+    let proof = real_valid_proof(&s.env);
 
     client.claim(
         &s.circle_id,
@@ -97,6 +228,33 @@ fn happy_path_round_pays_out_and_advances() {
 }
 
 #[test]
+#[should_panic(expected = "Error(Contract, #5)")] // InvalidProof
+fn claim_reverts_on_tampered_public_input() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+
+    for m in s.members.iter() {
+        client.fund(&s.circle_id, m);
+    }
+
+    let recipient = Address::generate(&s.env);
+    // the real proof's actual output is real_nullifier_hash(); claiming
+    // with a different nullifier_hash means the pairing check is being
+    // asked to verify a statement the proof doesn't attest to.
+    let wrong_nullifier_hash = real_nullifier_hash(&s.env) + Fr::from_u256(U256::from_u32(&s.env, 1));
+    let external_nullifier = real_external_nullifier_round0(&s.env);
+    let proof = real_valid_proof(&s.env);
+
+    client.claim(
+        &s.circle_id,
+        &recipient,
+        &wrong_nullifier_hash,
+        &external_nullifier,
+        &proof,
+    );
+}
+
+#[test]
 #[should_panic(expected = "Error(Contract, #2)")] // RoundNotFunded
 fn claim_reverts_when_underfunded() {
     let s = setup(5, 100);
@@ -108,9 +266,9 @@ fn claim_reverts_when_underfunded() {
     }
 
     let recipient = Address::generate(&s.env);
-    let nullifier_hash = BytesN::from_array(&s.env, &[1u8; 32]);
-    let external_nullifier = expected_external_nullifier(&s.env, s.circle_id, 0);
-    let proof = Bytes::from_array(&s.env, &[0u8; 4]);
+    let nullifier_hash = real_nullifier_hash(&s.env);
+    let external_nullifier = real_external_nullifier_round0(&s.env);
+    let proof = real_valid_proof(&s.env);
 
     client.claim(
         &s.circle_id,
@@ -131,12 +289,12 @@ fn second_claim_with_same_nullifier_reverts() {
         client.fund(&s.circle_id, m);
     }
 
-    let nullifier_hash = BytesN::from_array(&s.env, &[9u8; 32]);
-    let proof = Bytes::from_array(&s.env, &[0u8; 4]);
+    let nullifier_hash = real_nullifier_hash(&s.env);
+    let proof = real_valid_proof(&s.env);
 
     // round 0: claim succeeds and marks the nullifier used
     let recipient_a = Address::generate(&s.env);
-    let external_nullifier_0 = expected_external_nullifier(&s.env, s.circle_id, 0);
+    let external_nullifier_0 = real_external_nullifier_round0(&s.env);
     client.claim(
         &s.circle_id,
         &recipient_a,
@@ -146,7 +304,9 @@ fn second_claim_with_same_nullifier_reverts() {
     );
 
     // top up and fund round 1 fully, then try to reuse the exact same
-    // nullifier_hash from round 0
+    // nullifier_hash from round 0. It's rejected by the nullifier map
+    // before the (real, but now mismatched-round) proof would even be
+    // checked, so reusing `proof` here is fine.
     let token_admin_client = token::StellarAssetClient::new(&s.env, &s.token);
     for m in s.members.iter() {
         token_admin_client.mint(m, &s.contribution);
@@ -174,10 +334,10 @@ fn claim_reverts_on_stale_round_tag() {
     }
 
     let recipient = Address::generate(&s.env);
-    let nullifier_hash = BytesN::from_array(&s.env, &[3u8; 32]);
+    let nullifier_hash = real_nullifier_hash(&s.env);
     // wrong: this circle is still on round 0, but we tag the proof for round 1
     let external_nullifier = expected_external_nullifier(&s.env, s.circle_id, 1);
-    let proof = Bytes::from_array(&s.env, &[0u8; 4]);
+    let proof = real_valid_proof(&s.env);
 
     client.claim(
         &s.circle_id,
@@ -216,11 +376,34 @@ fn create_circle_requires_admin_auth() {
     let token_admin = Address::generate(&env);
     let token = create_token(&env, &token_admin);
 
-    let root = BytesN::from_array(&env, &[7u8; 32]);
-    let vk = Bytes::from_array(&env, &[0u8; 4]);
+    let root = real_root(&env);
+    let vk = real_verification_key(&env);
     client.create_circle(&admin, &token, &root, &100i128, &5u32, &vk);
 
     let auths = env.auths();
     assert_eq!(auths.len(), 1);
     assert_eq!(auths[0].0, admin);
+}
+
+// Confirms a real claim() call (real vk, real proof, real pairing check)
+// fits Soroban's standard CPU budget — this is the number that mattered
+// most for the BN254-vs-BLS12-381 decision in NOTES.md.
+#[test]
+fn claim_fits_cpu_budget() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    for m in s.members.iter() {
+        client.fund(&s.circle_id, m);
+    }
+    let recipient = Address::generate(&s.env);
+    let nullifier_hash = real_nullifier_hash(&s.env);
+    let external_nullifier = real_external_nullifier_round0(&s.env);
+    let proof = real_valid_proof(&s.env);
+    client.claim(&s.circle_id, &recipient, &nullifier_hash, &external_nullifier, &proof);
+
+    // Cpu limit: 100000000; used: 48066196 (~48%) — comfortably fits.
+    // Dominated by Bls12381Pairing (~30.3M) + Bls12381G1Mul (~7.4M, from
+    // the two g1_mul calls computing vk_x over 3 public signals) +
+    // subgroup checks (~9.3M combined).
+    assert!(s.env.cost_estimate().budget().cpu_instruction_cost() < 100_000_000);
 }
