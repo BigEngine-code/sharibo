@@ -1,0 +1,28 @@
+# secrets
+.env
+.env.*
+!.env.example
+*.pem
+
+# circuit build artifacts (large / regenerable / trusted-setup entropy)
+# NOTE: verification_key.json is exported to circuits/verification_key.json
+# (outside build/) specifically so it is NOT caught by this rule and gets committed.
+circuits/build/
+*.ptau
+*.zkey
+*.wtns
+
+# rust
+target/
+Cargo.lock.bak
+
+# node
+node_modules/
+dist/
+.vite/
+*.log
+npm-debug.log*
+
+# misc
+.DS_Store
+scratch/
