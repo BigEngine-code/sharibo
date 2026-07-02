@@ -26,3 +26,6 @@ npm-debug.log*
 # misc
 .DS_Store
 scratch/
+
+# local tooling config (not project source)
+.claude/
