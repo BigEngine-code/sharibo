@@ -1,5 +1,9 @@
 import { poseidon2 } from "poseidon-bls12381";
-import { createHash, randomBytes } from "node:crypto";
+
+// Web Crypto (`globalThis.crypto`) rather than `node:crypto`, so this module
+// runs unmodified in both Node (18+) and the browser app (Phase 5) — no
+// bundler polyfill needed.
+const webCrypto: Crypto = globalThis.crypto;
 
 export interface Identity {
   identityNullifier: bigint;
@@ -13,10 +17,17 @@ export interface Identity {
 export const FR_MODULUS =
   0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001n;
 
+function bytesToBigInt(bytes: Uint8Array): bigint {
+  return BigInt(
+    "0x" + Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join(""),
+  );
+}
+
 // 31 random bytes (248 bits) are always below FR_MODULUS (~2^255), so no
 // rejection sampling / modular reduction is needed.
 export function randomFieldElement(): bigint {
-  return BigInt("0x" + randomBytes(31).toString("hex"));
+  const bytes = webCrypto.getRandomValues(new Uint8Array(31));
+  return bytesToBigInt(bytes);
 }
 
 export function poseidon(a: bigint, b: bigint): bigint {
@@ -38,12 +49,16 @@ export function generateIdentity(): Identity {
 // function, so nothing is gained by porting Poseidon into the contract for
 // this check, and SHA-256 is equally sound for binding a proof to a round.
 // See NOTES.md.
-export function computeExternalNullifier(circleId: bigint, round: bigint): bigint {
-  const buf = Buffer.alloc(12);
-  buf.writeBigUInt64BE(circleId, 0);
-  buf.writeUInt32BE(Number(round), 8);
-  const digest = createHash("sha256").update(buf).digest();
-  return BigInt("0x" + digest.toString("hex")) % FR_MODULUS;
+export async function computeExternalNullifier(
+  circleId: bigint,
+  round: bigint,
+): Promise<bigint> {
+  const buf = new ArrayBuffer(12);
+  const view = new DataView(buf);
+  view.setBigUint64(0, circleId, false);
+  view.setUint32(8, Number(round), false);
+  const digest = await webCrypto.subtle.digest("SHA-256", buf);
+  return bytesToBigInt(new Uint8Array(digest)) % FR_MODULUS;
 }
 
 export function computeNullifierHash(

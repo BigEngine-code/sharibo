@@ -32,6 +32,11 @@ export async function connect(
   });
 }
 
+export interface TxResult<T> {
+  result: T;
+  hash: string;
+}
+
 export async function createCircle(
   client: SharaboClient,
   args: {
@@ -42,7 +47,7 @@ export async function createCircle(
     size: number;
     vk: ContractVerificationKey;
   },
-): Promise<bigint> {
+): Promise<TxResult<bigint>> {
   const tx = await client.create_circle({
     admin: args.admin,
     token: args.token,
@@ -52,15 +57,16 @@ export async function createCircle(
     vk: args.vk,
   });
   const sent = await tx.signAndSend();
-  return sent.result as bigint;
+  return { result: sent.result as bigint, hash: sent.sendTransactionResponse.hash };
 }
 
 export async function fund(
   client: SharaboClient,
   args: { circleId: bigint; from: string },
-): Promise<void> {
+): Promise<TxResult<void>> {
   const tx = await client.fund({ circle_id: args.circleId, from: args.from });
-  await tx.signAndSend();
+  const sent = await tx.signAndSend();
+  return { result: undefined, hash: sent.sendTransactionResponse.hash };
 }
 
 export async function claim(
@@ -72,7 +78,7 @@ export async function claim(
     externalNullifier: bigint;
     proof: ContractProof;
   },
-): Promise<void> {
+): Promise<TxResult<void>> {
   const tx = await client.claim({
     circle_id: args.circleId,
     recipient: args.recipient,
@@ -80,7 +86,8 @@ export async function claim(
     external_nullifier: args.externalNullifier,
     proof: args.proof,
   });
-  await tx.signAndSend();
+  const sent = await tx.signAndSend();
+  return { result: undefined, hash: sent.sendTransactionResponse.hash };
 }
 
 export interface CircleView {

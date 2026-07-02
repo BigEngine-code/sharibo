@@ -124,7 +124,7 @@ async function main() {
     30_000,
     "connect(admin)",
   );
-  const circleId = await withTimeout(
+  const { result: circleId } = await withTimeout(
     createCircle(adminClient, {
       admin: admin.publicKey(),
       token: TOKEN,
@@ -162,16 +162,26 @@ async function main() {
   console.log("\n4. Generating a real ZK proof for member", CLAIMANT_INDEX, "...");
   const claimant = members[CLAIMANT_INDEX];
   const merkleProof = tree.proof(CLAIMANT_INDEX);
-  const externalNullifier = computeExternalNullifier(circleId, 0n);
+  const externalNullifier = await computeExternalNullifier(circleId, 0n);
+  const circuitsBuildDir = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "circuits",
+    "build",
+  );
   const { proof, nullifierHash, root, externalNullifier: provenExternalNullifier } =
-    await generateProof({
-      identityNullifier: claimant.identity.identityNullifier,
-      identitySecret: claimant.identity.identitySecret,
-      pathElements: merkleProof.pathElements,
-      pathIndices: merkleProof.pathIndices,
-      root: tree.root,
-      externalNullifier,
-    });
+    await generateProof(
+      {
+        identityNullifier: claimant.identity.identityNullifier,
+        identitySecret: claimant.identity.identitySecret,
+        pathElements: merkleProof.pathElements,
+        pathIndices: merkleProof.pathIndices,
+        root: tree.root,
+        externalNullifier,
+      },
+      path.join(circuitsBuildDir, "membership_js", "membership.wasm"),
+      path.join(circuitsBuildDir, "membership_final.zkey"),
+    );
   assert(root === tree.root, "proof's public root must match the circle's root");
   assert(
     provenExternalNullifier === externalNullifier,
@@ -225,7 +235,7 @@ async function main() {
     );
     console.log(`   [${i + 1}/${CIRCLE_SIZE}] funded round 1 from`, m.keypair.publicKey());
   }
-  const round1ExternalNullifier = computeExternalNullifier(circleId, 1n);
+  const round1ExternalNullifier = await computeExternalNullifier(circleId, 1n);
 
   let secondClaimRejected = false;
   try {

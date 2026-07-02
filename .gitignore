@@ -11,6 +11,9 @@ circuits/build/
 *.ptau
 *.zkey
 *.wtns
+# app/public/circuits/ is populated by `npm run sync-circuit` (see
+# app/scripts/sync-circuit.mjs) from circuits/build/ — same reasoning.
+app/public/circuits/
 
 # rust
 target/

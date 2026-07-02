@@ -17,7 +17,7 @@ const CLAIMANT_INDEX = 1;
 const CIRCLE_ID = 0n;
 const ROUND = 0n;
 
-function main() {
+async function main() {
   const identities = Array.from({ length: 3 }, () => generateIdentity());
   const tree = MerkleTree.create(
     LEVELS,
@@ -25,7 +25,7 @@ function main() {
   );
   const identity = identities[CLAIMANT_INDEX];
   const merkleProof = tree.proof(CLAIMANT_INDEX);
-  const externalNullifier = computeExternalNullifier(CIRCLE_ID, ROUND);
+  const externalNullifier = await computeExternalNullifier(CIRCLE_ID, ROUND);
 
   const input = {
     identityNullifier: identity.identityNullifier.toString(),

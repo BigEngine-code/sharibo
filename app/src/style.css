@@ -1,0 +1,234 @@
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;700&display=swap");
+
+:root {
+  --bg: #fff4d6;
+  --ink: #111111;
+  --accent: #ffcf3f;
+  --accent2: #7cf5c4;
+  --danger: #ff5c5c;
+  --border: 4px solid var(--ink);
+  --shadow: 8px 8px 0 var(--ink);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  background-image: radial-gradient(circle, #00000014 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+}
+
+.card {
+  background: white;
+  border: var(--border);
+  box-shadow: var(--shadow);
+  padding: 32px;
+  width: 100%;
+  max-width: 620px;
+}
+
+.hero {
+  text-align: center;
+}
+
+.namewall {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.namewall-item {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  padding: 4px 10px;
+  border: 2px solid var(--ink);
+  background: var(--accent2);
+  transform: rotate(-1deg);
+}
+.namewall-item:nth-child(even) {
+  transform: rotate(1deg);
+  background: var(--accent);
+}
+
+h1 {
+  font-size: 56px;
+  letter-spacing: -1px;
+  margin: 8px 0;
+}
+h1.small {
+  font-size: 28px;
+  margin: 0;
+}
+h2 {
+  font-size: 20px;
+  border-bottom: var(--border);
+  padding-bottom: 6px;
+  margin-top: 28px;
+}
+
+.tagline {
+  font-size: 18px;
+  font-weight: 700;
+}
+.sub {
+  color: #333;
+  line-height: 1.5;
+}
+.fineprint {
+  font-size: 12px;
+  color: #666;
+  margin-top: 16px;
+}
+
+.btn {
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 700;
+  font-size: 16px;
+  padding: 14px 22px;
+  background: var(--accent);
+  border: var(--border);
+  box-shadow: 5px 5px 0 var(--ink);
+  cursor: pointer;
+  transition: transform 0.05s ease;
+}
+.btn:hover:not(:disabled) {
+  transform: translate(-2px, -2px);
+  box-shadow: 7px 7px 0 var(--ink);
+}
+.btn:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.btn-primary {
+  background: var(--accent2);
+  width: 100%;
+  margin-top: 12px;
+}
+.btn-small {
+  padding: 6px 12px;
+  font-size: 13px;
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.btn-danger {
+  background: var(--danger);
+  color: white;
+  width: 100%;
+  margin-top: 16px;
+}
+
+.row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.space-between {
+  justify-content: space-between;
+}
+
+.pot-bar-wrap {
+  margin-top: 16px;
+  height: 20px;
+  border: var(--border);
+  background: #eee;
+}
+.pot-bar {
+  height: 100%;
+  background: var(--accent2);
+  transition: width 0.3s ease;
+}
+.pot-label {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  margin-top: 6px;
+}
+
+.members {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.member {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 2px solid var(--ink);
+  padding: 8px 12px;
+  background: #fafafa;
+}
+.member.funded {
+  background: var(--accent2);
+}
+.member-addr {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+}
+
+.radio {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.link {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.result {
+  margin-top: 20px;
+  border: var(--border);
+  background: var(--accent2);
+  padding: 16px;
+}
+.callout {
+  background: var(--accent);
+  border: 2px dashed var(--ink);
+  padding: 10px;
+  font-size: 14px;
+}
+
+.rejected {
+  margin-top: 12px;
+  background: var(--danger);
+  color: white;
+  border: var(--border);
+  padding: 12px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+}
+
+.error {
+  color: var(--danger);
+  font-weight: 700;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+}
+
+code {
+  font-family: "JetBrains Mono", monospace;
+  background: #eee;
+  padding: 2px 4px;
+}

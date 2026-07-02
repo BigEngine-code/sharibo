@@ -5,7 +5,8 @@
   "workspaces": [
     "circuits",
     "packages/client",
-    "scripts"
+    "scripts",
+    "app"
   ],
   "scripts": {
     "e2e": "npm run e2e --workspace=scripts"

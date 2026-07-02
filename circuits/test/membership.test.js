@@ -30,10 +30,10 @@ describe("Sharibo membership circuit (BLS12-381)", function () {
     );
   });
 
-  function buildInput(memberIndex, circleId, round) {
+  async function buildInput(memberIndex, circleId, round) {
     const identity = identities[memberIndex];
     const merkleProof = tree.proof(memberIndex);
-    const externalNullifier = computeExternalNullifier(BigInt(circleId), BigInt(round));
+    const externalNullifier = await computeExternalNullifier(BigInt(circleId), BigInt(round));
     return {
       identityNullifier: identity.identityNullifier.toString(),
       identitySecret: identity.identitySecret.toString(),
@@ -55,7 +55,7 @@ describe("Sharibo membership circuit (BLS12-381)", function () {
   }
 
   it("accepts a genuine member and outputs the correct nullifierHash", async () => {
-    const input = buildInput(2, 1, 0);
+    const input = await buildInput(2, 1, 0);
     const witness = await circuit.calculateWitness(input, true);
     await circuit.checkConstraints(witness);
 
@@ -67,13 +67,13 @@ describe("Sharibo membership circuit (BLS12-381)", function () {
   });
 
   it("rejects a wrong root", async () => {
-    const input = buildInput(2, 1, 0);
+    const input = await buildInput(2, 1, 0);
     input.root = (BigInt(input.root) + 1n).toString();
     await expectThrows(() => circuit.calculateWitness(input, true));
   });
 
   it("rejects a non-member (tampered Merkle path)", async () => {
-    const input = buildInput(2, 1, 0);
+    const input = await buildInput(2, 1, 0);
     input.pathElements[0] = (BigInt(input.pathElements[0]) + 1n).toString();
     await expectThrows(() => circuit.calculateWitness(input, true));
   });
@@ -82,9 +82,9 @@ describe("Sharibo membership circuit (BLS12-381)", function () {
     await circuit.loadSymbols();
     const varIdx = circuit.symbols["main.nullifierHash"].varIdx;
 
-    const inputA = buildInput(3, 7, 0);
-    const inputB = buildInput(3, 7, 0);
-    const inputNextRound = buildInput(3, 7, 1);
+    const inputA = await buildInput(3, 7, 0);
+    const inputB = await buildInput(3, 7, 0);
+    const inputNextRound = await buildInput(3, 7, 1);
 
     const witnessA = await circuit.calculateWitness(inputA, true);
     const witnessB = await circuit.calculateWitness(inputB, true);
@@ -97,7 +97,7 @@ describe("Sharibo membership circuit (BLS12-381)", function () {
   });
 
   it("rejects a non-boolean pathIndices entry", async () => {
-    const input = buildInput(2, 1, 0);
+    const input = await buildInput(2, 1, 0);
     input.pathIndices[0] = 2;
     await expectThrows(() => circuit.calculateWitness(input, true));
   });
