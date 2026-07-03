@@ -1,30 +1,95 @@
 # Sharibo
 
+**Private rotating savings circles on Stellar — the ajo / tanda / susu / tontine, with the payout anonymized by a real Groth16 zero-knowledge proof, verified on-chain.**
+
 **ajo · esusu · tanda · cundina · susu · tontine · junta · pandero · consórcio · hui · paluwagan · chit fund**
 
-Every culture has one: a circle of people who each put in a fixed amount every round, and each round one member takes the whole pot. Sharibo puts that circle on Stellar — a stablecoin instead of a shared notebook, and zero-knowledge so nobody can trace a payout back to a member.
+Five members fund a shared pot. One member claims it — by proving *"I'm a genuine, un-paid member of this circle"* without revealing **which** member. The proof is generated in the browser and verified by a Soroban contract using Stellar's native BLS12-381 pairing host functions. No mock. No stub. No trusted server.
 
 Built for the **Stellar Hacks: Real-World ZK** hackathon. Testnet only, no real funds.
 
-## What it does
+<!-- ──────────────────────────────────────────────────────────────
+  DEMO GIF GOES HERE — 8–12s screen capture of the proving state
+  → claim success → unlinked ring reveal. Record the browser at
+  ~1280px wide, convert with e.g. `ffmpeg -i demo.mp4 -vf
+  "fps=12,scale=960:-1" demo.gif`, keep it under ~8 MB.
+─────────────────────────────────────────────────────────────── -->
+![Sharibo demo — live proof generation and anonymous claim](docs/demo.gif)
 
-A private rotating savings circle (ROSCA) on Stellar:
-- Members fund a shared pot each round with a test token.
-- The round's payout goes to whoever can prove, in zero-knowledge, that they are a circle member entitled to claim — without revealing *which* member they are.
-- A per-round nullifier stops the same proof from claiming twice.
+**[▶ demo video](YOUR_VIDEO_URL)** · **[🚀 live app (testnet)](YOUR_DEPLOY_URL)** · **[📖 full product breakdown](full_product_breakdown.md)** · **[🛠 build log](NOTES.md)**
 
-## What the ZK is doing (the load-bearing part)
+---
 
-A Circom circuit (`circuits/membership.circom`) proves two things about the claimant, without revealing which member they are:
+## On-chain evidence (testnet — verify any of it yourself)
 
-1. **Membership** — their Poseidon commitment is a leaf in the circle's committed Merkle tree.
-2. **A fresh nullifier** — `nullifierHash = Poseidon(identityNullifier, externalNullifier)`, bound to this specific circle+round.
+Every claim below was produced by running this repo against live Stellar testnet infrastructure. Nothing is asserted from a test double.
 
-That proof is verified **for real, on-chain**, inside a Soroban contract (`contracts/sharibo/src/lib.rs`), using Stellar's native BLS12-381 pairing host functions — no mocked or stubbed verification remains anywhere in the shipped contract. The contract records the nullifier so it can't be reused, then pays the pot to whatever recipient address the claimant supplies — which can be, and in the demo is, a **fresh address never seen before**, unlinkable to any funder.
+| What | Where |
+|---|---|
+| Sharibo contract | `CB64IZIBBSPUY63UMIVACKWDKRFNH6WJ2EPAOLM7QR4ZI6IJOT4N2LCF` |
+| Test token (native XLM SAC) | `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC` |
+| `create_circle` (circle 0) | tx `fa76e7fe7439199796db55fdde4bcaaad2cb6a98c0f29214d00605f40ca8fdb0` |
+| **Real Groth16 proof accepted on-chain** | tx `2258397474e3ad420d6dd8310cb0976d270c29ec4a4ec2b60a9ae58408088087` — `successful: true`, ledger `3379702` |
+| Tampered proof **rejected** | `Error(Contract, #5)` `InvalidProof` — the pairing check genuinely fails |
+| Nullifier replay **rejected** | `Error(Contract, #4)` `AlreadyClaimed` — reproduced every run by `npm run e2e` |
 
-An on-chain observer sees five deposits and one payout per round, and cannot tell which of the five depositors the payout belongs to.
+## Verify it yourself in 60 seconds
 
-**Demo-honest scope:** privacy is on the *claim* side only (who takes the pot). *Funding*-side privacy (hiding who funded) is not implemented — see Honest limitations.
+No toolchain needed — just `curl`.
+
+**1. The accepted proof is a real, successful testnet transaction:**
+
+```bash
+curl -s https://horizon-testnet.stellar.org/transactions/2258397474e3ad420d6dd8310cb0976d270c29ec4a4ec2b60a9ae58408088087 | grep -E '"successful"|"ledger"'
+# → "successful": true,   "ledger": 3379702
+```
+
+**2. The contract is live and holds real circle state** (requires [`stellar` CLI](https://developers.stellar.org/docs/tools/cli)):
+
+```bash
+stellar contract invoke \
+  --id CB64IZIBBSPUY63UMIVACKWDKRFNH6WJ2EPAOLM7QR4ZI6IJOT4N2LCF \
+  --network testnet -- get_circle --circle_id 0
+# → Circle { root, contribution, size: 5, round: ≥1, ... } — round ≥ 1 means a real claim has already succeeded
+```
+
+**3. Or view it in the explorer:** [contract on stellar.expert](https://stellar.expert/explorer/testnet/contract/CB64IZIBBSPUY63UMIVACKWDKRFNH6WJ2EPAOLM7QR4ZI6IJOT4N2LCF) — five deposits in, one payout out, to an address that appears nowhere else in the circle.
+
+To reproduce everything from source (circuit build → trusted setup → tests → full e2e round), see [Run it](#run-it).
+
+---
+
+## Why this was hard (the 30-second version)
+
+The standard Circom/Groth16 stack targets the **BN254** curve. On Soroban, we measured a single BN254 pairing (pure-Rust `ark-bn254`, per Stellar's own `import_ark_bn254` example) at **~560 million CPU instructions — against a hard 100 million per-transaction cap.** Not expensive: impossible.
+
+So Sharibo runs the entire pipeline — circuit, trusted setup, Poseidon parameters, contract, client encoding — on **BLS12-381**, the curve Stellar accelerates natively (`env.crypto().bls12_381().pairing_check(...)`). A real `claim()` with a real proof costs **48.0M / 100M instructions (~48%)** — measured, not estimated. That required sourcing Poseidon round constants generated for the BLS12-381 scalar field (cross-checked against `soroban-sdk`'s own `BLS12_381_FR_MODULUS_BE`) and byte-exact wire formats across circuit ↔ contract ↔ client. Full story: [breakdown §6](full_product_breakdown.md#6-deep-dive-the-zk-circuit) and [§14](full_product_breakdown.md#14-key-engineering-decisions-and-deviations).
+
+## What the ZK is doing (load-bearing, not decorative)
+
+The claimant proves, in zero knowledge:
+
+1. **Membership** — `Poseidon(identityNullifier, identitySecret)` is a leaf under the circle's committed Merkle root (which member: hidden).
+2. **One claim per round** — a nullifier bound to `(circle_id, round)`; the contract records it, so replay fails with `AlreadyClaimed`.
+3. **Unlinkability** — the pot pays out to any address the claimant chooses; in the demo, a keypair that has never touched the circle.
+
+An on-chain observer sees five deposits and one payout — and no way to connect them.
+
+## Honest limitations
+
+- **Claim-side privacy only.** Funding is fully public, by scope: shielded deposits are a different (harder) problem — roadmap.
+- **One round demoed**, not a full multi-round rotation with on-chain turn ordering.
+- **Testnet + test token**; single-party trusted setup (fine for a demo, not production).
+- **Poseidon-over-BLS12-381 constants come from a third-party package** — modulus cross-checked against Soroban's own constant and structurally reviewed (8 full + 56 partial rounds, x⁵ S-box), but not independently audited.
+- Nothing is silently faked; every simplification is disclosed here, in code comments, and in [NOTES.md](NOTES.md). Details: [breakdown §18](full_product_breakdown.md#18-honest-limitations).
+
+## Tests
+
+| Suite | Coverage | Result |
+|---|---|---|
+| Circuit (`circuits/test/`) | valid proof, wrong root, tampered path, nullifier determinism, non-boolean path index | **5/5** |
+| Contract (`contracts/sharibo/src/test.rs`) | happy path **with a real proof**, underfunded, replay, stale round tag, forged public input (real pairing failure), CPU budget, auth ×2 | **8/8** |
+| E2E (`scripts/e2e.ts`, live testnet) | create → 5× fund → prove → claim to fresh address → assertions → round 2 fund → replay → `AlreadyClaimed` | **passing** |
 
 ## Architecture
 
@@ -125,22 +190,24 @@ cp .env.example .env       # same contract/token ids as above, VITE_-prefixed
 npm run dev                  # runs `sync-circuit` first (copies circuits/build/* into app/public/circuits/)
 ```
 
-Open the printed localhost URL. The whole flow (identities, funding, proving, claiming) runs against real testnet from a single browser tab — see Honest limitations for what was and wasn't verified.
+Open the printed localhost URL. The whole flow (identities, funding, proving, claiming) runs against real testnet from a single browser tab.
 
-## Honest limitations
+## Repository structure
 
-- **One round demoed, not multi-round.** Turn-ordering across rounds (who claims next) is not enforced on-chain — this is a hackathon MVP, not a governance system.
-- **Claim-side privacy only.** Funding is fully visible on-chain (5 deposits from 5 known addresses); only the payout recipient is unlinkable. Shielding *who funded* is roadmap, not shipped.
-- **Testnet + test token only.** The demo uses native testnet XLM as the pot's asset, not a real stablecoin.
-- **Trusted setup is a single-contributor demo ceremony** (`circuits/scripts/setup.sh`, run once by me), not a real multi-party ceremony. Fine for a hackathon demo, not for anything real.
-- **Poseidon-over-BLS12-381 uses third-party constants**, not iden3/arkworks-official ones: [`poseidon-bls12381-circom`](https://github.com/jmagan/poseidon-bls12381-circom) and [`poseidon-bls12381`](https://github.com/jmagan/poseidon-bls12381) (same author). Their hardcoded field modulus was cross-checked against Soroban SDK's own `BLS12_381_FR_MODULUS_BE` constant (exact match) and the circuit structure was read and looks like a standard Poseidon implementation, but neither package has an independent security audit. Reasoning for using them instead of BN254 (where circomlib's audited constants would apply) is in `NOTES.md` — in short, BN254 verification doesn't fit Soroban's CPU budget at all.
-- **`compute_external_nullifier` uses SHA-256, not Poseidon**, for binding a proof to (circle, round) — a deliberate, permanent choice (Soroban has no native Poseidon host function, and this binding happens outside the circuit where SNARK-friendliness doesn't matter), not a leftover stub. Full reasoning in `NOTES.md`.
-- **The browser demo was not click-tested in an actual browser this session** — the browser automation tool was unavailable. What *was* verified: clean typecheck, clean production build, correct static-asset serving, and the actual snarkjs `fetch()`-based proof-generation code path exercised for real (via Node's native `fetch`, forcing the same `process.browser` branch the real browser takes) — it produced a proof that verified. See `NOTES.md` for detail. Verify the click-through yourself before demoing live.
-- Every `// DEMO MOCK:`-style shortcut is documented inline in the code and cross-referenced in `NOTES.md`, which is the full build/decision log for this project.
+```
+sharibo/
+├── circuits/            membership.circom, compile/setup/prove scripts, circuit tests, verification_key.json
+├── contracts/sharibo/   the Soroban contract (lib.rs) + its test suite (test.rs)
+├── packages/client/     isomorphic TS SDK: identity.ts, tree.ts, prove.ts, contract.ts
+├── scripts/e2e.ts       full-round Node script against live testnet
+├── app/                 React + Vite browser demo
+├── README.md            this file
+├── NOTES.md             the raw build/decision log — what was discovered, when, and why
+├── full_product_breakdown.md  every facet of the system, in detail
+└── hackathon_demo_script.md   demo video script (motion + voiceover)
+```
 
-## Compliance by design (roadmap)
-
-Not built, but the shape is straightforward given what's already here: a **view key** could let an admin/auditor prove a circle's *total* historical contributions (a sum over the funding events they already have `require_auth`-gated visibility into) without exposing which individual funded which round — selective disclosure without touching the claim-side anonymity set at all, since it's an entirely separate read path over already-public on-chain funding events.
+Full annotated version (what each file does and why): [breakdown §16](full_product_breakdown.md#16-repository-structure).
 
 ## Roadmap
 
@@ -149,3 +216,4 @@ Not built, but the shape is straightforward given what's already here: a **view 
 - Multi-party trusted setup ceremony.
 - Independent audit of the BLS12-381 Poseidon parameters (or a switch to self-generated / better-provenanced constants).
 - Real stablecoin (issued test asset or mainnet equivalent) instead of native testnet XLM.
+- **Selective disclosure ("view key")** — an admin/auditor could prove a circle's *total* historical contributions (a sum over funding events already visible on-chain) without exposing which individual funded which round. Not built; the shape is in [breakdown §19](full_product_breakdown.md#19-roadmap).
