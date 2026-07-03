@@ -92,3 +92,7 @@ Running log of decisions, deviations from the build spec, and `// DEMO MOCK:` it
 5. Cut to a block explorer: 5 deposits, 1 payout, no visible link between them — linger here, this is the point.
 6. Click "claim again" → on-chain rejection, live.
 7. Say the honest limitations out loud (claim-side privacy only, one round, testnet). Close on the repo.
+
+## Live deployment (Vercel)
+
+- App deployed as a static build (Vite output, wasm/zkey/vkey confirmed present in `dist/circuits/`) to Vercel: **https://dist-flax-three-43.vercel.app** — env vars were baked in at local build time from `app/.env` (pointing at the same testnet contract/token as everywhere else), not configured remotely, so no secrets or extra Vercel project config were needed.

@@ -16,7 +16,7 @@ Built for the **Stellar Hacks: Real-World ZK** hackathon. Testnet only, no real 
 ─────────────────────────────────────────────────────────────── -->
 ![Sharibo demo — live proof generation and anonymous claim](docs/demo.gif)
 
-**[▶ demo video](YOUR_VIDEO_URL)** · **[🚀 live app (testnet)](YOUR_DEPLOY_URL)** · **[📖 full product breakdown](full_product_breakdown.md)** · **[🛠 build log](NOTES.md)**
+**[▶ demo video](YOUR_VIDEO_URL)** · **[🚀 live app (testnet)](https://dist-flax-three-43.vercel.app)** · **[📖 full product breakdown](full_product_breakdown.md)** · **[🛠 build log](NOTES.md)**
 
 ---
 
