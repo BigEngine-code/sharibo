@@ -162,6 +162,118 @@ h2 {
   margin-top: 6px;
 }
 
+.stepper {
+  display: flex;
+  gap: 4px;
+  margin: 18px 0;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.step {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 2px solid #ccc;
+  color: #999;
+  background: #fafafa;
+}
+.step.active {
+  border-color: var(--ink);
+  background: var(--accent);
+  color: var(--ink);
+}
+.step.done {
+  border-color: var(--ink);
+  background: var(--accent2);
+  color: var(--ink);
+}
+.step-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.ring-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 24px 0;
+}
+.ring {
+  position: relative;
+  width: 220px;
+  height: 220px;
+  margin: 40px 0;
+}
+.ring-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 64px;
+  height: 64px;
+  margin: -32px 0 0 -32px;
+  border: var(--border);
+  border-radius: 50%;
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 700;
+  font-size: 13px;
+}
+.ring-node {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 40px;
+  height: 40px;
+  margin: -20px 0 0 -20px;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  background: #eee;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 700;
+  transition: transform 0.4s ease, background 0.3s ease;
+}
+.ring-node.funded {
+  background: var(--accent2);
+}
+.ring-node.ring-recipient {
+  background: var(--accent);
+  border-style: dashed;
+}
+.ring-caption {
+  max-width: 420px;
+  text-align: center;
+  font-size: 13px;
+  color: #333;
+  background: #fafafa;
+  border: 2px dashed var(--ink);
+  padding: 10px;
+}
+
+.techline {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: #555;
+  margin-top: 8px;
+}
+
 .members {
   display: flex;
   flex-direction: column;
