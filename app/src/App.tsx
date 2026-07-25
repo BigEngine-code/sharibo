@@ -86,6 +86,23 @@ function Stepper({ step }: { step: 0 | 1 | 2 | 3 }) {
   );
 }
 
+function NetworkBanner() {
+  const isTestnet = NETWORK.networkPassphrase.toLowerCase().includes("test");
+  if (!isTestnet) return null;
+  return (
+    <div className="network-banner">
+      Stellar testnet — no real funds ·{" "}
+      <a
+        href="https://github.com/glorious21-coder/sharibo#honest-limitations"
+        target="_blank"
+        rel="noreferrer"
+      >
+        limitations ↗
+      </a>
+    </div>
+  );
+}
+
 // Purely presentational: after a claim, none of the 5 nodes are highlighted
 // as "the one that claimed" — that's the point. From outside the ring, all
 // five remain equally plausible; only the demo operator (via the radio
@@ -320,6 +337,7 @@ export default function App() {
   if (screen === "landing") {
     return (
       <div className="page">
+        <NetworkBanner />
         <div className="card hero">
           <div className="namewall">
             {NAMES.map((n) => (
@@ -352,6 +370,7 @@ export default function App() {
 
   return (
     <div className="page">
+      <NetworkBanner />
       <div className="card">
         <div className="row space-between">
           <h1 className="small">SHARIBO</h1>
