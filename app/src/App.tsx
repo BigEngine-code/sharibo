@@ -150,9 +150,53 @@ export default function App() {
   const [claimResult, setClaimResult] = useState<ClaimResult | null>(null);
   const [rejection, setRejection] = useState<string | null>(null);
 
+  // Track the most recently completed circle so we can show a "lives on-chain" link
+  // after a reset. Stored as { id, explorerUrl } so the fineprint is self-contained.
+  const [prevCircle, setPrevCircle] = useState<{ id: string; explorerUrl: string } | null>(null);
+
   const contribution = BigInt(contributionXlm) * STROOPS_PER_XLM;
   const fundedCount = members.filter((m) => m.funded).length;
   const fullyFunded = pot === contribution * BigInt(CIRCLE_SIZE);
+
+  // Mid-flow = at least one member has funded but the pot hasn't been claimed yet.
+  // In that state the on-chain funds are still sitting in the contract, so we warn
+  // the user before wiping local state (the circle itself persists on-chain regardless).
+  function resetToLanding() {
+    const isMidFlow = fundedCount > 0 && !claimResult;
+    if (isMidFlow) {
+      const confirmed = window.confirm(
+        `This circle is mid-flow: ${fundedCount} of ${CIRCLE_SIZE} members have funded but it hasn't been claimed yet.\n\n` +
+        `The on-chain circle (circle #${circleId?.toString()}) will keep existing — the funds are not lost — ` +
+        `but you'll lose access to the member keys in this tab.\n\n` +
+        `Start a fresh circle anyway?`,
+      );
+      if (!confirmed) return;
+    }
+
+    // Snapshot the previous circle id so we can show the fineprint on landing
+    if (circleId !== null) {
+      setPrevCircle({
+        id: circleId.toString(),
+        explorerUrl: `https://stellar.expert/explorer/testnet/contract/${NETWORK.contractId}`,
+      });
+    }
+
+    // Reset all per-circle state to initials
+    setScreen("landing");
+    setBusy(null);
+    setError(null);
+    setAdmin(null);
+    setMembers([]);
+    setTree(null);
+    setCircleId(null);
+    setRound(0);
+    setPot(0n);
+    setClaimantIndex(0);
+    setProof(null);
+    setNullifierHash(null);
+    setClaimResult(null);
+    setRejection(null);
+  }
 
   async function startCircle() {
     setError(null);
@@ -343,6 +387,14 @@ export default function App() {
           <p className="fineprint">
             Testnet only. Demo identities are generated fresh in your browser, never reused.
           </p>
+          {prevCircle && (
+            <p className="fineprint">
+              Your previous circle #{prevCircle.id} lives on-chain —{" "}
+              <a className="link" href={prevCircle.explorerUrl} target="_blank" rel="noreferrer">
+                view on explorer ↗
+              </a>
+            </p>
+          )}
         </div>
       </div>
     );
@@ -355,9 +407,19 @@ export default function App() {
       <div className="card">
         <div className="row space-between">
           <h1 className="small">SHARIBO</h1>
-          <a className="link" href={explorerContract()} target="_blank" rel="noreferrer">
-            circle #{circleId?.toString()} on-chain ↗
-          </a>
+          <div className="row">
+            <button
+              className="btn btn-reset"
+              disabled={!!busy}
+              onClick={resetToLanding}
+              title="Reset all local state and start a brand-new circle. The current on-chain circle is not affected."
+            >
+              ↺ new circle
+            </button>
+            <a className="link" href={explorerContract()} target="_blank" rel="noreferrer">
+              circle #{circleId?.toString()} on-chain ↗
+            </a>
+          </div>
         </div>
 
         <Stepper step={step} />
@@ -449,6 +511,24 @@ export default function App() {
             {rejection && (
               <div className="rejected">
                 <strong>Rejected on-chain:</strong> {rejection}
+              </div>
+            )}
+            {rejection && (
+              <div className="new-circle-cta">
+                <button
+                  className="btn btn-primary"
+                  disabled={!!busy}
+                  onClick={resetToLanding}
+                >
+                  ↺ Start a new circle
+                </button>
+                <p className="fineprint">
+                  Circle #{circleId?.toString()} stays on-chain forever —{" "}
+                  <a className="link" href={explorerContract()} target="_blank" rel="noreferrer">
+                    view on explorer ↗
+                  </a>
+                  . Starting a new circle generates fresh identities and a brand-new on-chain record.
+                </p>
               </div>
             )}
           </div>
