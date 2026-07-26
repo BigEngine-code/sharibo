@@ -179,7 +179,7 @@ npm run e2e
 
 Runs a full round against testnet for real: creates a 5-member circle, funds it from 5 fresh friendbot-funded accounts, generates a real Groth16 proof for one member, claims the pot to a **freshly generated recipient address**, asserts the payout/round-advance, then funds a second round and asserts that replaying the same proof's nullifier is rejected on-chain with `AlreadyClaimed`.
 
-> This script shells out to `curl` for friendbot/Horizon calls rather than using `fetch()` — see `NOTES.md` if you're curious why. Run it in the foreground (not backgrounded) for the same reason.
+> Uses native `fetch()` for friendbot/Horizon calls (the original `curl` workaround was removed after confirming the undici hang no longer reproduces on Node 20+ — see `NOTES.md` and #94).
 
 ### 5. Browser demo
 

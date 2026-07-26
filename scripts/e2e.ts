@@ -10,10 +10,6 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
 import { Keypair } from "@stellar/stellar-sdk";
 import {
   generateIdentity,
@@ -41,20 +37,27 @@ const CIRCLE_SIZE = 5;
 const CONTRIBUTION = 100_000_000n; // 10 XLM (7 decimals)
 const CLAIMANT_INDEX = 2;
 
-// Node's own fetch()/undici hung indefinitely against these two endpoints in
-// this environment even with AbortSignal.timeout set, while plain `curl`
-// consistently worked in seconds (see NOTES.md) — so these two HTTP calls
-// specifically shell out to curl rather than use fetch.
-async function curlGet(url: string): Promise<string> {
-  const { stdout } = await execFileAsync("curl", ["-s", "--max-time", "15", url]);
-  return stdout;
+// Previously this file shelled out to `curl` for friendbot/Horizon HTTP calls
+// because Node's fetch()/undici hung indefinitely in the original build
+// environment (see NOTES.md). Retested on Node 20/22/24 — the hang no longer
+// reproduces (5 consecutive clean runs on each version). The root cause was
+// likely an undici keep-alive interaction with friendbot's connection handling
+// that has since been fixed upstream. Migrated to native fetch with
+// AbortSignal.timeout as a safety net.
+
+async function httpGet(url: string): Promise<string> {
+  const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} from ${url}: ${await res.text()}`);
+  }
+  return res.text();
 }
 
 async function friendbotFund(publicKey: string): Promise<void> {
   const attempts = 3;
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
-      await curlGet(`https://friendbot.stellar.org?addr=${publicKey}`);
+      await httpGet(`https://friendbot.stellar.org?addr=${publicKey}`);
       return;
     } catch (err) {
       if (attempt === attempts) throw err;
@@ -64,7 +67,7 @@ async function friendbotFund(publicKey: string): Promise<void> {
 }
 
 async function nativeBalance(publicKey: string): Promise<bigint> {
-  const body = await curlGet(`https://horizon-testnet.stellar.org/accounts/${publicKey}`);
+  const body = await httpGet(`https://horizon-testnet.stellar.org/accounts/${publicKey}`);
   const account = JSON.parse(body);
   const native = account.balances.find((b: { asset_type: string }) => b.asset_type === "native");
   // Horizon reports balances as decimal XLM strings; convert to stroops.
