@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Keypair } from "@stellar/stellar-sdk";
 import {
   generateIdentity,
@@ -58,6 +58,43 @@ function explorerContract(): string {
 }
 function short(address: string): string {
   return `${address.slice(0, 4)}…${address.slice(-4)}`;
+}
+
+// Every truncated value on screen (addresses, tx hashes) needs to be
+// pasteable in full somewhere else — a CLI call, an explorer search — so
+// this pairs with each `short(...)` display. Falls back to a prompt() (which
+// itself is trivially copyable) when the async Clipboard API isn't
+// available, e.g. non-secure contexts.
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(t);
+  }, [copied]);
+
+  async function handleCopy() {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard API unavailable");
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+    } catch {
+      window.prompt(`Clipboard unavailable — copy ${label} manually:`, value);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      className="copy-btn"
+      onClick={handleCopy}
+      aria-label={`Copy ${label}`}
+      title={`Copy ${label}`}
+    >
+      {copied ? "✓" : "📋"}
+    </button>
+  );
 }
 
 interface Member {
@@ -432,7 +469,10 @@ export default function App() {
         <div className="members">
           {members.map((m, i) => (
             <div key={i} className={`member ${m.funded ? "funded" : ""}`}>
-              <span className="member-addr">member {i + 1} · {short(m.keypair.publicKey())}</span>
+              <span className="member-addr">
+                member {i + 1} · {short(m.keypair.publicKey())}
+                <CopyButton value={m.keypair.publicKey()} label={`member ${i + 1} address`} />
+              </span>
               {m.funded ? (
                 <a className="link" href={explorerTx(m.fundHash!)} target="_blank" rel="noreferrer">
                   ✓ funded ↗
@@ -486,7 +526,8 @@ export default function App() {
           <div className="result">
             <h2>Payout landed</h2>
             <p>
-              Fresh recipient <code>{short(claimResult.recipient)}</code>{" "}
+              Fresh recipient <code>{short(claimResult.recipient)}</code>
+              <CopyButton value={claimResult.recipient} label="recipient address" />{" "}
               <a href={explorerAccount(claimResult.recipient)} target="_blank" rel="noreferrer">
                 ↗
               </a>{" "}
@@ -495,6 +536,7 @@ export default function App() {
             <a className="link" href={explorerTx(claimResult.hash)} target="_blank" rel="noreferrer">
               view claim transaction ↗
             </a>
+            <CopyButton value={claimResult.hash} label="claim transaction hash" />
             <p className="callout">
               Compare the 5 funding transactions above to this claim — same contract, no shared
               address, no visible link.
