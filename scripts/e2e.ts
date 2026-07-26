@@ -75,6 +75,42 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(`ASSERTION FAILED: ${message}`);
 }
 
+interface StepResult {
+  name: string;
+  durationMs: number;
+  status: "ok" | "failed";
+}
+
+const stepResults: StepResult[] = [];
+
+// Wraps a phase of the run so its duration and outcome land in the summary
+// table printed at the end, whether the run as a whole succeeds or fails.
+async function step<T>(name: string, fn: () => Promise<T>): Promise<T> {
+  const start = Date.now();
+  try {
+    const result = await fn();
+    stepResults.push({ name, durationMs: Date.now() - start, status: "ok" });
+    return result;
+  } catch (err) {
+    stepResults.push({ name, durationMs: Date.now() - start, status: "failed" });
+    throw err;
+  }
+}
+
+function printStepSummary(): void {
+  if (stepResults.length === 0) return;
+  const nameWidth = Math.max("phase".length, ...stepResults.map((s) => s.name.length));
+  const totalMs = stepResults.reduce((sum, s) => sum + s.durationMs, 0);
+  console.log("\nStep timing summary:");
+  console.log(`  ${"phase".padEnd(nameWidth)}  duration    status`);
+  for (const s of stepResults) {
+    console.log(
+      `  ${s.name.padEnd(nameWidth)}  ${`${s.durationMs}ms`.padEnd(10)}  ${s.status}`,
+    );
+  }
+  console.log(`  ${"total".padEnd(nameWidth)}  ${`${totalMs}ms`.padEnd(10)}`);
+}
+
 // Testnet RPC calls occasionally stall rather than erroring outright; a
 // bounded timeout turns that into a clear failure instead of a silent hang.
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
@@ -92,31 +128,36 @@ async function main() {
   const admin = Keypair.fromSecret(ADMIN_SECRET);
 
   console.log("1. Generating 5 member identities + funding their accounts via friendbot...");
-  const members = Array.from({ length: CIRCLE_SIZE }, () => ({
-    keypair: Keypair.random(),
-    identity: generateIdentity(),
-  }));
-  for (const m of members) {
-    await friendbotFund(m.keypair.publicKey());
-  }
-  console.log(
-    "   members:",
-    members.map((m) => m.keypair.publicKey()),
-  );
+  const members = await step("generate identities + fund via friendbot", async () => {
+    const members = Array.from({ length: CIRCLE_SIZE }, () => ({
+      keypair: Keypair.random(),
+      identity: generateIdentity(),
+    }));
+    for (const m of members) {
+      await friendbotFund(m.keypair.publicKey());
+    }
+    console.log(
+      "   members:",
+      members.map((m) => m.keypair.publicKey()),
+    );
+    return members;
+  });
 
-  const tree = MerkleTree.create(
-    LEVELS,
-    members.map((m) => m.identity.commitment),
-  );
-  console.log("   Merkle root:", tree.root.toString());
+  const { tree, vk } = await step("build merkle tree + load verification key", async () => {
+    const tree = MerkleTree.create(
+      LEVELS,
+      members.map((m) => m.identity.commitment),
+    );
+    console.log("   Merkle root:", tree.root.toString());
 
-  const vkJson = JSON.parse(
-    readFileSync(
-      path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "circuits", "verification_key.json"),
-      "utf8",
-    ),
-  );
-  const vk = verificationKeyToContractFormat(vkJson);
+    const vkJson = JSON.parse(
+      readFileSync(
+        path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "circuits", "verification_key.json"),
+        "utf8",
+      ),
+    );
+    return { tree, vk: verificationKeyToContractFormat(vkJson) };
+  });
 
   console.log("\n2. Creating the circle...");
   const adminClient = await withTimeout(
@@ -124,148 +165,165 @@ async function main() {
     30_000,
     "connect(admin)",
   );
-  const { result: circleId } = await withTimeout(
-    createCircle(adminClient, {
-      admin: admin.publicKey(),
-      token: TOKEN,
-      root: tree.root,
-      contribution: CONTRIBUTION,
-      size: CIRCLE_SIZE,
-      vk,
-    }),
-    30_000,
-    "createCircle",
-  );
-  console.log("   circle_id =", circleId);
+  const circleId = await step("create circle", async () => {
+    const { result: circleId } = await withTimeout(
+      createCircle(adminClient, {
+        admin: admin.publicKey(),
+        token: TOKEN,
+        root: tree.root,
+        contribution: CONTRIBUTION,
+        size: CIRCLE_SIZE,
+        vk,
+      }),
+      30_000,
+      "createCircle",
+    );
+    console.log("   circle_id =", circleId);
+    return circleId;
+  });
 
   console.log("\n3. Funding from all 5 members...");
-  for (const [i, m] of members.entries()) {
-    const memberClient = await withTimeout(
-      connect({ contractId: CONTRACT_ID, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE }, m.keypair),
-      30_000,
-      `connect(member ${i})`,
+  await step("fund from 5 members (round 0)", async () => {
+    for (const [i, m] of members.entries()) {
+      const memberClient = await withTimeout(
+        connect({ contractId: CONTRACT_ID, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE }, m.keypair),
+        30_000,
+        `connect(member ${i})`,
+      );
+      await withTimeout(
+        fund(memberClient, { circleId, from: m.keypair.publicKey() }),
+        30_000,
+        `fund(member ${i})`,
+      );
+      console.log(`   [${i + 1}/${CIRCLE_SIZE}] funded from`, m.keypair.publicKey());
+    }
+    const fundedCircle = await getCircle(adminClient, circleId);
+    assert(
+      fundedCircle.pot === CONTRIBUTION * BigInt(CIRCLE_SIZE),
+      `pot should equal ${CIRCLE_SIZE} x contribution, got ${fundedCircle.pot}`,
     );
-    await withTimeout(
-      fund(memberClient, { circleId, from: m.keypair.publicKey() }),
-      30_000,
-      `fund(member ${i})`,
-    );
-    console.log(`   [${i + 1}/${CIRCLE_SIZE}] funded from`, m.keypair.publicKey());
-  }
-  const fundedCircle = await getCircle(adminClient, circleId);
-  assert(
-    fundedCircle.pot === CONTRIBUTION * BigInt(CIRCLE_SIZE),
-    `pot should equal ${CIRCLE_SIZE} x contribution, got ${fundedCircle.pot}`,
-  );
-  console.log("   pot fully funded:", fundedCircle.pot.toString(), "stroops");
+    console.log("   pot fully funded:", fundedCircle.pot.toString(), "stroops");
+  });
 
   console.log("\n4. Generating a real ZK proof for member", CLAIMANT_INDEX, "...");
-  const claimant = members[CLAIMANT_INDEX];
-  const merkleProof = tree.proof(CLAIMANT_INDEX);
   const externalNullifier = await computeExternalNullifier(circleId, 0n);
-  const circuitsBuildDir = path.join(
-    path.dirname(fileURLToPath(import.meta.url)),
-    "..",
-    "circuits",
-    "build",
-  );
-  const { proof, nullifierHash, root, externalNullifier: provenExternalNullifier } =
-    await generateProof(
-      {
-        identityNullifier: claimant.identity.identityNullifier,
-        identitySecret: claimant.identity.identitySecret,
-        pathElements: merkleProof.pathElements,
-        pathIndices: merkleProof.pathIndices,
-        root: tree.root,
-        externalNullifier,
-      },
-      path.join(circuitsBuildDir, "membership_js", "membership.wasm"),
-      path.join(circuitsBuildDir, "membership_final.zkey"),
+  const { proof, nullifierHash } = await step("generate ZK proof", async () => {
+    const claimant = members[CLAIMANT_INDEX];
+    const merkleProof = tree.proof(CLAIMANT_INDEX);
+    const circuitsBuildDir = path.join(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "..",
+      "circuits",
+      "build",
     );
-  assert(root === tree.root, "proof's public root must match the circle's root");
-  assert(
-    provenExternalNullifier === externalNullifier,
-    "proof's public externalNullifier must match the expected round tag",
-  );
-  console.log("   proof generated, nullifierHash =", nullifierHash.toString());
+    const { proof, nullifierHash, root, externalNullifier: provenExternalNullifier } =
+      await generateProof(
+        {
+          identityNullifier: claimant.identity.identityNullifier,
+          identitySecret: claimant.identity.identitySecret,
+          pathElements: merkleProof.pathElements,
+          pathIndices: merkleProof.pathIndices,
+          root: tree.root,
+          externalNullifier,
+        },
+        path.join(circuitsBuildDir, "membership_js", "membership.wasm"),
+        path.join(circuitsBuildDir, "membership_final.zkey"),
+      );
+    assert(root === tree.root, "proof's public root must match the circle's root");
+    assert(
+      provenExternalNullifier === externalNullifier,
+      "proof's public externalNullifier must match the expected round tag",
+    );
+    console.log("   proof generated, nullifierHash =", nullifierHash.toString());
+    return { proof, nullifierHash };
+  });
 
   console.log("\n5. Generating a FRESH recipient address (never used as a funder)...");
-  const recipient = Keypair.random();
-  await friendbotFund(recipient.publicKey());
-  console.log("   recipient =", recipient.publicKey());
+  const recipient = await step("fund fresh recipient", async () => {
+    const recipient = Keypair.random();
+    await friendbotFund(recipient.publicKey());
+    console.log("   recipient =", recipient.publicKey());
+    return recipient;
+  });
 
   console.log("\n6. Claiming the pot to the fresh recipient...");
-  const balanceBefore = await nativeBalance(recipient.publicKey());
-  await withTimeout(
-    claim(adminClient, {
-      circleId,
-      recipient: recipient.publicKey(),
-      nullifierHash,
-      externalNullifier,
-      proof,
-    }),
-    30_000,
-    "claim (round 0)",
-  );
-  const balanceAfter = await nativeBalance(recipient.publicKey());
-  assert(
-    balanceAfter - balanceBefore === CONTRIBUTION * BigInt(CIRCLE_SIZE),
-    `recipient should have received exactly the pot (got delta ${balanceAfter - balanceBefore})`,
-  );
+  await step("claim payout", async () => {
+    const balanceBefore = await nativeBalance(recipient.publicKey());
+    await withTimeout(
+      claim(adminClient, {
+        circleId,
+        recipient: recipient.publicKey(),
+        nullifierHash,
+        externalNullifier,
+        proof,
+      }),
+      30_000,
+      "claim (round 0)",
+    );
+    const balanceAfter = await nativeBalance(recipient.publicKey());
+    assert(
+      balanceAfter - balanceBefore === CONTRIBUTION * BigInt(CIRCLE_SIZE),
+      `recipient should have received exactly the pot (got delta ${balanceAfter - balanceBefore})`,
+    );
 
-  const claimedCircle = await getCircle(adminClient, circleId);
-  assert(claimedCircle.pot === 0n, "pot should be empty after claim");
-  assert(claimedCircle.round === 1, "round should have advanced to 1");
-  console.log("   payout confirmed: pot -> 0, round -> 1");
+    const claimedCircle = await getCircle(adminClient, circleId);
+    assert(claimedCircle.pot === 0n, "pot should be empty after claim");
+    assert(claimedCircle.round === 1, "round should have advanced to 1");
+    console.log("   payout confirmed: pot -> 0, round -> 1");
+  });
 
   console.log("\n7. Funding round 1, then attempting to reuse round 0's nullifier...");
   // Fund a fresh round first so this specifically exercises nullifier-reuse
   // rejection (AlreadyClaimed) rather than the (also-true, but less
   // interesting) fact that an empty pot can't be claimed.
-  for (const [i, m] of members.entries()) {
-    const memberClient = await withTimeout(
-      connect({ contractId: CONTRACT_ID, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE }, m.keypair),
-      30_000,
-      `connect(member ${i}, round 1)`,
-    );
-    await withTimeout(
-      fund(memberClient, { circleId, from: m.keypair.publicKey() }),
-      30_000,
-      `fund(member ${i}, round 1)`,
-    );
-    console.log(`   [${i + 1}/${CIRCLE_SIZE}] funded round 1 from`, m.keypair.publicKey());
-  }
-  const round1ExternalNullifier = await computeExternalNullifier(circleId, 1n);
+  await step("fund round 1 + replay rejected nullifier", async () => {
+    for (const [i, m] of members.entries()) {
+      const memberClient = await withTimeout(
+        connect({ contractId: CONTRACT_ID, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE }, m.keypair),
+        30_000,
+        `connect(member ${i}, round 1)`,
+      );
+      await withTimeout(
+        fund(memberClient, { circleId, from: m.keypair.publicKey() }),
+        30_000,
+        `fund(member ${i}, round 1)`,
+      );
+      console.log(`   [${i + 1}/${CIRCLE_SIZE}] funded round 1 from`, m.keypair.publicKey());
+    }
+    const round1ExternalNullifier = await computeExternalNullifier(circleId, 1n);
 
-  let secondClaimRejected = false;
-  try {
-    await withTimeout(
-      claim(adminClient, {
-        circleId,
-        recipient: Keypair.random().publicKey(),
-        nullifierHash,
-        externalNullifier: round1ExternalNullifier,
-        proof,
-      }),
-      30_000,
-      "claim (reuse attempt)",
-    );
-  } catch (err) {
-    const message = (err as Error).message;
-    secondClaimRejected = true;
-    assert(
-      message.includes("Error(Contract, #4)"),
-      `expected AlreadyClaimed (#4), got: ${message.split("\n")[0]}`,
-    );
-    console.log("   rejected as expected (AlreadyClaimed):", message.split("\n")[0]);
-  }
-  assert(secondClaimRejected, "a second claim with the same nullifier must be rejected");
+    let secondClaimRejected = false;
+    try {
+      await withTimeout(
+        claim(adminClient, {
+          circleId,
+          recipient: Keypair.random().publicKey(),
+          nullifierHash,
+          externalNullifier: round1ExternalNullifier,
+          proof,
+        }),
+        30_000,
+        "claim (reuse attempt)",
+      );
+    } catch (err) {
+      const message = (err as Error).message;
+      secondClaimRejected = true;
+      assert(
+        message.includes("Error(Contract, #4)"),
+        `expected AlreadyClaimed (#4), got: ${message.split("\n")[0]}`,
+      );
+      console.log("   rejected as expected (AlreadyClaimed):", message.split("\n")[0]);
+    }
+    assert(secondClaimRejected, "a second claim with the same nullifier must be rejected");
+  });
 
   console.log("\nAll assertions passed.");
   console.log(
     `Recipient ${recipient.publicKey()} is a freshly generated keypair with no on-chain history`,
     "connecting it to any of the 5 funders — that's the unlinkability the ZK proof buys.",
   );
+
+  printStepSummary();
 
   // The RPC client's underlying HTTP keep-alive connections otherwise leave
   // the process hanging after main() resolves.
@@ -274,5 +332,6 @@ async function main() {
 
 main().catch((err) => {
   console.error("\ne2e FAILED:", err);
+  printStepSummary();
   process.exit(1);
 });
