@@ -339,6 +339,29 @@ h2 {
   font-size: 13px;
 }
 
+.testnet-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 12px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  font-family: "JetBrains Mono", monospace;
+  color: #666;
+  background: #f5f5f5;
+  border: 2px solid #ddd;
+  width: 100%;
+  max-width: 620px;
+}
+
+.banner-link {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  color: #666;
+  text-decoration: underline;
+}
+
 code {
   font-family: "JetBrains Mono", monospace;
   background: #eee;
