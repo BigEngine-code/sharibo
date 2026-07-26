@@ -100,8 +100,11 @@ export interface ProveResult {
 // NOTES.md (Phase 1 deviation).
 export async function generateProof(
   input: CircuitInput,
-  wasmPath: string,
-  zkeyPath: string,
+  // A path/URL string (snarkjs fetches it) or an already-fetched binary —
+  // the browser app fetches these itself so it can time and report on the
+  // fetch separately from the prove step (see app/src/App.tsx doClaim).
+  wasmPath: string | Uint8Array,
+  zkeyPath: string | Uint8Array,
 ): Promise<ProveResult> {
   const circuitInput = {
     identityNullifier: input.identityNullifier.toString(),
