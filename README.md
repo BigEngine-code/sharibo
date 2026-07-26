@@ -14,7 +14,6 @@ Built for the **Stellar Hacks: Real-World ZK** hackathon. Testnet only, no real 
   ~1280px wide, convert with e.g. `ffmpeg -i demo.mp4 -vf
   "fps=12,scale=960:-1" demo.gif`, keep it under ~8 MB.
 ─────────────────────────────────────────────────────────────── -->
-![Sharibo demo — live proof generation and anonymous claim](docs/demo.gif)
 
 **[▶ demo video](YOUR_VIDEO_URL)** · **[🚀 live app (testnet)](https://dist-flax-three-43.vercel.app)** · **[📖 full product breakdown](full_product_breakdown.md)** · **[🛠 build log](NOTES.md)**
 
