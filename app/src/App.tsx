@@ -149,10 +149,48 @@ export default function App() {
   const [nullifierHash, setNullifierHash] = useState<bigint | null>(null);
   const [claimResult, setClaimResult] = useState<ClaimResult | null>(null);
   const [rejection, setRejection] = useState<string | null>(null);
+  // Survives a reset so the landing screen can point back at the circle you
+  // just left — it keeps living on-chain even though the UI has moved on.
+  const [previousCircleId, setPreviousCircleId] = useState<bigint | null>(null);
 
   const contribution = BigInt(contributionXlm) * STROOPS_PER_XLM;
   const fundedCount = members.filter((m) => m.funded).length;
   const fullyFunded = pot === contribution * BigInt(CIRCLE_SIZE);
+
+  // Reset every piece of React state back to its initial value and return to
+  // the landing screen. The circle itself is never touched on-chain — it lives
+  // on forever; we just stop pointing the UI at it (and remember its id so the
+  // landing screen can link back to it). Confirm first only when a circle is
+  // mid-flow — funded but not yet claimed — so an accidental click can't throw
+  // away an in-progress round; a completed or untouched circle resets silently.
+  function resetToLanding() {
+    const midFlow = fundedCount > 0 && !claimResult;
+    if (midFlow) {
+      const ok = window.confirm(
+        "This circle is funded but hasn't claimed yet. Start over anyway?\n\n" +
+          "Your current circle stays on-chain — you just won't see it here.",
+      );
+      if (!ok) return;
+    }
+
+    setPreviousCircleId(circleId);
+
+    setBusy(null);
+    setError(null);
+    setContributionXlm(10);
+    setAdmin(null);
+    setMembers([]);
+    setTree(null);
+    setCircleId(null);
+    setRound(0);
+    setPot(0n);
+    setClaimantIndex(0);
+    setProof(null);
+    setNullifierHash(null);
+    setClaimResult(null);
+    setRejection(null);
+    setScreen("landing");
+  }
 
   async function startCircle() {
     setError(null);
@@ -340,6 +378,14 @@ export default function App() {
             {busy ?? "Launch a 5-member circle on testnet"}
           </button>
           {error && <p className="error">{error}</p>}
+          {previousCircleId !== null && (
+            <p className="fineprint">
+              Your previous circle lives on at{" "}
+              <a className="link" href={explorerContract()} target="_blank" rel="noreferrer">
+                circle #{previousCircleId.toString()} ↗
+              </a>
+            </p>
+          )}
           <p className="fineprint">
             Testnet only. Demo identities are generated fresh in your browser, never reused.
           </p>
@@ -355,9 +401,19 @@ export default function App() {
       <div className="card">
         <div className="row space-between">
           <h1 className="small">SHARIBO</h1>
-          <a className="link" href={explorerContract()} target="_blank" rel="noreferrer">
-            circle #{circleId?.toString()} on-chain ↗
-          </a>
+          <div className="row">
+            <a className="link" href={explorerContract()} target="_blank" rel="noreferrer">
+              circle #{circleId?.toString()} on-chain ↗
+            </a>
+            <button
+              className="btn btn-small"
+              disabled={!!busy}
+              onClick={resetToLanding}
+              title={`Start over. Your current circle (#${circleId?.toString()}) keeps living on-chain.`}
+            >
+              Start a new circle
+            </button>
+          </div>
         </div>
 
         <Stepper step={step} />
@@ -447,9 +503,14 @@ export default function App() {
               {busy ?? "Try to claim again with the same proof"}
             </button>
             {rejection && (
-              <div className="rejected">
-                <strong>Rejected on-chain:</strong> {rejection}
-              </div>
+              <>
+                <div className="rejected">
+                  <strong>Rejected on-chain:</strong> {rejection}
+                </div>
+                <button className="btn btn-primary" disabled={!!busy} onClick={resetToLanding}>
+                  Start a new circle
+                </button>
+              </>
             )}
           </div>
         )}
