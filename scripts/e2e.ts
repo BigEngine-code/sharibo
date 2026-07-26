@@ -27,6 +27,7 @@ import {
   claim,
   getCircle,
 } from "@sharibo/client";
+import { checkContractDeployed } from "./testnet-health.js";
 
 process.loadEnvFile(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", ".env"));
 
@@ -88,6 +89,12 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 
 async function main() {
   console.log("Sharibo e2e — full private round on Stellar testnet\n");
+
+  const health = await checkContractDeployed(RPC_URL, CONTRACT_ID);
+  if (!health.ok) {
+    console.error(`\n${health.message}\n`);
+    process.exit(1);
+  }
 
   const admin = Keypair.fromSecret(ADMIN_SECRET);
 
