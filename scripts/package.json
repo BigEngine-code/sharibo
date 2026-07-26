@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "e2e": "tsx e2e.ts"
+    "e2e": "tsx e2e.ts",
+    "test": "node --import tsx --test e2e-flags.test.ts"
   },
   "dependencies": {
     "@sharibo/client": "*",
