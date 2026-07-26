@@ -1,5 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Keypair } from "@stellar/stellar-sdk";
+import {
+  isConnected,
+  requestAccess,
+  isAllowed,
+  getAddress,
+  getNetworkDetails,
+  signTransaction as freighterSignTx
+} from "@stellar/freighter-api";
 import {
   generateIdentity,
   computeExternalNullifier,
@@ -65,6 +73,7 @@ interface Member {
   identity: Identity;
   funded: boolean;
   fundHash?: string;
+  freighterKey?: string;
 }
 
 interface ClaimResult {
@@ -142,6 +151,11 @@ export default function App() {
   const [members, setMembers] = useState<Member[]>([]);
   const [tree, setTree] = useState<MerkleTree | null>(null);
   const [circleId, setCircleId] = useState<bigint | null>(null);
+  const [hasFreighter, setHasFreighter] = useState(false);
+
+  useEffect(() => {
+    isConnected().then((res) => setHasFreighter(res.isConnected)).catch(() => setHasFreighter(false));
+  }, []);
   const [round, setRound] = useState(0);
   const [pot, setPot] = useState(0n);
   const [claimantIndex, setClaimantIndex] = useState(0);
@@ -252,6 +266,62 @@ export default function App() {
       setMembers((prev) =>
         prev.map((mm, idx) => (idx === i ? { ...mm, funded: true, fundHash: hash } : mm)),
       );
+      const adminClient = await connect(NETWORK, admin);
+      const circle = await getCircle(adminClient, circleId);
+      setPot(circle.pot);
+      setRound(circle.round);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function fundWithFreighter(i: number) {
+    if (!admin || circleId === null) return;
+    setError(null);
+    setBusy(`Funding from member ${i + 1} via Freighter…`);
+    try {
+      const allowedRes = await isAllowed();
+      if (!allowedRes.isAllowed) {
+        await requestAccess();
+      }
+
+      const networkRes = await getNetworkDetails();
+      if (networkRes.network !== "TESTNET") {
+        throw new Error("Freighter is not set to Testnet. Please switch your network in Freighter.");
+      }
+
+      const addressRes = await getAddress();
+      const pubKey = addressRes.address;
+      if (!pubKey) {
+        throw new Error("Could not get address from Freighter.");
+      }
+      
+      const freighterSigner = {
+        publicKey: pubKey,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        signTransaction: async (txXdr: string, opts?: any) => {
+          const signedRes = await freighterSignTx(txXdr, {
+            networkPassphrase: networkRes.networkPassphrase
+          });
+          if (signedRes.error) {
+            throw new Error(signedRes.error.toString());
+          }
+          return signedRes.signedTxXdr;
+        }
+      };
+
+      const memberClient = await connect(NETWORK, freighterSigner);
+      const { hash } = await fund(memberClient, {
+        circleId,
+        from: pubKey,
+      });
+
+      setMembers((prev) =>
+        prev.map((mm, idx) => (idx === i ? { ...mm, funded: true, fundHash: hash, freighterKey: pubKey } : mm)),
+      );
+
       const adminClient = await connect(NETWORK, admin);
       const circle = await getCircle(adminClient, circleId);
       setPot(circle.pot);
@@ -432,19 +502,30 @@ export default function App() {
         <div className="members">
           {members.map((m, i) => (
             <div key={i} className={`member ${m.funded ? "funded" : ""}`}>
-              <span className="member-addr">member {i + 1} · {short(m.keypair.publicKey())}</span>
+              <span className="member-addr">member {i + 1} · {short(m.freighterKey || m.keypair.publicKey())}</span>
               {m.funded ? (
                 <a className="link" href={explorerTx(m.fundHash!)} target="_blank" rel="noreferrer">
                   ✓ funded ↗
                 </a>
               ) : (
-                <button
-                  className="btn btn-small"
-                  disabled={!!busy || round > 0}
-                  onClick={() => fundMember(i)}
-                >
-                  Fund {contributionXlm} XLM
-                </button>
+                <div className="row">
+                  <button
+                    className="btn btn-small"
+                    disabled={!!busy || round > 0}
+                    onClick={() => fundMember(i)}
+                  >
+                    Fund {contributionXlm} XLM (Demo)
+                  </button>
+                  {hasFreighter && (
+                    <button
+                      className="btn btn-small"
+                      disabled={!!busy || round > 0}
+                      onClick={() => fundWithFreighter(i)}
+                    >
+                      Fund with Freighter
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           ))}
