@@ -7,7 +7,7 @@
 // Requires: circuits/build/{membership_js/membership.wasm,membership_final.zkey}
 // (run circuits/scripts/{compile,setup}.sh first) and a populated .env.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { execFile } from "node:child_process";
@@ -86,6 +86,58 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   ]);
 }
 
+// Everything a run touched, dumped to scratch/ (gitignored) so a failed or
+// interesting run can be re-inspected afterward: get_circle'd, replayed, or
+// have its proof re-derived, without re-running the whole script.
+interface RunArtifactMember {
+  publicKey: string;
+  identityNullifier: string;
+  identitySecret: string;
+  commitment: string;
+  fundTxHashRound0?: string;
+  fundTxHashRound1?: string;
+}
+
+interface RunArtifact {
+  _WARNING: string;
+  timestamp: string;
+  network: { rpcUrl: string; networkPassphrase: string; contractId: string; token: string };
+  circleId?: string;
+  treeRoot?: string;
+  createCircleTxHash?: string;
+  members: RunArtifactMember[];
+  claim?: { recipient: string; txHash: string; nullifierHash: string };
+  replayAttempt?: { rejected: boolean; detail: string };
+}
+
+const runArtifact: RunArtifact = {
+  _WARNING:
+    "TESTNET-ONLY DEBUG ARTIFACT — contains identity secrets (identityNullifier/identitySecret). " +
+    "Never commit this file, never let it leave scratch/, never reuse these keys for anything real.",
+  timestamp: new Date().toISOString(),
+  network: {
+    rpcUrl: RPC_URL,
+    networkPassphrase: NETWORK_PASSPHRASE,
+    contractId: CONTRACT_ID,
+    token: TOKEN,
+  },
+  members: [],
+};
+
+function writeRunArtifact(): string {
+  const scratchDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "scratch");
+  mkdirSync(scratchDir, { recursive: true });
+  const filePath = path.join(
+    scratchDir,
+    `e2e-run-${runArtifact.timestamp.replace(/[:.]/g, "-")}.json`,
+  );
+  writeFileSync(
+    filePath,
+    JSON.stringify(runArtifact, (_key, value) => (typeof value === "bigint" ? value.toString() : value), 2),
+  );
+  return filePath;
+}
+
 async function main() {
   console.log("Sharibo e2e — full private round on Stellar testnet\n");
 
@@ -103,12 +155,19 @@ async function main() {
     "   members:",
     members.map((m) => m.keypair.publicKey()),
   );
+  runArtifact.members = members.map((m) => ({
+    publicKey: m.keypair.publicKey(),
+    identityNullifier: m.identity.identityNullifier.toString(),
+    identitySecret: m.identity.identitySecret.toString(),
+    commitment: m.identity.commitment.toString(),
+  }));
 
   const tree = MerkleTree.create(
     LEVELS,
     members.map((m) => m.identity.commitment),
   );
   console.log("   Merkle root:", tree.root.toString());
+  runArtifact.treeRoot = tree.root.toString();
 
   const vkJson = JSON.parse(
     readFileSync(
@@ -124,7 +183,7 @@ async function main() {
     30_000,
     "connect(admin)",
   );
-  const { result: circleId } = await withTimeout(
+  const { result: circleId, hash: createCircleTxHash } = await withTimeout(
     createCircle(adminClient, {
       admin: admin.publicKey(),
       token: TOKEN,
@@ -137,6 +196,8 @@ async function main() {
     "createCircle",
   );
   console.log("   circle_id =", circleId);
+  runArtifact.circleId = circleId.toString();
+  runArtifact.createCircleTxHash = createCircleTxHash;
 
   console.log("\n3. Funding from all 5 members...");
   for (const [i, m] of members.entries()) {
@@ -145,12 +206,13 @@ async function main() {
       30_000,
       `connect(member ${i})`,
     );
-    await withTimeout(
+    const { hash: fundTxHash } = await withTimeout(
       fund(memberClient, { circleId, from: m.keypair.publicKey() }),
       30_000,
       `fund(member ${i})`,
     );
     console.log(`   [${i + 1}/${CIRCLE_SIZE}] funded from`, m.keypair.publicKey());
+    runArtifact.members[i].fundTxHashRound0 = fundTxHash;
   }
   const fundedCircle = await getCircle(adminClient, circleId);
   assert(
@@ -196,7 +258,7 @@ async function main() {
 
   console.log("\n6. Claiming the pot to the fresh recipient...");
   const balanceBefore = await nativeBalance(recipient.publicKey());
-  await withTimeout(
+  const { hash: claimTxHash } = await withTimeout(
     claim(adminClient, {
       circleId,
       recipient: recipient.publicKey(),
@@ -207,6 +269,11 @@ async function main() {
     30_000,
     "claim (round 0)",
   );
+  runArtifact.claim = {
+    recipient: recipient.publicKey(),
+    txHash: claimTxHash,
+    nullifierHash: nullifierHash.toString(),
+  };
   const balanceAfter = await nativeBalance(recipient.publicKey());
   assert(
     balanceAfter - balanceBefore === CONTRIBUTION * BigInt(CIRCLE_SIZE),
@@ -228,12 +295,13 @@ async function main() {
       30_000,
       `connect(member ${i}, round 1)`,
     );
-    await withTimeout(
+    const { hash: fundTxHash } = await withTimeout(
       fund(memberClient, { circleId, from: m.keypair.publicKey() }),
       30_000,
       `fund(member ${i}, round 1)`,
     );
     console.log(`   [${i + 1}/${CIRCLE_SIZE}] funded round 1 from`, m.keypair.publicKey());
+    runArtifact.members[i].fundTxHashRound1 = fundTxHash;
   }
   const round1ExternalNullifier = await computeExternalNullifier(circleId, 1n);
 
@@ -258,6 +326,7 @@ async function main() {
       `expected AlreadyClaimed (#4), got: ${message.split("\n")[0]}`,
     );
     console.log("   rejected as expected (AlreadyClaimed):", message.split("\n")[0]);
+    runArtifact.replayAttempt = { rejected: true, detail: message.split("\n")[0] };
   }
   assert(secondClaimRejected, "a second claim with the same nullifier must be rejected");
 
@@ -267,6 +336,8 @@ async function main() {
     "connecting it to any of the 5 funders — that's the unlinkability the ZK proof buys.",
   );
 
+  console.log("\nRun artifact:", writeRunArtifact());
+
   // The RPC client's underlying HTTP keep-alive connections otherwise leave
   // the process hanging after main() resolves.
   process.exit(0);
@@ -274,5 +345,8 @@ async function main() {
 
 main().catch((err) => {
   console.error("\ne2e FAILED:", err);
+  if (runArtifact.members.length > 0) {
+    console.error("Run artifact (partial):", writeRunArtifact());
+  }
   process.exit(1);
 });
