@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Keypair } from "@stellar/stellar-sdk";
 import {
   generateIdentity,
@@ -14,6 +14,23 @@ import {
   type Identity,
   type ContractProof,
 } from "@sharibo/client";
+
+const BIGINT_MARKER = 'BIGINT::';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function replacer(key: string, value: any) {
+  if (typeof value === 'bigint') {
+    return BIGINT_MARKER + value.toString();
+  }
+  return value;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function reviver(key: string, value: any) {
+  if (typeof value === 'string' && value.startsWith(BIGINT_MARKER)) {
+    return BigInt(value.slice(BIGINT_MARKER.length));
+  }
+  return value;
+}
 
 const NETWORK = {
   contractId: import.meta.env.VITE_SHARIBO_CONTRACT_ID as string,
@@ -77,7 +94,10 @@ function Stepper({ step }: { step: 0 | 1 | 2 | 3 }) {
   return (
     <div className="stepper">
       {labels.map((label, i) => (
-        <div key={label} className={`step ${i < step ? "done" : i === step ? "active" : ""}`}>
+        <div
+          key={label}
+          className={`step ${i < step ? "done" : i === step ? "active" : ""}`}
+        >
           <span className="step-dot">{i < step ? "✓" : i + 1}</span>
           {label}
         </div>
@@ -117,15 +137,19 @@ function MemberRing({
           );
         })}
         {revealed && (
-          <div className="ring-node ring-recipient" style={{ transform: "translate(0px, -170px)" }}>
+          <div
+            className="ring-node ring-recipient"
+            style={{ transform: "translate(0px, -170px)" }}
+          >
             ?
           </div>
         )}
       </div>
       {revealed && (
         <p className="ring-caption">
-          Payout landed on the address above — cryptographically, it could be tied to <em>any</em>{" "}
-          of the 5 members in the ring. An outside observer cannot tell which.
+          Payout landed on the address above — cryptographically, it could be
+          tied to <em>any</em> of the 5 members in the ring. An outside observer
+          cannot tell which.
         </p>
       )}
     </div>
@@ -149,6 +173,51 @@ export default function App() {
   const [nullifierHash, setNullifierHash] = useState<bigint | null>(null);
   const [claimResult, setClaimResult] = useState<ClaimResult | null>(null);
   const [rejection, setRejection] = useState<string | null>(null);
+  const [resumePrompt, setResumePrompt] = useState<any>(null);
+
+  useEffect(() => {
+    const saved = sessionStorage.getItem("sharibo_demo_state");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved, reviver);
+        if (parsed && parsed.circleId) {
+          setResumePrompt(parsed);
+        }
+      } catch (e) {
+        sessionStorage.removeItem("sharibo_demo_state");
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (circleId !== null && admin) {
+      const stateToSave = {
+        contributionXlm,
+        adminSecret: admin.secret(),
+        members: members.map(m => ({
+          secret: m.keypair.secret(),
+          identity: m.identity,
+          funded: m.funded,
+          fundHash: m.fundHash,
+        })),
+        circleId,
+        round,
+        pot,
+        claimantIndex,
+        proof,
+        nullifierHash,
+        claimResult,
+        rejection,
+      };
+      
+      // We use sessionStorage (not localStorage) because these are real cryptographic secrets
+      // for testnet. The app warns that identities are never reused, so they should be
+      // scoped to the current tab and cleared when it closes.
+      sessionStorage.setItem("sharibo_demo_state", JSON.stringify(stateToSave, replacer));
+    }
+  }, [
+    contributionXlm, admin, members, circleId, round, pot, claimantIndex, proof, nullifierHash, claimResult, rejection
+  ]);
   // Survives a reset so the landing screen can point back at the circle you
   // just left — it keeps living on-chain even though the UI has moved on.
   const [previousCircleId, setPreviousCircleId] = useState<bigint | null>(null);
@@ -174,6 +243,7 @@ export default function App() {
     }
 
     setPreviousCircleId(circleId);
+    sessionStorage.removeItem("sharibo_demo_state");
 
     setBusy(null);
     setError(null);
@@ -192,9 +262,42 @@ export default function App() {
     setScreen("landing");
   }
 
+  function loadState(parsed: any) {
+    setContributionXlm(parsed.contributionXlm);
+    setAdmin(Keypair.fromSecret(parsed.adminSecret));
+    
+    const loadedMembers = parsed.members.map((m: any) => ({
+      keypair: Keypair.fromSecret(m.secret),
+      identity: m.identity,
+      funded: m.funded,
+      fundHash: m.fundHash,
+    }));
+    setMembers(loadedMembers);
+    
+    const newTree = MerkleTree.create(
+      LEVELS,
+      loadedMembers.map((m: any) => m.identity.commitment)
+    );
+    setTree(newTree);
+
+    setCircleId(parsed.circleId);
+    setRound(parsed.round);
+    setPot(parsed.pot);
+    setClaimantIndex(parsed.claimantIndex);
+    setProof(parsed.proof);
+    setNullifierHash(parsed.nullifierHash);
+    setClaimResult(parsed.claimResult);
+    setRejection(parsed.rejection);
+    
+    setScreen("circle");
+    setResumePrompt(null);
+  }
+
   async function startCircle() {
     setError(null);
-    setBusy("Generating a fresh admin + 5 member identities and funding via friendbot…");
+    setBusy(
+      "Generating a fresh admin + 5 member identities and funding via friendbot…",
+    );
     try {
       const adminKp = Keypair.random();
       await friendbotFund(adminKp.publicKey());
@@ -211,7 +314,9 @@ export default function App() {
       );
 
       setBusy("Creating the circle on testnet…");
-      const vkJson = await fetch("/circuits/verification_key.json").then((r) => r.json());
+      const vkJson = await fetch("/circuits/verification_key.json").then((r) =>
+        r.json(),
+      );
       const vk = verificationKeyToContractFormat(vkJson);
       const adminClient = await connect(NETWORK, adminKp);
       const { result: newCircleId } = await createCircle(adminClient, {
@@ -250,7 +355,9 @@ export default function App() {
         from: m.keypair.publicKey(),
       });
       setMembers((prev) =>
-        prev.map((mm, idx) => (idx === i ? { ...mm, funded: true, fundHash: hash } : mm)),
+        prev.map((mm, idx) =>
+          idx === i ? { ...mm, funded: true, fundHash: hash } : mm,
+        ),
       );
       const adminClient = await connect(NETWORK, admin);
       const circle = await getCircle(adminClient, circleId);
@@ -268,11 +375,16 @@ export default function App() {
     setError(null);
     setClaimResult(null);
     setRejection(null);
-    setBusy("Proving… (a real Groth16 proof is being generated in your browser)");
+    setBusy(
+      "Proving… (a real Groth16 proof is being generated in your browser)",
+    );
     try {
       const claimant = members[claimantIndex];
       const merkleProof = tree.proof(claimantIndex);
-      const externalNullifier = await computeExternalNullifier(circleId, BigInt(round));
+      const externalNullifier = await computeExternalNullifier(
+        circleId,
+        BigInt(round),
+      );
       const generated = await generateProof(
         {
           identityNullifier: claimant.identity.identityNullifier,
@@ -286,7 +398,9 @@ export default function App() {
         "/circuits/membership_final.zkey",
       );
 
-      setBusy("Submitting the claim and generating a fresh, unlinked recipient…");
+      setBusy(
+        "Submitting the claim and generating a fresh, unlinked recipient…",
+      );
       const recipient = Keypair.random();
       await friendbotFund(recipient.publicKey());
 
@@ -317,7 +431,9 @@ export default function App() {
     if (!admin || circleId === null || !proof || nullifierHash === null) return;
     setError(null);
     setRejection(null);
-    setBusy("Refunding a new round, then replaying the same proof's nullifier…");
+    setBusy(
+      "Refunding a new round, then replaying the same proof's nullifier…",
+    );
     try {
       // Fund round `round` again so this exercises the nullifier-reuse
       // check specifically, not just "the pot is empty" — the same
@@ -327,7 +443,10 @@ export default function App() {
         const memberClient = await connect(NETWORK, m.keypair);
         await fund(memberClient, { circleId, from: m.keypair.publicKey() });
       }
-      const freshExternalNullifier = await computeExternalNullifier(circleId, BigInt(round));
+      const freshExternalNullifier = await computeExternalNullifier(
+        circleId,
+        BigInt(round),
+      );
 
       setBusy("Replaying the used nullifier…");
       await claim(adminClient, {
@@ -337,7 +456,9 @@ export default function App() {
         externalNullifier: freshExternalNullifier,
         proof,
       });
-      setRejection("Unexpected: the replayed claim was accepted (this should never happen).");
+      setRejection(
+        "Unexpected: the replayed claim was accepted (this should never happen).",
+      );
     } catch (e) {
       setRejection((e as Error).message);
     } finally {
@@ -355,6 +476,30 @@ export default function App() {
     }
   }
 
+  if (resumePrompt && screen === "landing") {
+    return (
+      <div className="page">
+        <div className="card hero">
+          <h1>Resume Circle #{resumePrompt.circleId.toString()}?</h1>
+          <p className="sub">
+            It looks like you refreshed the page while a circle was active. Do you want to resume?
+          </p>
+          <div className="row" style={{ marginTop: '2rem', justifyContent: 'center', gap: '1rem' }}>
+            <button className="btn btn-primary" onClick={() => loadState(resumePrompt)}>
+              Resume Circle
+            </button>
+            <button className="btn btn-danger" onClick={() => {
+              sessionStorage.removeItem("sharibo_demo_state");
+              setResumePrompt(null);
+            }}>
+              Discard
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (screen === "landing") {
     return (
       <div className="page">
@@ -368,26 +513,38 @@ export default function App() {
           </div>
           <h1>SHARIBO</h1>
           <p className="tagline">
-            A private rotating savings circle — on Stellar, with real zero-knowledge proofs.
+            A private rotating savings circle — on Stellar, with real
+            zero-knowledge proofs.
           </p>
           <p className="sub">
-            Every round, everyone contributes. Every round, one member takes the pot. Sharibo
-            proves <em>who's entitled to claim</em> without ever revealing <em>who</em> claimed.
+            Every round, everyone contributes. Every round, one member takes the
+            pot. Sharibo proves <em>who's entitled to claim</em> without ever
+            revealing <em>who</em> claimed.
           </p>
-          <button className="btn btn-primary" disabled={!!busy} onClick={startCircle}>
+          <button
+            className="btn btn-primary"
+            disabled={!!busy}
+            onClick={startCircle}
+          >
             {busy ?? "Launch a 5-member circle on testnet"}
           </button>
           {error && <p className="error">{error}</p>}
           {previousCircleId !== null && (
             <p className="fineprint">
               Your previous circle lives on at{" "}
-              <a className="link" href={explorerContract()} target="_blank" rel="noreferrer">
+              <a
+                className="link"
+                href={explorerContract()}
+                target="_blank"
+                rel="noreferrer"
+              >
                 circle #{previousCircleId.toString()} ↗
               </a>
             </p>
           )}
           <p className="fineprint">
-            Testnet only. Demo identities are generated fresh in your browser, never reused.
+            Testnet only. Demo identities are generated fresh in your browser,
+            never reused.
           </p>
         </div>
       </div>
@@ -402,7 +559,12 @@ export default function App() {
         <div className="row space-between">
           <h1 className="small">SHARIBO</h1>
           <div className="row">
-            <a className="link" href={explorerContract()} target="_blank" rel="noreferrer">
+            <a
+              className="link"
+              href={explorerContract()}
+              target="_blank"
+              rel="noreferrer"
+            >
               circle #{circleId?.toString()} on-chain ↗
             </a>
             <button
@@ -421,20 +583,30 @@ export default function App() {
         <MemberRing members={members} revealed={!!claimResult} />
 
         <div className="pot-bar-wrap">
-          <div className="pot-bar" style={{ width: `${(fundedCount / CIRCLE_SIZE) * 100}%` }} />
+          <div
+            className="pot-bar"
+            style={{ width: `${(fundedCount / CIRCLE_SIZE) * 100}%` }}
+          />
         </div>
         <p className="pot-label">
-          pot: {(Number(pot) / 1e7).toFixed(1)} / {contributionXlm * CIRCLE_SIZE} XLM · round{" "}
-          {round}
+          pot: {(Number(pot) / 1e7).toFixed(1)} /{" "}
+          {contributionXlm * CIRCLE_SIZE} XLM · round {round}
         </p>
 
         <h2>Fund</h2>
         <div className="members">
           {members.map((m, i) => (
             <div key={i} className={`member ${m.funded ? "funded" : ""}`}>
-              <span className="member-addr">member {i + 1} · {short(m.keypair.publicKey())}</span>
+              <span className="member-addr">
+                member {i + 1} · {short(m.keypair.publicKey())}
+              </span>
               {m.funded ? (
-                <a className="link" href={explorerTx(m.fundHash!)} target="_blank" rel="noreferrer">
+                <a
+                  className="link"
+                  href={explorerTx(m.fundHash!)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
                   ✓ funded ↗
                 </a>
               ) : (
@@ -454,8 +626,9 @@ export default function App() {
           <>
             <h2>Claim</h2>
             <p className="sub">
-              Pick which member is claiming this round — the proof will show the contract that
-              they're a real member <em>without</em> revealing which one.
+              Pick which member is claiming this round — the proof will show the
+              contract that they're a real member <em>without</em> revealing
+              which one.
             </p>
             <div className="row">
               {members.map((_, i) => (
@@ -470,13 +643,17 @@ export default function App() {
                 </label>
               ))}
             </div>
-            <button className="btn btn-primary" disabled={!!busy} onClick={doClaim}>
+            <button
+              className="btn btn-primary"
+              disabled={!!busy}
+              onClick={doClaim}
+            >
               {busy ?? "Generate proof & claim"}
             </button>
             {busy && (
               <p className="techline">
-                Groth16 · BLS12-381 · 1,452 constraints · proving locally in your browser, nothing
-                sent anywhere until the proof is done
+                Groth16 · BLS12-381 · 1,452 constraints · proving locally in
+                your browser, nothing sent anywhere until the proof is done
               </p>
             )}
           </>
@@ -487,19 +664,33 @@ export default function App() {
             <h2>Payout landed</h2>
             <p>
               Fresh recipient <code>{short(claimResult.recipient)}</code>{" "}
-              <a href={explorerAccount(claimResult.recipient)} target="_blank" rel="noreferrer">
+              <a
+                href={explorerAccount(claimResult.recipient)}
+                target="_blank"
+                rel="noreferrer"
+              >
                 ↗
               </a>{" "}
-              received the pot. It has never appeared anywhere else on this circle.
+              received the pot. It has never appeared anywhere else on this
+              circle.
             </p>
-            <a className="link" href={explorerTx(claimResult.hash)} target="_blank" rel="noreferrer">
+            <a
+              className="link"
+              href={explorerTx(claimResult.hash)}
+              target="_blank"
+              rel="noreferrer"
+            >
               view claim transaction ↗
             </a>
             <p className="callout">
-              Compare the 5 funding transactions above to this claim — same contract, no shared
-              address, no visible link.
+              Compare the 5 funding transactions above to this claim — same
+              contract, no shared address, no visible link.
             </p>
-            <button className="btn btn-danger" disabled={!!busy} onClick={claimAgain}>
+            <button
+              className="btn btn-danger"
+              disabled={!!busy}
+              onClick={claimAgain}
+            >
               {busy ?? "Try to claim again with the same proof"}
             </button>
             {rejection && (
@@ -507,7 +698,11 @@ export default function App() {
                 <div className="rejected">
                   <strong>Rejected on-chain:</strong> {rejection}
                 </div>
-                <button className="btn btn-primary" disabled={!!busy} onClick={resetToLanding}>
+                <button
+                  className="btn btn-primary"
+                  disabled={!!busy}
+                  onClick={resetToLanding}
+                >
                   Start a new circle
                 </button>
               </>
