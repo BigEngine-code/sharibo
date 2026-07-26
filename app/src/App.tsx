@@ -72,7 +72,7 @@ interface ClaimResult {
   hash: string;
 }
 
-function Stepper({ step }: { step: 0 | 1 | 2 | 3 }) {
+export function Stepper({ step }: { step: 0 | 1 | 2 | 3 }) {
   const labels = ["Create", "Fund", "Prove & Claim", "Unlinked ✓"];
   return (
     <div className="stepper">
@@ -90,7 +90,7 @@ function Stepper({ step }: { step: 0 | 1 | 2 | 3 }) {
 // as "the one that claimed" — that's the point. From outside the ring, all
 // five remain equally plausible; only the demo operator (via the radio
 // picker below) ever knows which one actually did.
-function MemberRing({
+export function MemberRing({
   members,
   revealed,
 }: {
@@ -125,7 +125,7 @@ function MemberRing({
       {revealed && (
         <p className="ring-caption">
           Payout landed on the address above — cryptographically, it could be tied to <em>any</em>{" "}
-          of the 5 members in the ring. An outside observer cannot tell which.
+          of the {members.length} members in the ring. An outside observer cannot tell which.
         </p>
       )}
     </div>
