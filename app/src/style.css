@@ -398,6 +398,7 @@ code {
   padding: 2px 4px;
 }
 
+<<<<<<< HEAD
 /* ── Mobile (< --bp-md) ─────────────────────────────────────────────── */
 @media (max-width: 767px) {
   :root {
@@ -540,5 +541,12 @@ code {
   .step {
     flex: 1 1 calc(50% - 2px);
     font-size: 8px;
+=======
+@media (prefers-reduced-motion: reduce) {
+  .btn,
+  .pot-bar,
+  .ring-node {
+    transition: none !important;
+>>>>>>> 2e9a849 (Add prefers-reduced-motion media query to disable animations)
   }
 }
