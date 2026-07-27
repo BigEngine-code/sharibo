@@ -344,3 +344,11 @@ code {
   background: #eee;
   padding: 2px 4px;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .btn,
+  .pot-bar,
+  .ring-node {
+    transition: none !important;
+  }
+}
