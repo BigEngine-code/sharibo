@@ -5,7 +5,9 @@
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test src/*.test.ts",
+    "bench:prove": "tsx bench/prove.bench.ts"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "^16.0.1",
