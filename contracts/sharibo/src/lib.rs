@@ -56,6 +56,11 @@ pub enum Error {
     WrongRoundTag = 3,
     AlreadyClaimed = 4,
     InvalidProof = 5,
+    /// The round pot is already at `contribution * size`; further funds
+    /// would permanently brick `claim`'s exact-equality check.
+    RoundFull = 6,
+    /// Checked pot arithmetic overflowed (absurd contribution/size).
+    Overflow = 7,
 }
 
 const LEDGER_THRESHOLD: u32 = 100;
@@ -105,6 +110,14 @@ impl Contract {
         circle_id
     }
 
+    /// Deposit one `contribution` into the circle's pot for the current round.
+    ///
+    /// **Open funding:** any address may call `fund` (only `from.require_auth()`
+    /// is required). The Merkle root constrains who may *claim*, not who may
+    /// *fund*. That lets a benefactor top up a community pot without being a
+    /// member. Once the pot reaches `contribution * size`, further deposits
+    /// are rejected with [`Error::RoundFull`] so over-funding cannot brick
+    /// `claim`'s exact-equality check. See `contracts/README.md`.
     pub fn fund(env: Env, circle_id: u64, from: Address) {
         from.require_auth();
 
@@ -115,10 +128,22 @@ impl Contract {
             .get(&key)
             .unwrap_or_else(|| panic_with_error!(&env, Error::CircleNotFound));
 
+        let target = pot_target(&env, &circle);
+        if circle.pot >= target {
+            panic_with_error!(&env, Error::RoundFull);
+        }
+
         let token_client = token::Client::new(&env, &circle.token);
         token_client.transfer(&from, &env.current_contract_address(), &circle.contribution);
 
-        circle.pot += circle.contribution;
+        // Defensive: with RoundFull above, pot + contribution cannot exceed
+        // target when target itself fits in i128. Still use checked_add so an
+        // absurd contribution surfaces as Error::Overflow rather than a bare
+        // arithmetic trap (which would also depend on Cargo.toml overflow-checks).
+        circle.pot = circle
+            .pot
+            .checked_add(circle.contribution)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::Overflow));
         env.storage().persistent().set(&key, &circle);
         env.storage()
             .persistent()
@@ -141,7 +166,7 @@ impl Contract {
             .unwrap_or_else(|| panic_with_error!(&env, Error::CircleNotFound));
 
         // 1. round must be fully funded
-        if circle.pot != circle.contribution * (circle.size as i128) {
+        if circle.pot != pot_target(&env, &circle) {
             panic_with_error!(&env, Error::RoundNotFunded);
         }
 
@@ -190,6 +215,15 @@ impl Contract {
             .persistent()
             .get(&DataKey::Circle(circle_id))
             .unwrap_or_else(|| panic_with_error!(&env, Error::CircleNotFound))
+    }
+
+    /// Pure read: whether `nullifier_hash` has already been used to claim in
+    /// this circle. Mirrors the storage lookup in [`Self::claim`] so wallets
+    /// can check eligibility without submitting a failing transaction.
+    pub fn has_claimed(env: Env, circle_id: u64, nullifier_hash: Fr) -> bool {
+        env.storage()
+            .persistent()
+            .has(&DataKey::Nullifier(circle_id, nullifier_hash))
     }
 
     // Binds a proof to (circle_id, round) with SHA-256 (a native, accelerated
@@ -247,6 +281,14 @@ impl Contract {
 
         bls.pairing_check(vp1, vp2)
     }
+}
+
+/// `contribution * size` for the current round, or [`Error::Overflow`].
+fn pot_target(env: &Env, circle: &Circle) -> i128 {
+    circle
+        .contribution
+        .checked_mul(circle.size as i128)
+        .unwrap_or_else(|| panic_with_error!(env, Error::Overflow))
 }
 
 mod test;

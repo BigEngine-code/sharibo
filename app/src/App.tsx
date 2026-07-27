@@ -11,6 +11,7 @@ import {
   fund,
   claim,
   getCircle,
+  hasClaimed,
   type Identity,
   type ContractProof,
 } from "@sharibo/client";
@@ -148,6 +149,7 @@ export default function App() {
   const [proof, setProof] = useState<ContractProof | null>(null);
   const [nullifierHash, setNullifierHash] = useState<bigint | null>(null);
   const [claimResult, setClaimResult] = useState<ClaimResult | null>(null);
+  const [nullifierClaimed, setNullifierClaimed] = useState(false);
   const [rejection, setRejection] = useState<string | null>(null);
   // Survives a reset so the landing screen can point back at the circle you
   // just left — it keeps living on-chain even though the UI has moved on.
@@ -188,6 +190,7 @@ export default function App() {
     setProof(null);
     setNullifierHash(null);
     setClaimResult(null);
+    setNullifierClaimed(false);
     setRejection(null);
     setScreen("landing");
   }
@@ -302,6 +305,7 @@ export default function App() {
       setProof(generated.proof);
       setNullifierHash(generated.nullifierHash);
       setClaimResult({ recipient: recipient.publicKey(), hash });
+      setNullifierClaimed(await hasClaimed(adminClient, circleId, generated.nullifierHash));
 
       const circle = await getCircle(adminClient, circleId);
       setPot(circle.pot);
@@ -499,9 +503,24 @@ export default function App() {
               Compare the 5 funding transactions above to this claim — same contract, no shared
               address, no visible link.
             </p>
-            <button className="btn btn-danger" disabled={!!busy} onClick={claimAgain}>
+            <button
+              className="btn btn-danger"
+              disabled={!!busy || (!!rejection && nullifierClaimed)}
+              onClick={claimAgain}
+              title={
+                rejection && nullifierClaimed
+                  ? "Nullifier already claimed (has_claimed)"
+                  : undefined
+              }
+            >
               {busy ?? "Try to claim again with the same proof"}
             </button>
+            {nullifierClaimed && !rejection && (
+              <p className="callout">
+                <code>has_claimed</code> is true for this nullifier — a replay will be rejected
+                on-chain.
+              </p>
+            )}
             {rejection && (
               <>
                 <div className="rejected">

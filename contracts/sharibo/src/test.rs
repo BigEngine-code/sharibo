@@ -407,3 +407,109 @@ fn claim_fits_cpu_budget() {
     // subgroup checks (~9.3M combined).
     assert!(s.env.cost_estimate().budget().cpu_instruction_cost() < 100_000_000);
 }
+
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")] // RoundFull
+fn sixth_fund_on_full_round_reverts() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    let token_admin_client = token::StellarAssetClient::new(&s.env, &s.token);
+
+    for m in s.members.iter() {
+        client.fund(&s.circle_id, m);
+    }
+
+    let circle = client.get_circle(&s.circle_id);
+    assert_eq!(circle.pot, s.contribution * (s.size as i128));
+
+    // A sixth deposit must fail with RoundFull — otherwise pot > target and
+    // claim's equality check bricks forever.
+    let griefer = Address::generate(&s.env);
+    token_admin_client.mint(&griefer, &s.contribution);
+    client.fund(&s.circle_id, &griefer);
+}
+
+#[test]
+fn claim_works_on_fully_funded_round_after_cap() {
+    // Companion to sixth_fund_on_full_round_reverts: five funds reach the
+    // cap exactly, claim still pays out (over-funding never mutated state).
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    let token_client = token::Client::new(&s.env, &s.token);
+
+    for m in s.members.iter() {
+        client.fund(&s.circle_id, m);
+    }
+    assert_eq!(
+        client.get_circle(&s.circle_id).pot,
+        s.contribution * (s.size as i128)
+    );
+
+    let recipient = Address::generate(&s.env);
+    let nullifier_hash = real_nullifier_hash(&s.env);
+    let external_nullifier = real_external_nullifier_round0(&s.env);
+    let proof = real_valid_proof(&s.env);
+    client.claim(
+        &s.circle_id,
+        &recipient,
+        &nullifier_hash,
+        &external_nullifier,
+        &proof,
+    );
+    assert_eq!(
+        token_client.balance(&recipient),
+        s.contribution * (s.size as i128)
+    );
+}
+
+#[test]
+fn has_claimed_false_before_true_after() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    let nullifier_hash = real_nullifier_hash(&s.env);
+
+    assert!(!client.has_claimed(&s.circle_id, &nullifier_hash));
+
+    for m in s.members.iter() {
+        client.fund(&s.circle_id, m);
+    }
+
+    let recipient = Address::generate(&s.env);
+    let external_nullifier = real_external_nullifier_round0(&s.env);
+    let proof = real_valid_proof(&s.env);
+    client.claim(
+        &s.circle_id,
+        &recipient,
+        &nullifier_hash,
+        &external_nullifier,
+        &proof,
+    );
+
+    assert!(client.has_claimed(&s.circle_id, &nullifier_hash));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #7)")] // Overflow
+fn fund_reverts_on_pot_target_overflow() {
+    // contribution * size overflows i128 → typed Overflow before any transfer.
+    let s = setup(2, i128::MAX);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    client.fund(&s.circle_id, &s.members[0]);
+}
+
+#[test]
+fn anyone_can_fund() {
+    // Open-funding guarantee: a stranger (not in the member set created by
+    // setup) can pay a contribution into the circle. Membership gates claim
+    // via the Merkle root, not fund. See contracts/README.md.
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    let token_admin_client = token::StellarAssetClient::new(&s.env, &s.token);
+
+    let stranger = Address::generate(&s.env);
+    token_admin_client.mint(&stranger, &s.contribution);
+    client.fund(&s.circle_id, &stranger);
+
+    let circle = client.get_circle(&s.circle_id);
+    assert_eq!(circle.pot, s.contribution);
+}
