@@ -306,6 +306,50 @@ h2 {
   margin-top: 8px;
 }
 
+.claim-explainer {
+  margin-top: 12px;
+  border: 2px dashed var(--ink);
+  background: #fffdf5;
+}
+
+.claim-explainer summary {
+  cursor: pointer;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 10px 12px;
+}
+
+.claim-explainer summary:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.claim-explainer-body {
+  border-top: 2px solid var(--ink);
+  padding: 12px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.claim-explainer-body section + section {
+  margin-top: 10px;
+}
+
+.claim-explainer-body h3 {
+  margin: 0 0 4px 0;
+  font-size: 14px;
+}
+
+.claim-explainer-body p {
+  margin: 0;
+}
+
+.claim-explainer-body ol {
+  margin: 0;
+  padding-left: 18px;
+}
+
 .members {
   display: flex;
   flex-direction: column;
