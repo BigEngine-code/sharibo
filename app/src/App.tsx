@@ -17,6 +17,11 @@ import {
 } from "@sharibo/client";
 import { config, configError } from "./config";
 import { useI18n } from "./i18n";
+import {
+  friendbotFund as fundWithFriendbot,
+  FriendbotRetryableError,
+  FRIEND_BOT_RATE_LIMIT_MESSAGE,
+} from "./lib/friendbot";
 
 const NETWORK = {
   contractId: config.contractId,
@@ -43,11 +48,16 @@ const NAMES = [
   "chit fund",
 ];
 
-async function friendbotFund(publicKey: string): Promise<void> {
-  const res = await fetch(`https://friendbot.stellar.org?addr=${publicKey}`);
-  if (!res.ok && res.status !== 400) {
-    throw new Error(`friendbot funding failed: ${res.status}`);
+function toUiError(error: unknown): string {
+  if (error instanceof FriendbotRetryableError) {
+    return FRIEND_BOT_RATE_LIMIT_MESSAGE;
   }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "Something went wrong. Please retry.";
 }
 
 function explorerTx(hash: string): string {
@@ -386,7 +396,7 @@ export default function App() {
     setBusy("Generating a fresh admin + 5 member identities and funding via friendbot…");
     try {
       const adminKp = Keypair.random();
-      await friendbotFund(adminKp.publicKey());
+      await fundWithFriendbot(adminKp.publicKey());
 
       const newMembers: Member[] = Array.from({ length: CIRCLE_SIZE }, () => ({
         keypair: Keypair.random(),
@@ -420,7 +430,7 @@ export default function App() {
       setPot(0n);
       setScreen("circle");
     } catch (e) {
-      setError((e as Error).message);
+      setError(toUiError(e));
     } finally {
       setBusy(null);
     }
@@ -432,7 +442,7 @@ export default function App() {
     setBusy(`Funding from member ${i + 1}…`);
     try {
       const m = members[i];
-      await friendbotFund(m.keypair.publicKey());
+      await fundWithFriendbot(m.keypair.publicKey());
       const memberClient = await connect(NETWORK, m.keypair);
       const { hash } = await fund(memberClient, {
         circleId,
@@ -446,7 +456,7 @@ export default function App() {
       setPot(circle.pot);
       setRound(circle.round);
     } catch (e) {
-      setError((e as Error).message);
+      setError(toUiError(e));
     } finally {
       setBusy(null);
     }
@@ -498,7 +508,7 @@ export default function App() {
 
       setBusy("Submitting the claim and generating a fresh, unlinked recipient…");
       const recipient = Keypair.random();
-      await friendbotFund(recipient.publicKey());
+      await fundWithFriendbot(recipient.publicKey());
 
       const adminClient = await connect(NETWORK, admin);
       const { hash } = await claim(adminClient, {
@@ -518,7 +528,7 @@ export default function App() {
       setPot(circle.pot);
       setRound(circle.round);
     } catch (e) {
-      setError((e as Error).message);
+      setError(toUiError(e));
     } finally {
       setBusy(null);
     }
