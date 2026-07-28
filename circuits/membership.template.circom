@@ -32,11 +32,31 @@ template MerkleTreeChecker(levels) {
     component hashers[levels];
 
     for (var i = 0; i < levels; i++) {
+        // Booleanity constraint: pathIndices[i] ∈ {0, 1}.
+        // R1CS (Rank-1 Constraint Systems) only allow *quadratic* constraints,
+        // so a plain `if` statement is not expressible. This single quadratic
+        // constraint enforces that the index is boolean: for any value p other
+        // than 0 or 1, p*(1-p) ≠ 0, so the proof would not satisfy it.
+        // Without it, a malicious prover could set p to an arbitrary field
+        // element, making left[i] and right[i] arbitrary combinations of the
+        // two sibling hashes — effectively forging any desired "hash input"
+        // and breaking the Merkle proof. The test `non-boolean path index`
+        // covers this scenario.
         pathIndices[i] * (1 - pathIndices[i]) === 0;
 
-        // pathIndices[i] == 0 -> left = levelHashes[i], right = pathElements[i]
-        // pathIndices[i] == 1 -> left = pathElements[i], right = levelHashes[i]
-        left[i] <== (pathElements[i] - levelHashes[i]) * pathIndices[i] + levelHashes[i];
+        // Linear mux: select (left, right) from (levelHashes[i], pathElements[i])
+        // using pathIndices[i] without an if-statement.
+        //
+        // When pathIndices[i] == 0 (current node is LEFT child):
+        //   left  = (pathElements[i] - levelHashes[i]) * 0 + levelHashes[i]  = levelHashes[i]
+        //   right = (levelHashes[i] - pathElements[i]) * 0 + pathElements[i] = pathElements[i]
+        //
+        // When pathIndices[i] == 1 (current node is RIGHT child):
+        //   left  = (pathElements[i] - levelHashes[i]) * 1 + levelHashes[i]  = pathElements[i]
+        //   right = (levelHashes[i] - pathElements[i]) * 1 + pathElements[i] = levelHashes[i]
+        //
+        // Both assignments are degree-2 (quadratic) — exactly what R1CS allows.
+        left[i]  <== (pathElements[i] - levelHashes[i]) * pathIndices[i] + levelHashes[i];
         right[i] <== (levelHashes[i] - pathElements[i]) * pathIndices[i] + pathElements[i];
 
         hashers[i] = Poseidon255(2);

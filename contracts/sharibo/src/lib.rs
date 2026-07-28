@@ -37,6 +37,15 @@ pub struct Circle {
     pub round: u32,
     pub pot: i128,
     pub vk: VerificationKey,
+    /// Addresses that have funded the **current** round in order.
+    /// Reset to empty after a successful `claim` or `cancel_circle`.
+    /// Refunds on cancel are processed in this same order.
+    /// Funding is unshielded (addresses are already public), so storing
+    /// them here imposes no additional privacy loss — see issue #82.
+    pub contributors: Vec<Address>,
+    /// True once `cancel_circle` has been called; prevents any further
+    /// `fund` or `claim` calls so the circle is permanently closed.
+    pub cancelled: bool,
 }
 
 #[contracttype]
@@ -61,6 +70,8 @@ pub enum Error {
     RoundFull = 6,
     /// Checked pot arithmetic overflowed (absurd contribution/size).
     Overflow = 7,
+    /// `cancel_circle` or `fund`/`claim` called on a cancelled circle.
+    CircleCancelled = 8,
 }
 
 const LEDGER_THRESHOLD: u32 = 100;
@@ -97,6 +108,8 @@ impl Contract {
             round: 0,
             pot: 0,
             vk,
+            contributors: Vec::new(&env),
+            cancelled: false,
         };
         let key = DataKey::Circle(circle_id);
         env.storage().persistent().set(&key, &circle);
@@ -106,6 +119,15 @@ impl Contract {
         env.storage()
             .instance()
             .set(&DataKey::NextCircleId, &(circle_id + 1));
+        // Extend instance-storage TTL every time a new circle is created.
+        // NextCircleId lives in instance storage; if the instance entry
+        // is archived on a quiet network and later restored, NextCircleId
+        // would reset to 0 and create_circle would silently overwrite
+        // circle 0. Extending here ensures the counter outlives quiet
+        // periods (see contracts/README.md §Instance-storage archival).
+        env.storage()
+            .instance()
+            .extend_ttl(LEDGER_THRESHOLD, LEDGER_EXTEND_TO);
 
         circle_id
     }
@@ -128,6 +150,10 @@ impl Contract {
             .get(&key)
             .unwrap_or_else(|| panic_with_error!(&env, Error::CircleNotFound));
 
+        if circle.cancelled {
+            panic_with_error!(&env, Error::CircleCancelled);
+        }
+
         let target = pot_target(&env, &circle);
         if circle.pot >= target {
             panic_with_error!(&env, Error::RoundFull);
@@ -144,10 +170,14 @@ impl Contract {
             .pot
             .checked_add(circle.contribution)
             .unwrap_or_else(|| panic_with_error!(&env, Error::Overflow));
+        circle.contributors.push_back(from);
         env.storage().persistent().set(&key, &circle);
         env.storage()
             .persistent()
             .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_EXTEND_TO);
+        env.storage()
+            .instance()
+            .extend_ttl(LEDGER_THRESHOLD, LEDGER_EXTEND_TO);
     }
 
     pub fn claim(
@@ -164,6 +194,10 @@ impl Contract {
             .persistent()
             .get(&key)
             .unwrap_or_else(|| panic_with_error!(&env, Error::CircleNotFound));
+
+        if circle.cancelled {
+            panic_with_error!(&env, Error::CircleCancelled);
+        }
 
         // 1. round must be fully funded
         if circle.pot != pot_target(&env, &circle) {
@@ -204,10 +238,14 @@ impl Contract {
 
         circle.pot = 0;
         circle.round += 1;
+        circle.contributors = Vec::new(&env);
         env.storage().persistent().set(&key, &circle);
         env.storage()
             .persistent()
             .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_EXTEND_TO);
+        env.storage()
+            .instance()
+            .extend_ttl(LEDGER_THRESHOLD, LEDGER_EXTEND_TO);
     }
 
     pub fn get_circle(env: Env, circle_id: u64) -> Circle {
@@ -224,6 +262,53 @@ impl Contract {
         env.storage()
             .persistent()
             .has(&DataKey::Nullifier(circle_id, nullifier_hash))
+    }
+
+    /// Admin-only: cancel a stuck circle and refund all current-round
+    /// contributors in FIFO order.
+    ///
+    /// **When to use**: a circle where a member disappears and the pot will
+    /// never reach the full target. Without this, contributed tokens are
+    /// permanently stranded (claim requires `pot == contribution * size`).
+    ///
+    /// **Privacy note**: contributor addresses are already public (funding is
+    /// unshielded), so refunds expose no additional information today.
+    /// However, per-contributor storage constrains any future shielded-funding
+    /// design — see issue #82.
+    ///
+    /// After cancellation the circle is permanently closed:
+    /// further `fund` and `claim` calls revert with `Error::CircleCancelled`.
+    pub fn cancel_circle(env: Env, circle_id: u64) {
+        let key = DataKey::Circle(circle_id);
+        let mut circle: Circle = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::CircleNotFound));
+
+        circle.admin.require_auth();
+
+        if circle.cancelled {
+            panic_with_error!(&env, Error::CircleCancelled);
+        }
+
+        // Refund every contributor for the current (stuck) round.
+        let token_client = token::Client::new(&env, &circle.token);
+        for contributor in circle.contributors.iter() {
+            token_client.transfer(
+                &env.current_contract_address(),
+                &contributor,
+                &circle.contribution,
+            );
+        }
+
+        circle.pot = 0;
+        circle.cancelled = true;
+        circle.contributors = Vec::new(&env);
+        env.storage().persistent().set(&key, &circle);
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_EXTEND_TO);
     }
 
     // Binds a proof to (circle_id, round) with SHA-256 (a native, accelerated
