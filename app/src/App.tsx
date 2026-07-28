@@ -16,6 +16,7 @@ import {
   type ContractProof,
 } from "@sharibo/client";
 import { config, configError } from "./config";
+import { useI18n } from "./i18n";
 
 const NETWORK = {
   contractId: config.contractId,
@@ -76,7 +77,8 @@ interface ClaimResult {
 }
 
 function Stepper({ step }: { step: 0 | 1 | 2 | 3 }) {
-  const labels = ["Create", "Fund", "Prove & Claim", "Unlinked ✓"];
+  const { t } = useI18n();
+  const labels = [t("step.create"), t("step.fund"), t("step.proveClaim"), t("step.unlinked")];
   return (
     // nav + ol give screen readers "step N of 4" list semantics without
     // changing any visual output — CSS targets .stepper and .step as before.
@@ -103,6 +105,28 @@ function Stepper({ step }: { step: 0 | 1 | 2 | 3 }) {
         })}
       </ol>
     </nav>
+  );
+}
+
+function LanguageSwitcher({ className }: { className?: string }) {
+  const { locale, locales, setLocale, t } = useI18n();
+
+  return (
+    <div className={`language-switcher ${className ?? ""}`.trim()}>
+      <label htmlFor="language-select">{t("lang.label")}</label>
+      <select
+        id="language-select"
+        value={locale}
+        onChange={(e) => setLocale(e.target.value)}
+        aria-label={t("lang.label")}
+      >
+        {locales.map((code) => (
+          <option key={code} value={code}>
+            {t(`lang.${code}`)}
+          </option>
+        ))}
+      </select>
+    </div>
   );
 }
 
@@ -183,15 +207,16 @@ function MemberRing({
 }
 
 function EnvSetupScreen({ errors }: { errors: string[] }) {
+  const { t } = useI18n();
+
   return (
     <div className="page">
       <div className="card hero">
+        <LanguageSwitcher className="language-switcher-hero" />
         <h1>SHARIBO</h1>
-        <h2 style={{ color: "var(--color-error, #e55)" }}>Setup required</h2>
+        <h2 style={{ color: "var(--color-error, #e55)" }}>{t("env.setupRequired")}</h2>
         <p className="sub">
-          The app cannot start because one or more environment variables are missing or invalid.
-          Copy <code>app/.env.example</code> to <code>app/.env</code> and fill in the values below,
-          then restart the dev server.
+          {t("env.setupIntro")} {t("env.setupHowTo")}
         </p>
         <ul style={{ textAlign: "left", margin: "1rem 0", padding: "0 1.25rem" }}>
           {errors.map((err) => (
@@ -201,8 +226,7 @@ function EnvSetupScreen({ errors }: { errors: string[] }) {
           ))}
         </ul>
         <p className="fineprint">
-          See <code>app/.env.example</code> for the full list of required variables and their
-          expected format.
+          {t("env.setupDetails")}
         </p>
       </div>
     </div>
@@ -210,6 +234,8 @@ function EnvSetupScreen({ errors }: { errors: string[] }) {
 }
 
 export default function App() {
+  const { t } = useI18n();
+
   if (configError.length > 0) {
     return <EnvSetupScreen errors={configError} />;
   }
@@ -500,6 +526,7 @@ export default function App() {
     return (
       <div className="page">
         <div className="card hero">
+          <LanguageSwitcher className="language-switcher-hero" />
           <div className="namewall">
             {NAMES.map((n) => (
               <span key={n} className="namewall-item">
@@ -508,28 +535,23 @@ export default function App() {
             ))}
           </div>
           <h1>SHARIBO</h1>
-          <p className="tagline">
-            A private rotating savings circle — on Stellar, with real zero-knowledge proofs.
-          </p>
+          <p className="tagline">{t("landing.tagline")}</p>
           <p className="sub">
-            Every round, everyone contributes. Every round, one member takes the pot. Sharibo
-            proves <em>who's entitled to claim</em> without ever revealing <em>who</em> claimed.
+            {t("landing.sub.before")} <em>{t("landing.sub.em1")}</em> {t("landing.sub.middle")} <em>{t("landing.sub.em2")}</em> {t("landing.sub.after")}
           </p>
           <button className="btn btn-primary" disabled={!!busy} onClick={startCircle}>
-            {busy ?? "Launch a 5-member circle on testnet"}
+            {busy ?? t("landing.launch")}
           </button>
           {error && <p className="error">{error}</p>}
           {previousCircleId !== null && (
             <p className="fineprint">
-              Your previous circle lives on at{" "}
+              {t("landing.previousCirclePrefix")}{" "}
               <a className="link" href={explorerContract()} target="_blank" rel="noreferrer">
-                circle #{previousCircleId.toString()} ↗
+                {t("landing.previousCircleLink", { id: previousCircleId.toString() })}
               </a>
             </p>
           )}
-          <p className="fineprint">
-            Testnet only. Demo identities are generated fresh in your browser, never reused.
-          </p>
+          <p className="fineprint">{t("landing.testnetFineprint")}</p>
         </div>
       </div>
     );
@@ -541,6 +563,7 @@ export default function App() {
   return (
     <div className="page">
       <div className="card">
+        <LanguageSwitcher />
         {/*
           Persistent live region — always in the DOM so the browser registers
           it before any text lands inside it (a common AT pitfall).
@@ -572,7 +595,7 @@ export default function App() {
           <h1 className="small" ref={circleHeadingRef} tabIndex={-1}>SHARIBO</h1>
           <div className="row">
             <a className="link" href={explorerContract()} target="_blank" rel="noreferrer">
-              circle #{circleId?.toString()} on-chain ↗
+              {t("circle.onChainLink", { id: circleId?.toString() ?? "" })}
             </a>
             <button
               className="btn btn-small"
@@ -580,7 +603,7 @@ export default function App() {
               onClick={resetToLanding}
               title={`Start over. Your current circle (#${circleId?.toString()}) keeps living on-chain.`}
             >
-              Start a new circle
+              {t("common.startNewCircle")}
             </button>
           </div>
         </div>
@@ -697,7 +720,7 @@ export default function App() {
                   <strong>Rejected on-chain:</strong> {rejection}
                 </div>
                 <button className="btn btn-primary" disabled={!!busy} onClick={resetToLanding}>
-                  Start a new circle
+                  {t("common.startNewCircle")}
                 </button>
               </>
             )}

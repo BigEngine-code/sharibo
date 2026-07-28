@@ -44,6 +44,30 @@ body {
   text-align: center;
 }
 
+.language-switcher {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+}
+
+.language-switcher select {
+  border: 2px solid var(--ink);
+  background: #fff;
+  color: var(--ink);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  padding: 4px 6px;
+}
+
+.language-switcher-hero {
+  justify-content: center;
+  margin-bottom: 14px;
+}
+
 .namewall {
   display: flex;
   flex-wrap: wrap;
