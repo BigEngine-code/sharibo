@@ -72,6 +72,7 @@ interface Member {
 interface ClaimResult {
   recipient: string;
   hash: string;
+  proofDurationMs: number;
 }
 
 function Stepper({ step }: { step: 0 | 1 | 2 | 3 }) {
@@ -228,6 +229,8 @@ export default function App() {
   const [proof, setProof] = useState<ContractProof | null>(null);
   const [nullifierHash, setNullifierHash] = useState<bigint | null>(null);
   const [claimResult, setClaimResult] = useState<ClaimResult | null>(null);
+  const [isProving, setIsProving] = useState(false);
+  const [provingElapsedMs, setProvingElapsedMs] = useState<number | null>(null);
   const [nullifierClaimed, setNullifierClaimed] = useState(false);
   const [rejection, setRejection] = useState<string | null>(null);
   // Survives a reset so the landing screen can point back at the circle you
@@ -301,6 +304,8 @@ export default function App() {
     setProof(null);
     setNullifierHash(null);
     setClaimResult(null);
+    setIsProving(false);
+    setProvingElapsedMs(null);
     setNullifierClaimed(false);
     setRejection(null);
     setScreen("landing");
@@ -382,22 +387,43 @@ export default function App() {
     setError(null);
     setClaimResult(null);
     setRejection(null);
+    setProvingElapsedMs(null);
     setBusy("Proving… (a real Groth16 proof is being generated in your browser)");
     try {
       const claimant = members[claimantIndex];
       const merkleProof = tree.proof(claimantIndex);
       const externalNullifier = await computeExternalNullifier(circleId, BigInt(round));
-      const generated = await generateProof(
-        {
-          identityNullifier: claimant.identity.identityNullifier,
-          identitySecret: claimant.identity.identitySecret,
-          pathElements: merkleProof.pathElements,
-          pathIndices: merkleProof.pathIndices,
-          root: tree.root,
-          externalNullifier,
-        },
-        "/circuits/membership.wasm",
-        "/circuits/membership_final.zkey",
+      const proofStartMs = performance.now();
+      setIsProving(true);
+      setProvingElapsedMs(0);
+      const provingTicker = window.setInterval(() => {
+        setProvingElapsedMs(performance.now() - proofStartMs);
+      }, 100);
+      let proofDurationMs = 0;
+      const generated = await (async () => {
+        try {
+          return await generateProof(
+            {
+              identityNullifier: claimant.identity.identityNullifier,
+              identitySecret: claimant.identity.identitySecret,
+              pathElements: merkleProof.pathElements,
+              pathIndices: merkleProof.pathIndices,
+              root: tree.root,
+              externalNullifier,
+            },
+            "/circuits/membership.wasm",
+            "/circuits/membership_final.zkey",
+          );
+        } finally {
+          window.clearInterval(provingTicker);
+          proofDurationMs = performance.now() - proofStartMs;
+          setProvingElapsedMs(proofDurationMs);
+          setIsProving(false);
+        }
+      })();
+
+      console.info(
+        `[zk] Groth16 proof generated in ${(proofDurationMs / 1000).toFixed(1)}s on this browser (${navigator.hardwareConcurrency ?? "unknown"} logical cores)`,
       );
 
       setBusy("Submitting the claim and generating a fresh, unlinked recipient…");
@@ -415,7 +441,7 @@ export default function App() {
 
       setProof(generated.proof);
       setNullifierHash(generated.nullifierHash);
-      setClaimResult({ recipient: recipient.publicKey(), hash });
+      setClaimResult({ recipient: recipient.publicKey(), hash, proofDurationMs });
       setNullifierClaimed(await hasClaimed(adminClient, circleId, generated.nullifierHash));
 
       const circle = await getCircle(adminClient, circleId);
@@ -510,6 +536,7 @@ export default function App() {
   }
 
   const step: 0 | 1 | 2 | 3 = claimResult ? 3 : fullyFunded ? 2 : 1;
+  const provingSeconds = provingElapsedMs === null ? null : (provingElapsedMs / 1000).toFixed(1);
 
   return (
     <div className="page">
@@ -620,6 +647,7 @@ export default function App() {
                 {/* Constraint count: update this AND circuits/README.md if the circuit changes. */}
                 Groth16 · BLS12-381 · 1,452 constraints · proving locally in your browser, nothing
                 sent anywhere until the proof is done
+                {isProving && provingSeconds !== null ? ` · proving… ${provingSeconds}s` : ""}
               </p>
             )}
           </>
@@ -638,6 +666,9 @@ export default function App() {
             <a className="link" href={explorerTx(claimResult.hash)} target="_blank" rel="noreferrer">
               view claim transaction ↗
             </a>
+            <p className="callout">
+              proof generated in {(claimResult.proofDurationMs / 1000).toFixed(1)}s in this browser.
+            </p>
             <p className="callout">
               Compare the 5 funding transactions above to this claim — same contract, no shared
               address, no visible link.
