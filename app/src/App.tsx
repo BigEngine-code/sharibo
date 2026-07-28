@@ -617,6 +617,7 @@ export default function App() {
             </button>
             {busy && (
               <p className="techline">
+                {/* Constraint count: update this AND circuits/README.md if the circuit changes. */}
                 Groth16 · BLS12-381 · 1,452 constraints · proving locally in your browser, nothing
                 sent anywhere until the proof is done
               </p>

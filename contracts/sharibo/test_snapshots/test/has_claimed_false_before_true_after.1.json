@@ -560,10 +560,26 @@
                     },
                     {
                       "key": {
+                        "symbol": "cancelled"
+                      },
+                      "val": {
+                        "bool": false
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "contribution"
                       },
                       "val": {
                         "i128": "100"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "contributors"
+                      },
+                      "val": {
+                        "vec": []
                       }
                     },
                     {
