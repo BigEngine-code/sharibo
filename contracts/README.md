@@ -1,30 +1,27 @@
-# Sharibo contract
+# Sharibo contracts
 
-Soroban contract for private rotating savings circles: `create_circle`, `fund`, `claim`, `get_circle`. Groth16 verification over BLS12-381 via host pairing functions.
+Soroban contract for private rotating savings circles. Public methods:
 
-## Design decisions
+| Method | Kind | Purpose |
+|---|---|---|
+| `create_circle` | write | Admin creates a circle (Merkle root, contribution, size, vk). |
+| `fund` | write | Deposit one `contribution` into the current round's pot. |
+| `claim` | write | Pay the pot to `recipient` given a valid Groth16 membership proof. |
+| `get_circle` | view | Read circle state. |
+| `has_claimed` | view | Whether a nullifier has already been used in this circle. |
 
-- [ADR 001 — Upgradeability and admin keys](../docs/adr/001-upgradeability.md): stay immutable; `Circle.admin` is not load-bearing after creation.
+## Open funding (deliberate)
 
-## CPU instruction benchmarks
+`fund(circle_id, from)` requires only `from.require_auth()` — **any address may fund any circle**. The Merkle tree constrains who may *claim*, not who may *fund*.
 
-Measured by `cpu_instruction_benchmarks` in `sharibo/src/test.rs` (`cargo test -p sharibo cpu_instruction_benchmarks -- --nocapture`).
+**Why keep it open**
 
-| Call | CPU instructions | Notes |
-|---|---:|---|
-| `create_circle` | 65,414 | storage write + auth |
-| `fund` (one member) | 256,645 | token transfer + pot update |
-| `claim` (3 public inputs, `ic.len() == 4`) | **48,066,196** | ~48% of the 100M budget |
-| `verify_groth16` with 5 public inputs (`ic.len() == 6`) | 54,589,346 | synthetic: +2 `g1_mul` terms |
+- A benefactor can top up a community pot without being a Merkle member.
+- On-chain membership is intentionally anonymous (Poseidon commitments only). Gating funders on-chain would need a separate eligibility design that re-identifies or re-lists payers — at odds with claim-side privacy.
 
-**Environment:** `soroban-sdk` **23.5.3** (workspace), host `soroban-env-host` 23.0.1, measured in the Rust testutils (native) harness.
+**Why this is safe**
 
-**Headroom check:** the harness asserts `claim < 60_000_000` so an SDK upgrade that blows the budget fails the suite.
+- Once the pot reaches exactly `contribution * size`, further `fund` calls revert with `Error::RoundFull`. Without that cap, a griefing sixth deposit would push `pot` past the target and permanently brick `claim` (exact-equality check, no refund path).
+- Pot math uses checked arithmetic (`Error::Overflow`) so absurd `contribution`/`size` values fail as typed errors rather than bare traps.
 
-**Takeaway:** Merkle tree depth does not change on-chain `claim` cost (depth is circuit-only; public inputs stay `{nullifier, root, external_nullifier}`). IC / public-input length does: two extra inputs cost ~6.5M more instructions in this measurement.
-
-## Tests
-
-```bash
-cargo test --package sharibo
-```
+Protected by the `anyone_can_fund` contract test — open funding is a contract guarantee, not an accident.
