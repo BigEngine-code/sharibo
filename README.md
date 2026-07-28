@@ -191,13 +191,27 @@ npm run dev                  # runs `sync-circuit` first (copies circuits/build/
 
 Open the printed localhost URL. The whole flow (identities, funding, proving, claiming) runs against real testnet from a single browser tab.
 
+## Changing the Merkle tree depth
+
+The Merkle tree depth (`levels`) is single-sourced in [`circuits/config.json`](circuits/config.json) — a 4-level tree fits up to 16 members, a 5-member circle fits depth 3, a 100-member circle needs depth 7, etc. Everything that needs the depth (the circuit, the circuit tests, and the client SDK's `TREE_LEVELS`) reads it from that one file; `circuits/membership.circom` itself is a **generated** file (see `circuits/scripts/gen-circuit.cjs`) and is gitignored — the committed source is `circuits/membership.template.circom`.
+
+To change the depth:
+
+1. Edit `circuits/config.json` (`{"levels": N}`).
+2. Recompile: `cd circuits && npm run compile` (this regenerates `membership.circom` from the template + new config, then runs `circom`).
+3. **Re-run the trusted setup** — this is not optional. A different `levels` value changes the circuit's constraint system, which means a **new zkey and verification key**: `npm run setup`. The old `verification_key.json` no longer matches the circuit and must be regenerated/recommitted.
+4. Sanity-check: `npm test` (circuit test suite) and `npm run prove` (proves + verifies `circuits/input.example.json` — note: `input.example.json`'s `pathElements`/`pathIndices` arrays must also be regenerated for the new depth).
+5. **Redeploy affected circles with the new verification key.** Any circle created against the old vkey needs a fresh contract deployment (or an admin vkey-rotation path if the contract supports one) — proofs generated against the old tree depth will not verify against the new vkey, and vice versa. There is no in-place migration for open circles across a depth change.
+6. If the browser app is deployed, re-run `npm run sync-circuit` (in `app/`) to pick up the new `membership.wasm` / `membership_final.zkey` / `verification_key.json`.
+
 ## Repository structure
 
 ```
 sharibo/
-├── circuits/            membership.circom, compile/setup/prove scripts, circuit tests, verification_key.json
+├── circuits/            membership.template.circom (source) + config.json, compile/setup/prove scripts, circuit tests, verification_key.json
 ├── contracts/sharibo/   the Soroban contract (lib.rs) + its test suite (test.rs)
-├── packages/client/     isomorphic TS SDK: identity.ts, tree.ts, prove.ts, contract.ts
+├── packages/client/     isomorphic TS SDK: identity.ts, tree.ts, prove.ts, contract.ts, config.ts
+├── test-vectors/        cross-implementation Poseidon fixtures shared by the client and circuit test suites
 ├── scripts/e2e.ts       full-round Node script against live testnet
 ├── app/                 React + Vite browser demo
 ├── README.md            this file

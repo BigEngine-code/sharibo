@@ -96,4 +96,9 @@ template Sharibo(levels) {
     nullifierHash <== nullifierHasher.out;
 }
 
-component main { public [root, externalNullifier] } = Sharibo(4);
+// NOTE: no `component main` here. This file is the template; the concrete
+// tree depth comes from circuits/config.json (single source of truth).
+// `scripts/gen-circuit.cjs` appends the `component main` line and writes
+// the result to circuits/membership.circom (generated, gitignored) before
+// every compile/test run. See "Changing the Merkle tree depth" in the repo
+// README for the full runbook.
