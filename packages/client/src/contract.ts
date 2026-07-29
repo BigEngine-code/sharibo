@@ -1,11 +1,25 @@
 import { Client as ContractClient, basicNodeSigner } from "@stellar/stellar-sdk/contract";
-import { Keypair } from "@stellar/stellar-sdk";
+import { Keypair, StrKey } from "@stellar/stellar-sdk";
 import type { ContractProof, ContractVerificationKey } from "./prove.js";
 
 export interface ShariboNetworkConfig {
   contractId: string;
   rpcUrl: string;
   networkPassphrase: string;
+}
+
+// Validate at the SDK boundary rather than let a mistyped address surface
+// deep inside stellar-sdk's XDR encoding as an opaque error — see Issue #60.
+function assertAccountAddress(value: string, paramName: string): void {
+  if (!StrKey.isValidEd25519PublicKey(value)) {
+    throw new Error(`${paramName} is not a valid Stellar address: ${value}`);
+  }
+}
+
+function assertContractId(value: string, paramName: string): void {
+  if (!StrKey.isValidContract(value)) {
+    throw new Error(`${paramName} is not a valid Stellar contract ID: ${value}`);
+  }
 }
 
 // The contract's methods (create_circle/fund/claim/get_circle/has_claimed)
@@ -21,6 +35,7 @@ export async function connect(
   config: ShariboNetworkConfig,
   keypair: Keypair,
 ): Promise<ShariboClient> {
+  assertContractId(config.contractId, "config.contractId");
   const signer = basicNodeSigner(keypair, config.networkPassphrase);
   return ContractClient.from({
     contractId: config.contractId,
@@ -48,6 +63,8 @@ export async function createCircle(
     vk: ContractVerificationKey;
   },
 ): Promise<TxResult<bigint>> {
+  assertAccountAddress(args.admin, "admin");
+  assertContractId(args.token, "token");
   const tx = await client.create_circle({
     admin: args.admin,
     token: args.token,
@@ -64,6 +81,7 @@ export async function fund(
   client: ShariboClient,
   args: { circleId: bigint; from: string },
 ): Promise<TxResult<void>> {
+  assertAccountAddress(args.from, "from");
   const tx = await client.fund({ circle_id: args.circleId, from: args.from });
   const sent = await tx.signAndSend();
   return { result: undefined, hash: sent.sendTransactionResponse.hash };
@@ -79,6 +97,7 @@ export async function claim(
     proof: ContractProof;
   },
 ): Promise<TxResult<void>> {
+  assertAccountAddress(args.recipient, "recipient");
   const tx = await client.claim({
     circle_id: args.circleId,
     recipient: args.recipient,
