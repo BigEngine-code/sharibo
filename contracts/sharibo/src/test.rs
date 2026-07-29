@@ -692,6 +692,71 @@ fn double_cancel_reverts() {
 // ---- Issue #84: instance-storage TTL extension ----
 
 #[test]
+#[should_panic(expected = "Error(Contract, #5)")] // InvalidProof
+fn claim_with_truncated_ic_reverts() {
+    // Defense-in-depth: verify_groth16 guards against a malformed vk where
+    // ic.len() != public_inputs.len() + 1. This guards would be unreachable
+    // once create_circle validates vk shape, but we test it anyway.
+    //
+    // Scenario: manually create a circle with a truncated ic (3 entries
+    // instead of 4). The vk matches the real proof's alpha/beta/gamma/delta,
+    // but has fewer ic points. When claim runs with the same proof and
+    // 3 public inputs, verify_groth16 sees public_inputs.len() + 1 == 4 but
+    // vk.ic.len() == 3, returns false, and claim reverts with InvalidProof.
+    //
+    // Link: this test becomes obsolete once create_circle validates
+    // vk.ic.len() == size + 1 (GitHub issue #XX). Until then, nothing
+    // prevents a malicious or buggy admin from creating a circle with
+    // a wrong-shaped verification key.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(Contract, ());
+    let client = ContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = create_token(&env, &token_admin);
+    let token_admin_client = token::StellarAssetClient::new(&env, &token);
+
+    let root = real_root(&env);
+    // Start with the real vk and truncate its ic to 3 entries (missing the 4th).
+    let mut truncated_vk = real_verification_key(&env);
+    assert_eq!(truncated_vk.ic.len(), 4);
+    truncated_vk.ic.pop_back(); // Remove the last ic point; len is now 3.
+    assert_eq!(truncated_vk.ic.len(), 3);
+
+    let circle_id = client.create_circle(&admin, &token, &root, &100i128, &5u32, &truncated_vk);
+
+    // Fund the circle fully.
+    let members: StdVec<Address> = (0..5)
+        .map(|_| {
+            let m = Address::generate(&env);
+            token_admin_client.mint(&m, &100i128);
+            m
+        })
+        .collect();
+    for m in members.iter() {
+        client.fund(&circle_id, m);
+    }
+
+    // Attempt claim with the real proof (which was generated for ic.len() == 4
+    // and 3 public inputs). The mismatch triggers verify_groth16's guard.
+    let recipient = Address::generate(&env);
+    let nullifier_hash = real_nullifier_hash(&env);
+    let external_nullifier = real_external_nullifier_round0(&env);
+    let proof = real_valid_proof(&env);
+
+    client.claim(
+        &circle_id,
+        &recipient,
+        &nullifier_hash,
+        &external_nullifier,
+        &proof,
+    );
+}
+
+#[test]
 fn instance_ttl_extended_after_create_fund_claim() {
     // The Soroban test env lets us inspect TTLs via env.ledger().
     // Strategy: bump the ledger far enough that the instance entry would
