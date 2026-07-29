@@ -225,10 +225,6 @@ function EnvSetupScreen({ errors }: { errors: string[] }) {
 }
 
 export default function App() {
-  if (configError.length > 0) {
-    return <EnvSetupScreen errors={configError} />;
-  }
-
   const [screen, setScreen] = useState<"landing" | "circle">("landing");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -285,6 +281,15 @@ export default function App() {
     }
   }, [claimResult]);
   // ────────────────────────────────────────────────────────────────────────
+
+  // Every hook above must run on every render, so this check — which used to
+  // sit at the top of the component and return before any hooks ran — moved
+  // here instead. configError is computed once at module load, so this still
+  // reliably short-circuits into the setup screen; it just no longer skips
+  // hook calls to do it.
+  if (configError.length > 0) {
+    return <EnvSetupScreen errors={configError} />;
+  }
 
   // Reset every piece of React state back to its initial value and return to
   // the landing screen. The circle itself is never touched on-chain — it lives
