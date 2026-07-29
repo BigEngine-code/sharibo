@@ -1,4 +1,4 @@
-import { poseidon } from "./identity.js";
+import { poseidon, FR_MODULUS } from "./identity.js";
 
 // Fixed placeholder for unused leaves when padding the tree out to full
 // capacity (2**levels). 0 can never equal a real commitment Poseidon(a, b)
@@ -27,6 +27,37 @@ export class MerkleTree {
   }
 
   static create(levels: number, leaves: bigint[]): MerkleTree {
+    // Validate `levels` before computing capacity (Issue #50).
+    // `Number.isInteger` rejects NaN, Infinity, and fractional values like 0.5,
+    // all of which would otherwise produce a nonsensical capacity (e.g.
+    // 2 ** 0.5 === 1.414…, 2 ** Infinity === Infinity).
+    if (!Number.isInteger(levels) || levels < 1) {
+      throw new RangeError(
+        `levels must be an integer >= 1, got ${levels}`,
+      );
+    }
+    // Cap at 32 — even 2**32 leaves (4.3 billion bigints) would require
+    // > 100 GB of memory on its own, far past anything practical for a
+    // browser wallet.  This is a generous limit; real deployments use
+    // depth 20 or 32 at most.
+    if (levels > 32) {
+      throw new RangeError(
+        `levels must be <= 32, got ${levels}`,
+      );
+    }
+
+    // Validate every leaf is a well-formed field element in [0, FR_MODULUS)
+    // before hashing — otherwise Poseidon or the circuit will fail with
+    // confusing errors deep in the stack.
+    for (let i = 0; i < leaves.length; i++) {
+      const leaf = leaves[i];
+      if (leaf < 0n || leaf >= FR_MODULUS) {
+        throw new RangeError(
+          `leaf at index ${i} must satisfy 0 <= leaf < FR_MODULUS, got ${leaf}`,
+        );
+      }
+    }
+
     const capacity = 2 ** levels;
     if (leaves.length > capacity) {
       throw new Error(
