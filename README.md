@@ -226,6 +226,8 @@ Full annotated version (what each file does and why): [breakdown §16](full_prod
 
 We welcome contributions to Sharibo! Please ensure you have read and adhere to our [Code of Conduct](CODE_OF_CONDUCT.md) when participating in this project.
 
+`@stellar/stellar-sdk` is declared independently in `app`, `packages/client`, and `scripts`, and pinned to a single resolved version via a root `overrides` entry. **Bump `stellar-sdk` in all three places at once** — `npm run check:stellar-sdk` (also run automatically on `npm install`) fails the build if the declared ranges ever drift apart.
+
 ## Roadmap
 
 - Funding-side shielding (hide *who* funded, not just who claimed).

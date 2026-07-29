@@ -9,6 +9,11 @@
     "app"
   ],
   "scripts": {
-    "e2e": "npm run e2e --workspace=scripts"
+    "e2e": "npm run e2e --workspace=scripts",
+    "check:stellar-sdk": "node scripts/check-stellar-sdk-version.mjs",
+    "postinstall": "npm run check:stellar-sdk"
+  },
+  "overrides": {
+    "@stellar/stellar-sdk": "^16.0.1"
   }
 }
