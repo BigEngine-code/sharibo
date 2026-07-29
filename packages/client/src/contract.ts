@@ -37,6 +37,41 @@ export interface TxResult<T> {
   hash: string;
 }
 
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  opts: { retries?: number; baseMs?: number } = {}
+): Promise<T> {
+  const retries = opts.retries ?? 3;
+  const baseMs = opts.baseMs ?? 500;
+
+  let attempt = 0;
+  while (true) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      if (attempt >= retries) throw error;
+
+      const msg = (error?.message || String(error)).toLowerCase();
+      const isTransient =
+        msg.includes("429") ||
+        msg.includes("500") ||
+        msg.includes("502") ||
+        msg.includes("503") ||
+        msg.includes("504") ||
+        msg.includes("timeout") ||
+        msg.includes("connection reset") ||
+        msg.includes("fetch failed");
+
+      if (!isTransient) throw error;
+
+      attempt++;
+      const jitter = 0.5 + Math.random() * 0.5;
+      const delay = baseMs * Math.pow(2, attempt - 1) * jitter;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
 export async function createCircle(
   client: ShariboClient,
   args: {
@@ -48,14 +83,14 @@ export async function createCircle(
     vk: ContractVerificationKey;
   },
 ): Promise<TxResult<bigint>> {
-  const tx = await client.create_circle({
+  const tx = await withRetry(() => client.create_circle({
     admin: args.admin,
     token: args.token,
     root: args.root,
     contribution: args.contribution,
     size: args.size,
     vk: args.vk,
-  });
+  }));
   const sent = await tx.signAndSend();
   return { result: sent.result as bigint, hash: sent.sendTransactionResponse.hash };
 }
@@ -64,7 +99,7 @@ export async function fund(
   client: ShariboClient,
   args: { circleId: bigint; from: string },
 ): Promise<TxResult<void>> {
-  const tx = await client.fund({ circle_id: args.circleId, from: args.from });
+  const tx = await withRetry(() => client.fund({ circle_id: args.circleId, from: args.from }));
   const sent = await tx.signAndSend();
   return { result: undefined, hash: sent.sendTransactionResponse.hash };
 }
@@ -79,13 +114,13 @@ export async function claim(
     proof: ContractProof;
   },
 ): Promise<TxResult<void>> {
-  const tx = await client.claim({
+  const tx = await withRetry(() => client.claim({
     circle_id: args.circleId,
     recipient: args.recipient,
     nullifier_hash: args.nullifierHash,
     external_nullifier: args.externalNullifier,
     proof: args.proof,
-  });
+  }));
   const sent = await tx.signAndSend();
   return { result: undefined, hash: sent.sendTransactionResponse.hash };
 }
@@ -103,7 +138,7 @@ export interface CircleView {
 export async function getCircle(client: ShariboClient, circleId: bigint): Promise<CircleView> {
   // get_circle is a pure read: the SDK detects no signature is needed and
   // refuses signAndSend() without `force` (there's nothing to sign/submit).
-  const tx = await client.get_circle({ circle_id: circleId });
+  const tx = await withRetry(() => client.get_circle({ circle_id: circleId }));
   const sent = await tx.signAndSend({ force: true });
   return sent.result as CircleView;
 }
@@ -114,10 +149,10 @@ export async function hasClaimed(
   circleId: bigint,
   nullifierHash: bigint,
 ): Promise<boolean> {
-  const tx = await client.has_claimed({
+  const tx = await withRetry(() => client.has_claimed({
     circle_id: circleId,
     nullifier_hash: nullifierHash,
-  });
+  }));
   const sent = await tx.signAndSend({ force: true });
   return sent.result as boolean;
 }
