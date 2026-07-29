@@ -1,4 +1,6 @@
 import * as snarkjs from "snarkjs";
+import { FR_MODULUS } from "./identity.js";
+import { TREE_LEVELS } from "./config.js";
 
 // No `node:*` imports and no `Buffer` at module scope (deliberately) — this
 // file is used both from Node (scripts/e2e.ts, passing filesystem paths)
@@ -94,6 +96,53 @@ export interface ProveResult {
   externalNullifier: bigint;
 }
 
+// Validate CircuitInput before passing it into snarkjs fullProve, so
+// malformed input fails with field-name-specific errors instead of opaque
+// snarkjs internal failures.
+export function validateCircuitInput(
+  input: CircuitInput,
+  levels: number = TREE_LEVELS,
+): void {
+  // Circuit depth: pathElements length must match the expected tree depth.
+  if (input.pathElements.length !== levels) {
+    throw new Error(
+      `pathElements: expected ${levels}, got ${input.pathElements.length}`,
+    );
+  }
+
+  // pathIndices must have the same length as pathElements.
+  if (input.pathIndices.length !== input.pathElements.length) {
+    throw new Error(
+      `pathIndices: expected ${input.pathElements.length}, got ${input.pathIndices.length}`,
+    );
+  }
+
+  // Every path index must be a boolean (0 or 1).
+  for (let i = 0; i < input.pathIndices.length; i++) {
+    if (input.pathIndices[i] !== 0 && input.pathIndices[i] !== 1) {
+      throw new Error(
+        `pathIndices[${i}]: expected 0 or 1, got ${input.pathIndices[i]}`,
+      );
+    }
+  }
+
+  // Every field element must lie in [0, FR_MODULUS).
+  function checkField(name: string, value: bigint): void {
+    if (value < 0n || value >= FR_MODULUS) {
+      throw new Error(`${name}: must be in [0, FR_MODULUS), got ${value}`);
+    }
+  }
+
+  checkField("identityNullifier", input.identityNullifier);
+  checkField("identitySecret", input.identitySecret);
+  checkField("root", input.root);
+  checkField("externalNullifier", input.externalNullifier);
+
+  for (let i = 0; i < input.pathElements.length; i++) {
+    checkField(`pathElements[${i}]`, input.pathElements[i]);
+  }
+}
+
 // Public signal order snarkjs actually emits is [nullifierHash, root,
 // externalNullifier] — circuit outputs first, then declared public inputs
 // in source order. Not [root, externalNullifier, nullifierHash]; see
@@ -102,7 +151,9 @@ export async function generateProof(
   input: CircuitInput,
   wasmPath: string,
   zkeyPath: string,
+  levels: number = TREE_LEVELS,
 ): Promise<ProveResult> {
+  validateCircuitInput(input, levels);
   const circuitInput = {
     identityNullifier: input.identityNullifier.toString(),
     identitySecret: input.identitySecret.toString(),
