@@ -113,7 +113,12 @@ async function main() {
 
   const vkJson = JSON.parse(
     readFileSync(
-      path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "circuits", "verification_key.json"),
+      path.join(
+        path.dirname(fileURLToPath(import.meta.url)),
+        "..",
+        "circuits",
+        "verification_key.json",
+      ),
       "utf8",
     ),
   );
@@ -121,7 +126,10 @@ async function main() {
 
   console.log("\n2. Creating the circle...");
   const adminClient = await withTimeout(
-    connect({ contractId: CONTRACT_ID, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE }, admin),
+    connect(
+      { contractId: CONTRACT_ID, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE },
+      admin,
+    ),
     30_000,
     "connect(admin)",
   );
@@ -142,7 +150,10 @@ async function main() {
   console.log("\n3. Funding from all 5 members...");
   for (const [i, m] of members.entries()) {
     const memberClient = await withTimeout(
-      connect({ contractId: CONTRACT_ID, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE }, m.keypair),
+      connect(
+        { contractId: CONTRACT_ID, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE },
+        m.keypair,
+      ),
       30_000,
       `connect(member ${i})`,
     );
@@ -170,19 +181,23 @@ async function main() {
     "circuits",
     "build",
   );
-  const { proof, nullifierHash, root, externalNullifier: provenExternalNullifier } =
-    await generateProof(
-      {
-        identityNullifier: claimant.identity.identityNullifier,
-        identitySecret: claimant.identity.identitySecret,
-        pathElements: merkleProof.pathElements,
-        pathIndices: merkleProof.pathIndices,
-        root: tree.root,
-        externalNullifier,
-      },
-      path.join(circuitsBuildDir, "membership_js", "membership.wasm"),
-      path.join(circuitsBuildDir, "membership_final.zkey"),
-    );
+  const {
+    proof,
+    nullifierHash,
+    root,
+    externalNullifier: provenExternalNullifier,
+  } = await generateProof(
+    {
+      identityNullifier: claimant.identity.identityNullifier,
+      identitySecret: claimant.identity.identitySecret,
+      pathElements: merkleProof.pathElements,
+      pathIndices: merkleProof.pathIndices,
+      root: tree.root,
+      externalNullifier,
+    },
+    path.join(circuitsBuildDir, "membership_js", "membership.wasm"),
+    path.join(circuitsBuildDir, "membership_final.zkey"),
+  );
   assert(root === tree.root, "proof's public root must match the circle's root");
   assert(
     provenExternalNullifier === externalNullifier,
@@ -225,7 +240,10 @@ async function main() {
   // interesting) fact that an empty pot can't be claimed.
   for (const [i, m] of members.entries()) {
     const memberClient = await withTimeout(
-      connect({ contractId: CONTRACT_ID, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE }, m.keypair),
+      connect(
+        { contractId: CONTRACT_ID, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE },
+        m.keypair,
+      ),
       30_000,
       `connect(member ${i}, round 1)`,
     );

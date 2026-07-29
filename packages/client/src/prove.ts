@@ -26,7 +26,9 @@ export interface CircuitInput {
 const FP_BYTES = 48;
 
 function feToBytes(dec: string): Uint8Array {
-  const hex = BigInt(dec).toString(16).padStart(FP_BYTES * 2, "0");
+  const hex = BigInt(dec)
+    .toString(16)
+    .padStart(FP_BYTES * 2, "0");
   const bytes = new Uint8Array(FP_BYTES);
   for (let i = 0; i < FP_BYTES; i++) {
     bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);

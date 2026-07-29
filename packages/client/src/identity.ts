@@ -14,13 +14,10 @@ export interface Identity {
 // BLS12-381 scalar field modulus r (matches Soroban's own Fr and the
 // poseidon-bls12381 package — cross-checked against soroban-sdk's
 // BLS12_381_FR_MODULUS_BE constant).
-export const FR_MODULUS =
-  0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001n;
+export const FR_MODULUS = 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001n;
 
 function bytesToBigInt(bytes: Uint8Array): bigint {
-  return BigInt(
-    "0x" + Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join(""),
-  );
+  return BigInt("0x" + Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join(""));
 }
 
 // Wide reduction: 64 random bytes (512 bits) mod FR_MODULUS (~2^255).
@@ -60,10 +57,7 @@ export function generateIdentity(): Identity {
 // function, so nothing is gained by porting Poseidon into the contract for
 // this check, and SHA-256 is equally sound for binding a proof to a round.
 // See NOTES.md.
-export async function computeExternalNullifier(
-  circleId: bigint,
-  round: bigint,
-): Promise<bigint> {
+export async function computeExternalNullifier(circleId: bigint, round: bigint): Promise<bigint> {
   // Bounds must match the contract's field types exactly (see
   // contracts/sharibo/src/lib.rs: `circle_id: u64`, `round: u32`).
   // `setBigUint64`/`setUint32` below would otherwise silently truncate (or,
@@ -71,14 +65,10 @@ export async function computeExternalNullifier(
   // producing a valid-looking but wrong hash that the contract rejects with
   // an opaque `WrongRoundTag` — Issue #65.
   if (circleId < 0n || circleId >= 2n ** 64n) {
-    throw new RangeError(
-      `circleId must satisfy 0 <= circleId < 2**64 (u64), got ${circleId}`,
-    );
+    throw new RangeError(`circleId must satisfy 0 <= circleId < 2**64 (u64), got ${circleId}`);
   }
   if (round < 0n || round >= 2n ** 32n) {
-    throw new RangeError(
-      `round must satisfy 0 <= round < 2**32 (u32), got ${round}`,
-    );
+    throw new RangeError(`round must satisfy 0 <= round < 2**32 (u32), got ${round}`);
   }
 
   const buf = new ArrayBuffer(12);
@@ -89,9 +79,6 @@ export async function computeExternalNullifier(
   return bytesToBigInt(new Uint8Array(digest)) % FR_MODULUS;
 }
 
-export function computeNullifierHash(
-  identityNullifier: bigint,
-  externalNullifier: bigint,
-): bigint {
+export function computeNullifierHash(identityNullifier: bigint, externalNullifier: bigint): bigint {
   return poseidon(identityNullifier, externalNullifier);
 }

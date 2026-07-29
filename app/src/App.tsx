@@ -125,13 +125,7 @@ function useRingRadius(): number {
   return radius;
 }
 
-function MemberRing({
-  members,
-  revealed,
-}: {
-  members: { funded: boolean }[];
-  revealed: boolean;
-}) {
+function MemberRing({ members, revealed }: { members: { funded: boolean }[]; revealed: boolean }) {
   const radius = useRingRadius();
   const fundedCount = members.filter((m) => m.funded).length;
 
@@ -502,8 +496,8 @@ export default function App() {
             A private rotating savings circle — on Stellar, with real zero-knowledge proofs.
           </p>
           <p className="sub">
-            Every round, everyone contributes. Every round, one member takes the pot. Sharibo
-            proves <em>who's entitled to claim</em> without ever revealing <em>who</em> claimed.
+            Every round, everyone contributes. Every round, one member takes the pot. Sharibo proves{" "}
+            <em>who's entitled to claim</em> without ever revealing <em>who</em> claimed.
           </p>
           <button className="btn btn-primary" disabled={!!busy} onClick={startCircle}>
             {busy ?? "Launch a 5-member circle on testnet"}
@@ -558,7 +552,9 @@ export default function App() {
           {busy ?? (error ? `Error: ${error}` : "")}
         </div>
         <div className="row space-between">
-          <h1 className="small" ref={circleHeadingRef} tabIndex={-1}>SHARIBO</h1>
+          <h1 className="small" ref={circleHeadingRef} tabIndex={-1}>
+            SHARIBO
+          </h1>
           <div className="row">
             <a className="link" href={explorerContract()} target="_blank" rel="noreferrer">
               circle #{circleId?.toString()} on-chain ↗
@@ -590,7 +586,9 @@ export default function App() {
         <div className="members">
           {members.map((m, i) => (
             <div key={i} className={`member ${m.funded ? "funded" : ""}`}>
-              <span className="member-addr">member {i + 1} · {short(m.keypair.publicKey())}</span>
+              <span className="member-addr">
+                member {i + 1} · {short(m.keypair.publicKey())}
+              </span>
               {m.funded ? (
                 <a className="link" href={explorerTx(m.fundHash!)} target="_blank" rel="noreferrer">
                   ✓ funded ↗
@@ -610,7 +608,9 @@ export default function App() {
 
         {fullyFunded && !claimResult && (
           <>
-            <h2 ref={claimHeadingRef} tabIndex={-1}>Claim</h2>
+            <h2 ref={claimHeadingRef} tabIndex={-1}>
+              Claim
+            </h2>
             <p className="sub">
               Pick which member is claiming this round — the proof will show the contract that
               they're a real member <em>without</em> revealing which one.
@@ -643,7 +643,9 @@ export default function App() {
 
         {claimResult && (
           <div className="result">
-            <h2 ref={payoutHeadingRef} tabIndex={-1}>Payout landed</h2>
+            <h2 ref={payoutHeadingRef} tabIndex={-1}>
+              Payout landed
+            </h2>
             <p>
               Fresh recipient <code>{short(claimResult.recipient)}</code>{" "}
               <a href={explorerAccount(claimResult.recipient)} target="_blank" rel="noreferrer">
@@ -651,7 +653,12 @@ export default function App() {
               </a>{" "}
               received the pot. It has never appeared anywhere else on this circle.
             </p>
-            <a className="link" href={explorerTx(claimResult.hash)} target="_blank" rel="noreferrer">
+            <a
+              className="link"
+              href={explorerTx(claimResult.hash)}
+              target="_blank"
+              rel="noreferrer"
+            >
               view claim transaction ↗
             </a>
             <p className="callout">
