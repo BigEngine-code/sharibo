@@ -74,6 +74,8 @@ The claimant proves, in zero knowledge:
 
 An on-chain observer sees five deposits and one payout — and no way to connect them.
 
+Full structured breakdown — assets, adversaries, and which code enforces each property (and its limits) — in [docs/threat-model.md](docs/threat-model.md).
+
 ## Honest limitations
 
 - **Claim-side privacy only.** Funding is fully public, by scope: shielded deposits are a different (harder) problem — roadmap.
