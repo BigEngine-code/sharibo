@@ -9,6 +9,7 @@
     "app"
   ],
   "scripts": {
-    "e2e": "npm run e2e --workspace=scripts"
+    "e2e": "npm run e2e --workspace=scripts",
+    "typecheck": "npm run typecheck --workspaces --if-present"
   }
 }

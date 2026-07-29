@@ -7,7 +7,8 @@
     "sync-circuit": "node scripts/sync-circuit.mjs",
     "dev": "npm run sync-circuit && vite",
     "build": "npm run sync-circuit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@sharibo/client": "*",
