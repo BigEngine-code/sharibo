@@ -222,6 +222,10 @@ sharibo/
 
 Full annotated version (what each file does and why): [breakdown §16](full_product_breakdown.md#16-repository-structure).
 
+## Contributing
+
+We welcome contributions to Sharibo! Please ensure you have read and adhere to our [Code of Conduct](CODE_OF_CONDUCT.md) when participating in this project.
+
 ## Roadmap
 
 - Funding-side shielding (hide *who* funded, not just who claimed).
