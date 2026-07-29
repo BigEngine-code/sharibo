@@ -386,6 +386,29 @@ fn create_circle_requires_admin_auth() {
 }
 
 #[test]
+fn get_circle_count_tracks_next_circle_id() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(Contract, ());
+    let client = ContractClient::new(&env, &contract_id);
+
+    assert_eq!(client.get_circle_count(), 0);
+
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = create_token(&env, &token_admin);
+    let root = real_root(&env);
+    let vk = real_verification_key(&env);
+
+    client.create_circle(&admin, &token, &root, &100i128, &5u32, &vk);
+    assert_eq!(client.get_circle_count(), 1);
+
+    client.create_circle(&admin, &token, &root, &100i128, &5u32, &vk);
+    assert_eq!(client.get_circle_count(), 2);
+}
+
+#[test]
 #[should_panic(expected = "Error(Contract, #1)")] // CircleNotFound
 fn fund_unknown_circle_reverts() {
     let s = setup(5, 100);
