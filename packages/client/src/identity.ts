@@ -5,15 +5,25 @@ import { poseidon2 } from "poseidon-bls12381";
 // bundler polyfill needed.
 const webCrypto: Crypto = globalThis.crypto;
 
+/**
+ * A user's cryptographic identity for participation in Sharibo circles.
+ *
+ * @property identityNullifier - The nullifier component of the identity.
+ * @property identitySecret - The secret component of the identity.
+ * @property commitment - The Poseidon hash of identityNullifier and identitySecret.
+ */
 export interface Identity {
   identityNullifier: bigint;
   identitySecret: bigint;
   commitment: bigint;
 }
 
-// BLS12-381 scalar field modulus r (matches Soroban's own Fr and the
-// poseidon-bls12381 package — cross-checked against soroban-sdk's
-// BLS12_381_FR_MODULUS_BE constant).
+/**
+ * BLS12-381 scalar field modulus r.
+ *
+ * Matches Soroban's own Fr and the poseidon-bls12381 package — cross-checked
+ * against soroban-sdk's BLS12_381_FR_MODULUS_BE constant.
+ */
 export const FR_MODULUS =
   0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001n;
 
@@ -23,28 +33,55 @@ function bytesToBigInt(bytes: Uint8Array): bigint {
   );
 }
 
-// Wide reduction: 64 random bytes (512 bits) mod FR_MODULUS (~2^255).
-//
-// This samples uniformly from the full field, at the cost of a small,
-// cryptographically negligible bias (< 2^-250, since 2^512 is not an exact
-// multiple of FR_MODULUS) — vastly smaller than the ~2^-128 security level
-// Poseidon and the field itself target. The previous approach (31 random
-// bytes / 248 bits, always < FR_MODULUS, no reduction needed) had ample
-// entropy on its own but only ever produced values in a 2^248 subset of the
-// ~2^255 field (top ~7 bits always zero); Poseidon's preimage security here
-// doesn't depend on full-field uniformity, but wide reduction removes the
-// deviation entirely for the cost of one extra `getRandomValues` call and a
-// `%`, so we do it rather than leave the narrower scheme as a documented
-// judgment call. See Issue #66.
+/**
+ * Generates a random field element using wide reduction.
+ *
+ * Samples uniformly from the full BLS12-381 scalar field by taking 64 random
+ * bytes (512 bits) and reducing modulo FR_MODULUS (~2^255). This has a
+ * cryptographically negligible bias (< 2^-250) which is vastly smaller than the
+ * ~2^-128 security level Poseidon targets.
+ *
+ * @returns A random field element in [0, FR_MODULUS).
+ *
+ * @remarks
+ * Wide reduction: 64 random bytes (512 bits) mod FR_MODULUS (~2^255).
+ *
+ * This samples uniformly from the full field, at the cost of a small,
+ * cryptographically negligible bias (< 2^-250, since 2^512 is not an exact
+ * multiple of FR_MODULUS) — vastly smaller than the ~2^-128 security level
+ * Poseidon and the field itself target. The previous approach (31 random
+ * bytes / 248 bits, always < FR_MODULUS, no reduction needed) had ample
+ * entropy on its own but only ever produced values in a 2^248 subset of the
+ * ~2^255 field (top ~7 bits always zero); Poseidon's preimage security here
+ * doesn't depend on full-field uniformity, but wide reduction removes the
+ * deviation entirely for the cost of one extra `getRandomValues` call and a
+ * `%`, so we do it rather than leave the narrower scheme as a documented
+ * judgment call. See Issue #66.
+ */
 export function randomFieldElement(): bigint {
   const bytes = webCrypto.getRandomValues(new Uint8Array(64));
   return bytesToBigInt(bytes) % FR_MODULUS;
 }
 
+/**
+ * Computes the Poseidon hash of two field elements.
+ *
+ * @param a - First field element.
+ * @param b - Second field element.
+ * @returns The Poseidon hash of the two inputs.
+ */
 export function poseidon(a: bigint, b: bigint): bigint {
   return poseidon2([a, b]);
 }
 
+/**
+ * Generates a new cryptographic identity.
+ *
+ * Creates a random identityNullifier and identitySecret, then computes the
+ * commitment as their Poseidon hash.
+ *
+ * @returns A new Identity with random nullifier, secret, and commitment.
+ */
 export function generateIdentity(): Identity {
   const identityNullifier = randomFieldElement();
   const identitySecret = randomFieldElement();
@@ -52,14 +89,30 @@ export function generateIdentity(): Identity {
   return { identityNullifier, identitySecret, commitment };
 }
 
-// DELIBERATE, PERMANENT DEVIATION from "Poseidon everywhere": external
-// nullifier binding (circle_id, round) happens with SHA-256, matching the
-// contract (see contracts/sharibo/src/lib.rs, compute_external_nullifier).
-// Poseidon is used only where it saves constraints *inside* the circuit
-// (commitment + nullifierHash); Soroban has no native Poseidon host
-// function, so nothing is gained by porting Poseidon into the contract for
-// this check, and SHA-256 is equally sound for binding a proof to a round.
-// See NOTES.md.
+/**
+ * Computes the external nullifier for a circle and round.
+ *
+ * Binds a proof to a specific circle and round using SHA-256, matching the
+ * contract's implementation. This is a deliberate deviation from "Poseidon
+ * everywhere" — SHA-256 is used here since Soroban has no native Poseidon
+ * host function, and SHA-256 is equally sound for binding a proof to a round.
+ *
+ * @param circleId - The circle identifier (must be a valid u64: 0 <= circleId < 2^64).
+ * @param round - The round number (must be a valid u32: 0 <= round < 2^32).
+ * @returns The external nullifier as a field element.
+ * @throws {RangeError} If circleId is not in the valid u64 range.
+ * @throws {RangeError} If round is not in the valid u32 range.
+ *
+ * @remarks
+ * DELIBERATE, PERMANENT DEVIATION from "Poseidon everywhere": external
+ * nullifier binding (circle_id, round) happens with SHA-256, matching the
+ * contract (see contracts/sharibo/src/lib.rs, compute_external_nullifier).
+ * Poseidon is used only where it saves constraints *inside* the circuit
+ * (commitment + nullifierHash); Soroban has no native Poseidon host
+ * function, so nothing is gained by porting Poseidon into the contract for
+ * this check, and SHA-256 is equally sound for binding a proof to a round.
+ * See NOTES.md.
+ */
 export async function computeExternalNullifier(
   circleId: bigint,
   round: bigint,
@@ -89,6 +142,16 @@ export async function computeExternalNullifier(
   return bytesToBigInt(new Uint8Array(digest)) % FR_MODULUS;
 }
 
+/**
+ * Computes the nullifier hash for an identity.
+ *
+ * Combines the identityNullifier with the externalNullifier using Poseidon
+ * to create the nullifier hash that will be used in the circuit and contract.
+ *
+ * @param identityNullifier - The nullifier component of the identity.
+ * @param externalNullifier - The external nullifier binding to circle and round.
+ * @returns The Poseidon hash of the two inputs.
+ */
 export function computeNullifierHash(
   identityNullifier: bigint,
   externalNullifier: bigint,

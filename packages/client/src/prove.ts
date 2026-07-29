@@ -6,6 +6,16 @@ import * as snarkjs from "snarkjs";
 // /circuits/). snarkjs's fullProve accepts either transparently, and
 // Uint8Array (unlike Buffer) needs no polyfill in the browser.
 
+/**
+ * Circuit input for the Sharibo zero-knowledge proof.
+ *
+ * @property identityNullifier - The nullifier component of the identity.
+ * @property identitySecret - The secret component of the identity.
+ * @property pathElements - The sibling nodes along the Merkle proof path.
+ * @property pathIndices - Direction indicators (0 = left, 1 = right) for each level.
+ * @property root - The Merkle tree root.
+ * @property externalNullifier - The external nullifier binding to circle and round.
+ */
 export interface CircuitInput {
   identityNullifier: bigint;
   identitySecret: bigint;
@@ -57,12 +67,28 @@ function g2ToBytes([[xc0, xc1], [yc0, yc1]]: [
   return concatBytes(feToBytes(xc1), feToBytes(xc0), feToBytes(yc1), feToBytes(yc0));
 }
 
+/**
+ * A Groth16 proof in the wire format expected by the Sharibo contract.
+ *
+ * @property a - G1 point pi_a (96 bytes: be_bytes(X) || be_bytes(Y)).
+ * @property b - G2 point pi_b (192 bytes: be_bytes(X_c1) || be_bytes(X_c0) || be_bytes(Y_c1) || be_bytes(Y_c0)).
+ * @property c - G1 point pi_c (96 bytes: be_bytes(X) || be_bytes(Y)).
+ */
 export interface ContractProof {
   a: Uint8Array;
   b: Uint8Array;
   c: Uint8Array;
 }
 
+/**
+ * A Groth16 verification key in the wire format expected by the Sharibo contract.
+ *
+ * @property alpha - G1 point alpha (96 bytes).
+ * @property beta - G2 point beta (192 bytes).
+ * @property gamma - G2 point gamma (192 bytes).
+ * @property delta - G2 point delta (192 bytes).
+ * @property ic - Array of G1 points for the IC coefficients (96 bytes each).
+ */
 export interface ContractVerificationKey {
   alpha: Uint8Array;
   beta: Uint8Array;
@@ -71,6 +97,12 @@ export interface ContractVerificationKey {
   ic: Uint8Array[];
 }
 
+/**
+ * Converts a snarkjs verification key to the contract wire format.
+ *
+ * @param vk - The verification key in snarkjs format (decimal string coordinates).
+ * @returns The verification key in contract wire format (big-endian bytes).
+ */
 export function verificationKeyToContractFormat(vk: {
   vk_alpha_1: [string, string, string];
   vk_beta_2: [[string, string], [string, string], [string, string]];
@@ -87,6 +119,14 @@ export function verificationKeyToContractFormat(vk: {
   };
 }
 
+/**
+ * The result of generating a zero-knowledge proof.
+ *
+ * @property proof - The Groth16 proof in contract wire format.
+ * @property nullifierHash - The computed nullifier hash.
+ * @property root - The Merkle tree root used in the proof.
+ * @property externalNullifier - The external nullifier used in the proof.
+ */
 export interface ProveResult {
   proof: ContractProof;
   nullifierHash: bigint;
@@ -94,10 +134,20 @@ export interface ProveResult {
   externalNullifier: bigint;
 }
 
-// Public signal order snarkjs actually emits is [nullifierHash, root,
-// externalNullifier] — circuit outputs first, then declared public inputs
-// in source order. Not [root, externalNullifier, nullifierHash]; see
-// NOTES.md (Phase 1 deviation).
+/**
+ * Generates a Groth16 zero-knowledge proof for the Sharibo circuit.
+ *
+ * @param input - The circuit input containing identity and Merkle proof data.
+ * @param wasmPath - Path or URL to the circuit WASM file.
+ * @param zkeyPath - Path or URL to the circuit proving key (zkey) file.
+ * @returns The proof and public signals in contract wire format.
+ *
+ * @remarks
+ * Public signal order snarkjs actually emits is [nullifierHash, root,
+ * externalNullifier] — circuit outputs first, then declared public inputs
+ * in source order. Not [root, externalNullifier, nullifierHash]; see
+ * NOTES.md (Phase 1 deviation).
+ */
 export async function generateProof(
   input: CircuitInput,
   wasmPath: string,
