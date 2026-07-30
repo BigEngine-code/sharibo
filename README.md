@@ -15,7 +15,7 @@ Built for the **Stellar Hacks: Real-World ZK** hackathon. Testnet only, no real 
   "fps=12,scale=960:-1" demo.gif`, keep it under ~8 MB.
 ─────────────────────────────────────────────────────────────── -->
 
-**[▶ demo video](YOUR_VIDEO_URL)** · **[🚀 live app (testnet)](https://dist-flax-three-43.vercel.app)** · **[📖 full product breakdown](full_product_breakdown.md)** · **[🛠 build log](NOTES.md)**
+**[▶ demo video](YOUR_VIDEO_URL)** · **[🚀 live app (testnet)](https://dist-flax-three-43.vercel.app)** · **[📖 full product breakdown](full_product_breakdown.md)** · **[🛠 build log](NOTES.md)** · **[📚 glossary](docs/glossary.md)**
 
 ---
 
@@ -224,7 +224,7 @@ Full annotated version (what each file does and why): [breakdown §16](full_prod
 
 ## Contributing
 
-We welcome contributions to Sharibo! Please ensure you have read and adhere to our [Code of Conduct](CODE_OF_CONDUCT.md) when participating in this project.
+We welcome contributions to Sharibo! Please ensure you have read and adhere to our [Code of Conduct](CODE_OF_CONDUCT.md) when participating in this project. If terms like *Groth16* or *Merkle root* are new to you, start with the [glossary](docs/glossary.md).
 
 ## Roadmap
 
