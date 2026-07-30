@@ -35,6 +35,36 @@ export async function connect(
 export interface TxResult<T> {
   result: T;
   hash: string;
+  /** Ledger sequence number the transaction was included in, if available. */
+  ledger?: number;
+  /** Fee charged for the transaction in stroops, if available. */
+  feeCharged?: string;
+}
+
+/**
+ * Build a Stellar explorer URL for a transaction hash, network-aware.
+ *
+ * @param hash - Transaction hash (hex string).
+ * @param networkPassphrase - Stellar network passphrase (e.g. "Test SDF Network ; September 2015").
+ * @returns A fully-qualified stellar.expert URL.
+ */
+export function explorerTxUrl(hash: string, networkPassphrase: string): string {
+  const subdomain = networkPassphrase.includes("Public Global")
+    ? "" // mainnet — no subdomain prefix
+    : "testnet.";
+  return `https://${subdomain}stellar.expert/explorer/tx/${hash}`;
+}
+
+function populateTxResult<T>(
+  result: T,
+  sent: { sendTransactionResponse: { hash: string }; getTransactionResponse?: { ledger?: number; feeCharged?: string } },
+): TxResult<T> {
+  return {
+    result,
+    hash: sent.sendTransactionResponse.hash,
+    ledger: sent.getTransactionResponse?.ledger,
+    feeCharged: sent.getTransactionResponse?.feeCharged,
+  };
 }
 
 export async function createCircle(
@@ -57,7 +87,7 @@ export async function createCircle(
     vk: args.vk,
   });
   const sent = await tx.signAndSend();
-  return { result: sent.result as bigint, hash: sent.sendTransactionResponse.hash };
+  return populateTxResult(sent.result as bigint, sent);
 }
 
 export async function fund(
@@ -66,7 +96,7 @@ export async function fund(
 ): Promise<TxResult<void>> {
   const tx = await client.fund({ circle_id: args.circleId, from: args.from });
   const sent = await tx.signAndSend();
-  return { result: undefined, hash: sent.sendTransactionResponse.hash };
+  return populateTxResult(undefined, sent);
 }
 
 export async function claim(
@@ -87,7 +117,7 @@ export async function claim(
     proof: args.proof,
   });
   const sent = await tx.signAndSend();
-  return { result: undefined, hash: sent.sendTransactionResponse.hash };
+  return populateTxResult(undefined, sent);
 }
 
 export interface CircleView {

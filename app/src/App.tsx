@@ -12,10 +12,12 @@ import {
   claim,
   getCircle,
   hasClaimed,
+  explorerTxUrl,
   type Identity,
   type ContractProof,
 } from "@sharibo/client";
 import { config, configError } from "./config";
+import { LiveRegion, usePoliteLiveRegion } from "./usePoliteLiveRegion";
 
 const NETWORK = {
   contractId: config.contractId,
@@ -49,9 +51,6 @@ async function friendbotFund(publicKey: string): Promise<void> {
   }
 }
 
-function explorerTx(hash: string): string {
-  return `https://stellar.expert/explorer/testnet/tx/${hash}`;
-}
 function explorerAccount(address: string): string {
   return `https://stellar.expert/explorer/testnet/account/${address}`;
 }
@@ -253,6 +252,28 @@ export default function App() {
   const contribution = BigInt(contributionXlm) * STROOPS_PER_XLM;
   const fundedCount = members.filter((m) => m.funded).length;
   const fullyFunded = pot === contribution * BigInt(CIRCLE_SIZE);
+  const { announce, message: liveRegionMessage } = usePoliteLiveRegion(120);
+
+  useEffect(() => {
+    if (busy) {
+      announce("");
+      return;
+    }
+
+    if (claimResult) {
+      announce("Price update complete. The claim result is ready.");
+      return;
+    }
+
+    if (error) {
+      announce(`Error: ${error}`);
+      return;
+    }
+
+    if (fullyFunded) {
+      announce("Price update complete. The claim step is ready.");
+    }
+  }, [announce, busy, claimResult, error, fullyFunded]);
 
   // ── Focus management ────────────────────────────────────────────────────
   // When a screen or major section appears, move keyboard focus to its
@@ -538,25 +559,7 @@ export default function App() {
           aria-atomic="true" replaces the whole message on each update rather
           than diffing individual text nodes, which is more reliable across ATs.
         */}
-        <div
-          role="status"
-          aria-live="polite"
-          aria-atomic="true"
-          // Visually hidden but readable by screen readers.
-          style={{
-            position: "absolute",
-            width: "1px",
-            height: "1px",
-            padding: 0,
-            margin: "-1px",
-            overflow: "hidden",
-            clip: "rect(0,0,0,0)",
-            whiteSpace: "nowrap",
-            border: 0,
-          }}
-        >
-          {busy ?? (error ? `Error: ${error}` : "")}
-        </div>
+        <LiveRegion message={liveRegionMessage} />
         <div className="row space-between">
           <h1 className="small" ref={circleHeadingRef} tabIndex={-1}>SHARIBO</h1>
           <div className="row">
