@@ -10,6 +10,17 @@ Soroban contract for private rotating savings circles. Public methods:
 | `get_circle` | view | Read circle state. |
 | `has_claimed` | view | Whether a nullifier has already been used in this circle. |
 
+## Pre-PR checklist
+
+Before submitting a PR with contract changes, run these two commands to keep the codebase clean:
+
+```bash
+cargo fmt                    # auto-format all Rust sources
+cargo clippy --all-targets -- -D warnings   # lint; deny any warning
+```
+
+Both must exit cleanly on a fresh clone.
+
 ## Open funding (deliberate)
 
 `fund(circle_id, from)` requires only `from.require_auth()` — **any address may fund any circle**. The Merkle tree constrains who may *claim*, not who may *fund*.

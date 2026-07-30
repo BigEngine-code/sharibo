@@ -2,6 +2,9 @@
   "name": "sharibo",
   "private": true,
   "version": "0.0.0",
+  "engines": {
+    "node": ">=20"
+  },
   "workspaces": [
     "circuits",
     "packages/client",
