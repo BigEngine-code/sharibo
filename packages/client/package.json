@@ -10,7 +10,7 @@
     "bench:prove": "tsx bench/prove.bench.ts"
   },
   "dependencies": {
-    "@stellar/stellar-sdk": "^16.0.1",
+    "@stellar/stellar-sdk": "^16.2.0",
     "poseidon-bls12381": "1.0.2",
     "snarkjs": "0.7.6"
   },
