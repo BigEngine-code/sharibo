@@ -2,7 +2,7 @@
 
 **Why v2:** the hackathon asks for a 2–3 minute walkthrough. v1 was 60s — punchy, but it spent zero seconds on the project's strongest differentiator: *real* on-chain Groth16 verification, with a from-the-trenches engineering story (the BN254 wall) and public tx hashes. v2 keeps v1's pacing for the first minute, then adds the two sections judges actually score on: "why this was hard" and "what we verified vs. what we're honest about."
 
-**Tone:** same as v1 — fast, confident. Every claim below is backed by `full_product_breakdown.md` §4/§6/§13. Nothing needs softening; it's all real.
+**Tone:** same as v1 — fast, confident. Every claim below is backed by [`full_product_breakdown.md`](../../full_product_breakdown.md) §4/§6/§13. Nothing needs softening; it's all real.
 
 ---
 
