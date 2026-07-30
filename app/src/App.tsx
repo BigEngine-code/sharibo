@@ -256,7 +256,7 @@ export default function App() {
 
   useEffect(() => {
     if (busy) {
-      announce("");
+      announce(`Help: ${busy}`);
       return;
     }
 
