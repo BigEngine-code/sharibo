@@ -1,7 +1,24 @@
 {
   "name": "sharibo",
-  "private": true,
   "version": "0.0.0",
+  "private": true,
+  "description": "A trustless ROSCA (Rotating Savings and Credit Association) built on Stellar Soroban with zero-knowledge proofs",
+  "license": "MIT",
+  "author": "Sharibo contributors",
+  "homepage": "https://github.com/crackedstudio/sharibo",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/crackedstudio/sharibo.git"
+  },
+  "keywords": [
+    "stellar",
+    "soroban",
+    "zk",
+    "groth16",
+    "rosca",
+    "savings",
+    "circle"
+  ],
   "workspaces": [
     "circuits",
     "packages/client",
