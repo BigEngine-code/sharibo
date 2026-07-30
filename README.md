@@ -8,6 +8,34 @@ Five members fund a shared pot. One member claims it — by proving *"I'm a genu
 
 Built for the **Stellar Hacks: Real-World ZK** hackathon. Testnet only, no real funds.
 
+## What is a ROSCA?
+
+A **rotating savings and credit association** (ROSCA) is one of the oldest financial tools in the world. It works on a simple agreement:
+
+1. **A fixed group** — friends, family, neighbors, or coworkers — agrees to contribute the same amount every round (weekly, monthly, whatever).
+2. **One person takes the whole pot** each round. The group rotates until every member has had a turn.
+3. **No bank, no interest, no credit score.** The group runs on social trust: if you take the pot early, you keep contributing until everyone else has had theirs.
+
+**Why they matter:** ROSCAs serve hundreds of millions of people worldwide — from market traders to software engineers — in places where banking is expensive, inaccessible, or simply not the norm. They turn *"I trust this group more than a faceless institution"* into working capital. A member who needs cash for inventory, school fees, or an emergency gets it without a loan application.
+
+**Where the names come from:**
+
+| Name | Region / Community |
+|---|---|
+| **ajo** / **esusu** | Nigeria, West Africa (Yoruba) |
+| **tanda** | Mexico, Latin America |
+| **susu** | Ghana, the Caribbean |
+| **tontine** | Francophone Africa, France (origin: 17th-c. Italian *tontina*) |
+| **cundina** | Colombia |
+| **junta** | Peru, Dominican Republic |
+| **pandero** | Venezuela |
+| **consórcio** | Brazil |
+| **hui** | China, Taiwan, Chinese diaspora |
+| **paluwagan** | Philippines |
+| **chit fund** | India (registered, regulated variant) |
+
+**Why privacy matters:** In a traditional ROSCA, everyone knows who collected the pot this round. That transparency is fine when the group is small and offline — but put the same circle on a public blockchain and suddenly every deposit and payout is visible to *the entire world*. Sharibo's zero-knowledge proof restores the privacy boundary the original social structure assumes: the contract knows *that* the claimant is a rightful member (via the ZK proof and the group's Merkle root), but **no observer — not even the other members — can link the payout address back to a specific member**. The circle stays on-chain; the connections stay off it.
+
 <!-- ──────────────────────────────────────────────────────────────
   DEMO GIF GOES HERE — 8–12s screen capture of the proving state
   → claim success → unlinked ring reveal. Record the browser at
@@ -15,7 +43,7 @@ Built for the **Stellar Hacks: Real-World ZK** hackathon. Testnet only, no real 
   "fps=12,scale=960:-1" demo.gif`, keep it under ~8 MB.
 ─────────────────────────────────────────────────────────────── -->
 
-**[▶ demo video](YOUR_VIDEO_URL)** · **[🚀 live app (testnet)](https://dist-flax-three-43.vercel.app)** · **[📖 full product breakdown](full_product_breakdown.md)** · **[🛠 build log](NOTES.md)**
+**[▶ demo video](YOUR_VIDEO_URL)** · **[🚀 live app (testnet)](https://dist-flax-three-43.vercel.app)** · **[📖 full product breakdown](full_product_breakdown.md)** · **[🛠 build log](NOTES.md)** · **[📚 glossary](docs/glossary.md)**
 
 ---
 
@@ -224,7 +252,7 @@ Full annotated version (what each file does and why): [breakdown §16](full_prod
 
 ## Contributing
 
-We welcome contributions to Sharibo! Please ensure you have read and adhere to our [Code of Conduct](CODE_OF_CONDUCT.md) when participating in this project.
+We welcome contributions to Sharibo! Please ensure you have read and adhere to our [Code of Conduct](CODE_OF_CONDUCT.md) when participating in this project. If terms like *Groth16* or *Merkle root* are new to you, start with the [glossary](docs/glossary.md).
 
 ## Roadmap
 
