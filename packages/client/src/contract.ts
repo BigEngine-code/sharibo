@@ -8,8 +8,8 @@ export interface ShariboNetworkConfig {
   networkPassphrase: string;
 }
 
-// The contract's methods (create_circle/fund/claim/get_circle) are attached
-// to the Client at runtime from the on-chain contract spec (see
+// The contract's methods (create_circle/fund/claim/get_circle/has_claimed)
+// are attached to the Client at runtime from the on-chain contract spec (see
 // @stellar/stellar-sdk's `contract.Client.from`), so they aren't visible to
 // TypeScript's static checker — hence `any` here rather than a hand-rolled
 // or codegen'd interface. Keeps this SDK working against whatever the
@@ -106,4 +106,18 @@ export async function getCircle(client: ShariboClient, circleId: bigint): Promis
   const tx = await client.get_circle({ circle_id: circleId });
   const sent = await tx.signAndSend({ force: true });
   return sent.result as CircleView;
+}
+
+/** Pure read: whether `nullifierHash` has already claimed in this circle. */
+export async function hasClaimed(
+  client: ShariboClient,
+  circleId: bigint,
+  nullifierHash: bigint,
+): Promise<boolean> {
+  const tx = await client.has_claimed({
+    circle_id: circleId,
+    nullifier_hash: nullifierHash,
+  });
+  const sent = await tx.signAndSend({ force: true });
+  return sent.result as boolean;
 }
