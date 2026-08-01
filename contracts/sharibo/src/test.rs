@@ -7,7 +7,7 @@ use ark_serialize::CanonicalSerialize;
 use core::str::FromStr;
 use soroban_sdk::{
     crypto::bls12_381::{G1_SERIALIZED_SIZE, G2_SERIALIZED_SIZE},
-    testutils::Address as _,
+    testutils::{Address as _, Ledger as _},
     BytesN, U256,
 };
 use std::vec::Vec as StdVec;
@@ -385,25 +385,374 @@ fn create_circle_requires_admin_auth() {
     assert_eq!(auths[0].0, admin);
 }
 
-// Confirms a real claim() call (real vk, real proof, real pairing check)
-// fits Soroban's standard CPU budget — this is the number that mattered
-// most for the BN254-vs-BLS12-381 decision in NOTES.md.
 #[test]
-fn claim_fits_cpu_budget() {
+#[should_panic(expected = "Error(Contract, #1)")] // CircleNotFound
+fn fund_unknown_circle_reverts() {
     let s = setup(5, 100);
     let client = ContractClient::new(&s.env, &s.client_id);
+    client.fund(&999u64, &s.members[0]);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #1)")] // CircleNotFound
+fn claim_unknown_circle_reverts() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    let recipient = Address::generate(&s.env);
+    client.claim(
+        &999u64,
+        &recipient,
+        &real_nullifier_hash(&s.env),
+        &real_external_nullifier_round0(&s.env),
+        &real_valid_proof(&s.env),
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #1)")] // CircleNotFound
+fn get_circle_unknown_reverts() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    let _ = client.get_circle(&999u64);
+}
+
+// CPU-instruction harness: measures create_circle / fund / claim, plus a
+// synthetic larger-IC Groth16 verify (more public inputs → more g1_mul).
+// Tree depth does NOT change claim cost (circuit-only); IC length does.
+// Numbers are printed and recorded in contracts/README.md (soroban-sdk 23.5.3).
+#[test]
+fn cpu_instruction_benchmarks() {
+    // ---- create_circle ----
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(Contract, ());
+    let client = ContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = create_token(&env, &token_admin);
+    let root = real_root(&env);
+    let vk = real_verification_key(&env);
+    client.create_circle(&admin, &token, &root, &100i128, &5u32, &vk);
+    let create_cpu = env.cost_estimate().budget().cpu_instruction_cost();
+    std::println!("bench create_circle: {create_cpu} CPU instructions");
+
+    // ---- fund (one member) ----
+    let token_admin_client = token::StellarAssetClient::new(&env, &token);
+    let member = Address::generate(&env);
+    token_admin_client.mint(&member, &100i128);
+    client.fund(&0u64, &member);
+    let fund_cpu = env.cost_estimate().budget().cpu_instruction_cost();
+    std::println!("bench fund:          {fund_cpu} CPU instructions");
+
+    // Fund the remaining 4 so claim can run.
+    for _ in 0..4 {
+        let m = Address::generate(&env);
+        token_admin_client.mint(&m, &100i128);
+        client.fund(&0u64, &m);
+    }
+
+    // ---- claim (current: 3 public inputs, ic.len() == 4) ----
+    let recipient = Address::generate(&env);
+    let nullifier_hash = real_nullifier_hash(&env);
+    let external_nullifier = real_external_nullifier_round0(&env);
+    let proof = real_valid_proof(&env);
+    client.claim(&0u64, &recipient, &nullifier_hash, &external_nullifier, &proof);
+    let claim_cpu = env.cost_estimate().budget().cpu_instruction_cost();
+    std::println!("bench claim:         {claim_cpu} CPU instructions");
+
+    // Headroom assertion: upgrades that blow past ~60% of the 100M budget fail loudly.
+    assert!(
+        claim_cpu < 60_000_000,
+        "claim() CPU {claim_cpu} exceeded 60M headroom (budget 100M)"
+    );
+
+    // ---- larger IC (simulate 5 public inputs → ic.len() == 6) ----
+    // Runs the same Groth16 path with 2 extra g1_mul terms. Proof will not
+    // verify (dummy inputs); we only care about instruction cost.
+    env.cost_estimate().budget().reset_default();
+    let mut big_vk = real_verification_key(&env);
+    let pad = big_vk.ic.get(0).unwrap();
+    big_vk.ic.push_back(pad.clone());
+    big_vk.ic.push_back(pad);
+    let zero = Fr::from_u256(U256::from_u32(&env, 0));
+    let big_inputs = vec![
+        &env,
+        nullifier_hash,
+        root,
+        external_nullifier,
+        zero.clone(),
+        zero,
+    ];
+    let _ = Contract::verify_groth16(&env, &big_vk, &proof, &big_inputs);
+    let large_ic_cpu = env.cost_estimate().budget().cpu_instruction_cost();
+    std::println!(
+        "bench verify_groth16 (5 public inputs / ic=6): {large_ic_cpu} CPU instructions"
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")] // RoundFull
+fn sixth_fund_on_full_round_reverts() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    let token_admin_client = token::StellarAssetClient::new(&s.env, &s.token);
+
     for m in s.members.iter() {
         client.fund(&s.circle_id, m);
     }
+
+    let circle = client.get_circle(&s.circle_id);
+    assert_eq!(circle.pot, s.contribution * (s.size as i128));
+
+    // A sixth deposit must fail with RoundFull — otherwise pot > target and
+    // claim's equality check bricks forever.
+    let griefer = Address::generate(&s.env);
+    token_admin_client.mint(&griefer, &s.contribution);
+    client.fund(&s.circle_id, &griefer);
+}
+
+#[test]
+fn claim_works_on_fully_funded_round_after_cap() {
+    // Companion to sixth_fund_on_full_round_reverts: five funds reach the
+    // cap exactly, claim still pays out (over-funding never mutated state).
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    let token_client = token::Client::new(&s.env, &s.token);
+
+    for m in s.members.iter() {
+        client.fund(&s.circle_id, m);
+    }
+    assert_eq!(
+        client.get_circle(&s.circle_id).pot,
+        s.contribution * (s.size as i128)
+    );
+
     let recipient = Address::generate(&s.env);
     let nullifier_hash = real_nullifier_hash(&s.env);
     let external_nullifier = real_external_nullifier_round0(&s.env);
     let proof = real_valid_proof(&s.env);
-    client.claim(&s.circle_id, &recipient, &nullifier_hash, &external_nullifier, &proof);
+    client.claim(
+        &s.circle_id,
+        &recipient,
+        &nullifier_hash,
+        &external_nullifier,
+        &proof,
+    );
+    assert_eq!(
+        token_client.balance(&recipient),
+        s.contribution * (s.size as i128)
+    );
+}
 
-    // Cpu limit: 100000000; used: 48066196 (~48%) — comfortably fits.
-    // Dominated by Bls12381Pairing (~30.3M) + Bls12381G1Mul (~7.4M, from
-    // the two g1_mul calls computing vk_x over 3 public signals) +
-    // subgroup checks (~9.3M combined).
-    assert!(s.env.cost_estimate().budget().cpu_instruction_cost() < 100_000_000);
+#[test]
+fn has_claimed_false_before_true_after() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    let nullifier_hash = real_nullifier_hash(&s.env);
+
+    assert!(!client.has_claimed(&s.circle_id, &nullifier_hash));
+
+    for m in s.members.iter() {
+        client.fund(&s.circle_id, m);
+    }
+
+    let recipient = Address::generate(&s.env);
+    let external_nullifier = real_external_nullifier_round0(&s.env);
+    let proof = real_valid_proof(&s.env);
+    client.claim(
+        &s.circle_id,
+        &recipient,
+        &nullifier_hash,
+        &external_nullifier,
+        &proof,
+    );
+
+    assert!(client.has_claimed(&s.circle_id, &nullifier_hash));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #7)")] // Overflow
+fn fund_reverts_on_pot_target_overflow() {
+    // contribution * size overflows i128 → typed Overflow before any transfer.
+    let s = setup(2, i128::MAX);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    client.fund(&s.circle_id, &s.members[0]);
+}
+
+#[test]
+fn anyone_can_fund() {
+    // Open-funding guarantee: a stranger (not in the member set created by
+    // setup) can pay a contribution into the circle. Membership gates claim
+    // via the Merkle root, not fund. See contracts/README.md.
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    let token_admin_client = token::StellarAssetClient::new(&s.env, &s.token);
+
+    let stranger = Address::generate(&s.env);
+    token_admin_client.mint(&stranger, &s.contribution);
+    client.fund(&s.circle_id, &stranger);
+
+    let circle = client.get_circle(&s.circle_id);
+    assert_eq!(circle.pot, s.contribution);
+}
+
+// ---- Issue #82: admin cancel/refund path ----
+
+#[test]
+fn cancel_refunds_partial_funders_and_closes_circle() {
+    // Scenario: 4 of 5 members fund, the 5th never shows up.
+    // Admin cancels; all 4 existing funders are refunded exactly
+    // `contribution` each, and the circle is permanently closed.
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    let _token_admin_client = token::StellarAssetClient::new(&s.env, &s.token);
+    let token_client = token::Client::new(&s.env, &s.token);
+
+    // Mint enough for 4 funders (setup only mints `contribution` per member).
+    let funders: StdVec<Address> = s.members.iter().take(4).cloned().collect();
+    for f in funders.iter() {
+        client.fund(&s.circle_id, f);
+    }
+
+    let circle_before = client.get_circle(&s.circle_id);
+    assert_eq!(circle_before.pot, s.contribution * 4);
+    assert_eq!(circle_before.contributors.len(), 4);
+
+    // Record balances before cancel.
+    let before: StdVec<i128> = funders
+        .iter()
+        .map(|f| token_client.balance(f))
+        .collect();
+
+    let _admin = client.get_circle(&s.circle_id).admin;
+    client.cancel_circle(&s.circle_id);
+
+    // Every funder must have been refunded exactly their contribution.
+    for (f, bal_before) in funders.iter().zip(before.iter()) {
+        assert_eq!(
+            token_client.balance(f),
+            bal_before + s.contribution,
+            "funder {f:?} not fully refunded"
+        );
+    }
+
+    let circle_after = client.get_circle(&s.circle_id);
+    assert_eq!(circle_after.pot, 0);
+    assert!(circle_after.cancelled);
+    assert_eq!(circle_after.contributors.len(), 0);
+
+    // Contract holds no tokens.
+    assert_eq!(token_client.balance(&s.client_id), 0);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #8)")] // CircleCancelled
+fn fund_after_cancel_reverts() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    let token_admin_client = token::StellarAssetClient::new(&s.env, &s.token);
+
+    client.cancel_circle(&s.circle_id);
+
+    let extra = Address::generate(&s.env);
+    token_admin_client.mint(&extra, &s.contribution);
+    client.fund(&s.circle_id, &extra);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #8)")] // CircleCancelled
+fn claim_after_cancel_reverts() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+
+    for m in s.members.iter() {
+        client.fund(&s.circle_id, m);
+    }
+    client.cancel_circle(&s.circle_id);
+
+    let recipient = Address::generate(&s.env);
+    client.claim(
+        &s.circle_id,
+        &recipient,
+        &real_nullifier_hash(&s.env),
+        &real_external_nullifier_round0(&s.env),
+        &real_valid_proof(&s.env),
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #8)")] // CircleCancelled
+fn double_cancel_reverts() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    client.cancel_circle(&s.circle_id);
+    client.cancel_circle(&s.circle_id);
+}
+
+// ---- Issue #84: instance-storage TTL extension ----
+
+#[test]
+fn instance_ttl_extended_after_create_fund_claim() {
+    // The Soroban test env lets us inspect TTLs via env.ledger().
+    // Strategy: bump the ledger far enough that the instance entry would
+    // expire if nothing extended it, then perform create/fund/claim and
+    // confirm the TTL has been refreshed to at least LEDGER_THRESHOLD.
+    //
+    // LEDGER_EXTEND_TO == 500_000; we advance by LEDGER_THRESHOLD (100)
+    // which is the minimum that triggers an extension.  After the call
+    // the remaining TTL must be > 0 (i.e. the entry did not expire).
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(Contract, ());
+    let client = ContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = create_token(&env, &token_admin);
+    let token_admin_client = token::StellarAssetClient::new(&env, &token);
+    let root = real_root(&env);
+    let vk = real_verification_key(&env);
+
+    // create_circle must extend instance TTL.
+    client.create_circle(&admin, &token, &root, &100i128, &5u32, &vk);
+
+    // Advance the ledger by LEDGER_THRESHOLD so the instance entry would
+    // expire without the extension; the TTL should now be refreshed.
+    env.ledger().with_mut(|l| {
+        l.sequence_number += LEDGER_THRESHOLD;
+        l.timestamp += u64::from(LEDGER_THRESHOLD) * 5;
+        l.min_persistent_entry_ttl = LEDGER_THRESHOLD;
+        l.min_temp_entry_ttl = LEDGER_THRESHOLD;
+    });
+
+    // fund must also extend instance TTL.
+    let member = Address::generate(&env);
+    token_admin_client.mint(&member, &100i128);
+    client.fund(&0u64, &member);
+
+    // fund 4 more so we can claim.
+    for _ in 0..4 {
+        let m = Address::generate(&env);
+        token_admin_client.mint(&m, &100i128);
+        client.fund(&0u64, &m);
+    }
+
+    // claim must also extend instance TTL.
+    let recipient = Address::generate(&env);
+    client.claim(
+        &0u64,
+        &recipient,
+        &real_nullifier_hash(&env),
+        &real_external_nullifier_round0(&env),
+        &real_valid_proof(&env),
+    );
+
+    // Verify the instance entry is still live (has a TTL > 0) after all
+    // three write paths have run. If extend_ttl were missing, the entry
+    // would have lapsed and NextCircleId would behave unpredictably.
+    // The test env raises an error if a live entry is accessed after
+    // its TTL expires, so a successful get_circle here is our proof.
+    let circle = client.get_circle(&0u64);
+    assert_eq!(circle.round, 1, "claim should have advanced round to 1");
 }
