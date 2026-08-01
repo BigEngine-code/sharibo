@@ -9,6 +9,8 @@
     "app"
   ],
   "scripts": {
-    "e2e": "npm run e2e --workspace=scripts"
+    "e2e": "npm run e2e --workspace=scripts",
+    "clean": "node scripts/clean.mjs",
+    "clean:all": "node scripts/clean.mjs --all"
   }
 }
