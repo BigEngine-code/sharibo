@@ -1,4 +1,5 @@
 import { poseidon2 } from "poseidon-bls12381";
+import { InvalidInputError } from "./errors.js";
 
 // Web Crypto (`globalThis.crypto`) rather than `node:crypto`, so this module
 // runs unmodified in both Node (18+) and the browser app (Phase 5) — no
@@ -71,12 +72,12 @@ export async function computeExternalNullifier(
   // producing a valid-looking but wrong hash that the contract rejects with
   // an opaque `WrongRoundTag` — Issue #65.
   if (circleId < 0n || circleId >= 2n ** 64n) {
-    throw new RangeError(
+    throw new InvalidInputError(
       `circleId must satisfy 0 <= circleId < 2**64 (u64), got ${circleId}`,
     );
   }
   if (round < 0n || round >= 2n ** 32n) {
-    throw new RangeError(
+    throw new InvalidInputError(
       `round must satisfy 0 <= round < 2**32 (u32), got ${round}`,
     );
   }

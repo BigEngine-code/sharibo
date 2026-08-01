@@ -14,6 +14,10 @@ import {
   hasClaimed,
   type Identity,
   type ContractProof,
+  ContractError,
+  RpcError,
+  ProvingError,
+  InvalidInputError,
 } from "@sharibo/client";
 import { config, configError } from "./config";
 
@@ -224,6 +228,23 @@ function EnvSetupScreen({ errors }: { errors: string[] }) {
   );
 }
 
+function getErrorMessage(e: unknown): string {
+  if (e instanceof ContractError) {
+    return `On-chain Contract Error: ${e.message}${e.code !== undefined ? ` (code ${e.code})` : ""}`;
+  }
+  if (e instanceof RpcError) {
+    return `Network/RPC Error: ${e.message}. Please check connection.`;
+  }
+  if (e instanceof ProvingError) {
+    return `Zero-Knowledge Proving Error: ${e.message}`;
+  }
+  if (e instanceof InvalidInputError) {
+    return `Invalid Input: ${e.message}`;
+  }
+  return e instanceof Error ? e.message : String(e);
+}
+
+
 export default function App() {
   if (configError.length > 0) {
     return <EnvSetupScreen errors={configError} />;
@@ -361,7 +382,7 @@ export default function App() {
       setPot(0n);
       setScreen("circle");
     } catch (e) {
-      setError((e as Error).message);
+      setError(getErrorMessage(e));
     } finally {
       setBusy(null);
     }
@@ -387,7 +408,7 @@ export default function App() {
       setPot(circle.pot);
       setRound(circle.round);
     } catch (e) {
-      setError((e as Error).message);
+      setError(getErrorMessage(e));
     } finally {
       setBusy(null);
     }
@@ -438,7 +459,7 @@ export default function App() {
       setPot(circle.pot);
       setRound(circle.round);
     } catch (e) {
-      setError((e as Error).message);
+      setError(getErrorMessage(e));
     } finally {
       setBusy(null);
     }
@@ -470,7 +491,7 @@ export default function App() {
       });
       setRejection("Unexpected: the replayed claim was accepted (this should never happen).");
     } catch (e) {
-      setRejection((e as Error).message);
+      setRejection(getErrorMessage(e));
     } finally {
       // Reflect the on-chain state either way: the re-funding above happened
       // for real even though the replayed claim itself was rejected.

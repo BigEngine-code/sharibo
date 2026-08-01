@@ -27,6 +27,7 @@ import {
   claim,
   getCircle,
   TREE_LEVELS,
+  ContractError,
 } from "@sharibo/client";
 
 process.loadEnvFile(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", ".env"));
@@ -252,13 +253,16 @@ async function main() {
       "claim (reuse attempt)",
     );
   } catch (err) {
-    const message = (err as Error).message;
     secondClaimRejected = true;
     assert(
-      message.includes("Error(Contract, #4)"),
-      `expected AlreadyClaimed (#4), got: ${message.split("\n")[0]}`,
+      err instanceof ContractError,
+      `expected ContractError, got: ${err}`
     );
-    console.log("   rejected as expected (AlreadyClaimed):", message.split("\n")[0]);
+    assert(
+      err.code === 4,
+      `expected AlreadyClaimed (#4) error code, got: ${err.code}`
+    );
+    console.log("   rejected as expected (AlreadyClaimed) with code 4:", err.message.split("\n")[0]);
   }
   assert(secondClaimRejected, "a second claim with the same nullifier must be rejected");
 

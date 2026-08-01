@@ -5,6 +5,8 @@ import {
   randomFieldElement,
   computeExternalNullifier,
 } from "./identity.js";
+import { InvalidInputError } from "./errors.js";
+
 
 // Issue #63: pin FR_MODULUS against independent sources so a transcription
 // error in the hex literal fails the suite instead of silently corrupting
@@ -44,12 +46,12 @@ test("computeExternalNullifier accepts the round boundary (2**32 - 1)", async ()
 test("computeExternalNullifier rejects round >= 2**32", async () => {
   await assert.rejects(
     () => computeExternalNullifier(1n, 2n ** 32n),
-    RangeError,
+    InvalidInputError,
   );
 });
 
 test("computeExternalNullifier rejects negative round", async () => {
-  await assert.rejects(() => computeExternalNullifier(1n, -1n), RangeError);
+  await assert.rejects(() => computeExternalNullifier(1n, -1n), InvalidInputError);
 });
 
 test("computeExternalNullifier accepts the circleId boundary (2**64 - 1)", async () => {
@@ -59,10 +61,10 @@ test("computeExternalNullifier accepts the circleId boundary (2**64 - 1)", async
 test("computeExternalNullifier rejects circleId >= 2**64", async () => {
   await assert.rejects(
     () => computeExternalNullifier(2n ** 64n, 1n),
-    RangeError,
+    InvalidInputError,
   );
 });
 
 test("computeExternalNullifier rejects negative circleId", async () => {
-  await assert.rejects(() => computeExternalNullifier(-1n, 1n), RangeError);
+  await assert.rejects(() => computeExternalNullifier(-1n, 1n), InvalidInputError);
 });

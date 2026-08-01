@@ -1,4 +1,5 @@
 import * as snarkjs from "snarkjs";
+import { ProvingError } from "./errors.js";
 
 // No `node:*` imports and no `Buffer` at module scope (deliberately) — this
 // file is used both from Node (scripts/e2e.ts, passing filesystem paths)
@@ -112,20 +113,27 @@ export async function generateProof(
     externalNullifier: input.externalNullifier.toString(),
   };
 
-  const { proof, publicSignals } = await snarkjs.groth16.fullProve(
-    circuitInput,
-    wasmPath,
-    zkeyPath,
-  );
+  try {
+    const { proof, publicSignals } = await snarkjs.groth16.fullProve(
+      circuitInput,
+      wasmPath,
+      zkeyPath,
+    );
 
-  return {
-    proof: {
-      a: g1ToBytes(proof.pi_a as [string, string, string]),
-      b: g2ToBytes(proof.pi_b as [[string, string], [string, string], [string, string]]),
-      c: g1ToBytes(proof.pi_c as [string, string, string]),
-    },
-    nullifierHash: BigInt(publicSignals[0]),
-    root: BigInt(publicSignals[1]),
-    externalNullifier: BigInt(publicSignals[2]),
-  };
+    return {
+      proof: {
+        a: g1ToBytes(proof.pi_a as [string, string, string]),
+        b: g2ToBytes(proof.pi_b as [[string, string], [string, string], [string, string]]),
+        c: g1ToBytes(proof.pi_c as [string, string, string]),
+      },
+      nullifierHash: BigInt(publicSignals[0]),
+      root: BigInt(publicSignals[1]),
+      externalNullifier: BigInt(publicSignals[2]),
+    };
+  } catch (err) {
+    throw new ProvingError(
+      err instanceof Error ? err.message : String(err),
+      { cause: err }
+    );
+  }
 }
