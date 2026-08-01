@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Keypair } from "@stellar/stellar-sdk";
 import {
   generateIdentity,
@@ -11,16 +11,18 @@ import {
   fund,
   claim,
   getCircle,
+  hasClaimed,
   type Identity,
   type ContractProof,
 } from "@sharibo/client";
+import { config, configError } from "./config";
 
 const NETWORK = {
-  contractId: import.meta.env.VITE_SHARIBO_CONTRACT_ID as string,
-  rpcUrl: import.meta.env.VITE_STELLAR_RPC_URL as string,
-  networkPassphrase: import.meta.env.VITE_STELLAR_NETWORK_PASSPHRASE as string,
+  contractId: config.contractId,
+  rpcUrl: config.rpcUrl,
+  networkPassphrase: config.networkPassphrase,
 };
-const TOKEN = import.meta.env.VITE_TEST_TOKEN_CONTRACT_ID as string;
+const TOKEN = config.testTokenContractId;
 const LEVELS = 4;
 const CIRCLE_SIZE = 5;
 const STROOPS_PER_XLM = 10_000_000n;
@@ -75,14 +77,31 @@ interface ClaimResult {
 export function Stepper({ step }: { step: 0 | 1 | 2 | 3 }) {
   const labels = ["Create", "Fund", "Prove & Claim", "Unlinked ✓"];
   return (
-    <div className="stepper">
-      {labels.map((label, i) => (
-        <div key={label} className={`step ${i < step ? "done" : i === step ? "active" : ""}`}>
-          <span className="step-dot">{i < step ? "✓" : i + 1}</span>
-          {label}
-        </div>
-      ))}
-    </div>
+    // nav + ol give screen readers "step N of 4" list semantics without
+    // changing any visual output — CSS targets .stepper and .step as before.
+    <nav aria-label="Circle progress">
+      <ol className="stepper" style={{ listStyle: "none", margin: 0, padding: 0 }}>
+        {labels.map((label, i) => {
+          const state = i < step ? "done" : i === step ? "active" : "";
+          return (
+            <li
+              key={label}
+              className={`step ${state}`}
+              // aria-current="step" marks the single active step; completed
+              // and upcoming steps get no aria-current attribute at all.
+              {...(i === step ? { "aria-current": "step" as const } : {})}
+            >
+              {/* The dot (✓ / number) is decorative — the li text already
+                  conveys position, so hide the dot from the AT tree. */}
+              <span className="step-dot" aria-hidden="true">
+                {i < step ? "✓" : i + 1}
+              </span>
+              {label}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
   );
 }
 
@@ -90,18 +109,57 @@ export function Stepper({ step }: { step: 0 | 1 | 2 | 3 }) {
 // as "the one that claimed" — that's the point. From outside the ring, all
 // five remain equally plausible; only the demo operator (via the radio
 // picker below) ever knows which one actually did.
-export function MemberRing({
+function useRingRadius(): number {
+  const [radius, setRadius] = useState(100);
+
+  useEffect(() => {
+    const read = () => {
+      const value = getComputedStyle(document.documentElement).getPropertyValue("--ring-radius");
+      setRadius(parseFloat(value) || 100);
+    };
+    read();
+    window.addEventListener("resize", read);
+    return () => window.removeEventListener("resize", read);
+  }, []);
+
+  return radius;
+}
+
+function MemberRing({
   members,
   revealed,
 }: {
   members: { funded: boolean }[];
   revealed: boolean;
 }) {
-  const radius = 100;
+  const radius = useRingRadius();
+  const fundedCount = members.filter((m) => m.funded).length;
+
+  // Build a concise, dynamic summary for assistive technology.
+  const ringLabel = revealed
+    ? `${members.length}-member circle — pot claimed. Payout recipient is unlinkable to any member.`
+    : `${members.length}-member circle, ${fundedCount} of ${members.length} funded, pot not yet claimed.`;
+
+  // id used to associate the post-claim caption with the figure via
+  // aria-describedby so VoiceOver reads it as supplementary description.
+  const captionId = "ring-caption";
+
   return (
     <div className="ring-wrap">
-      <div className="ring">
-        <div className="ring-center">{revealed ? "✓" : "pot"}</div>
+      {/*
+        role="img" turns the whole ring into a single AT object described by
+        aria-label; aria-describedby wires up the visible caption when present.
+        All child nodes are aria-hidden — the label already covers their state.
+      */}
+      <div
+        className="ring"
+        role="img"
+        aria-label={ringLabel}
+        {...(revealed ? { "aria-describedby": captionId } : {})}
+      >
+        <div className="ring-center" aria-hidden="true">
+          {revealed ? "✓" : "pot"}
+        </div>
         {members.map((m, i) => {
           const angle = (i / members.length) * 2 * Math.PI - Math.PI / 2;
           const x = Math.round(Math.cos(angle) * radius);
@@ -109,6 +167,7 @@ export function MemberRing({
           return (
             <div
               key={i}
+              aria-hidden="true"
               className={`ring-node ${m.funded ? "funded" : ""}`}
               style={{ transform: `translate(${x}px, ${y}px)` }}
             >
@@ -117,13 +176,19 @@ export function MemberRing({
           );
         })}
         {revealed && (
-          <div className="ring-node ring-recipient" style={{ transform: "translate(0px, -170px)" }}>
+          <div
+            aria-hidden="true"
+            className="ring-node ring-recipient"
+            style={{ transform: "translate(0px, -170px)" }}
+          >
             ?
           </div>
         )}
       </div>
       {revealed && (
-        <p className="ring-caption">
+        // id matches aria-describedby above; role="note" hints to AT that
+        // this is supplementary information attached to the figure.
+        <p id={captionId} role="note" className="ring-caption">
           Payout landed on the address above — cryptographically, it could be tied to <em>any</em>{" "}
           of the {members.length} members in the ring. An outside observer cannot tell which.
         </p>
@@ -132,7 +197,38 @@ export function MemberRing({
   );
 }
 
+function EnvSetupScreen({ errors }: { errors: string[] }) {
+  return (
+    <div className="page">
+      <div className="card hero">
+        <h1>SHARIBO</h1>
+        <h2 style={{ color: "var(--color-error, #e55)" }}>Setup required</h2>
+        <p className="sub">
+          The app cannot start because one or more environment variables are missing or invalid.
+          Copy <code>app/.env.example</code> to <code>app/.env</code> and fill in the values below,
+          then restart the dev server.
+        </p>
+        <ul style={{ textAlign: "left", margin: "1rem 0", padding: "0 1.25rem" }}>
+          {errors.map((err) => (
+            <li key={err} style={{ marginBottom: "0.5rem" }}>
+              <code>{err}</code>
+            </li>
+          ))}
+        </ul>
+        <p className="fineprint">
+          See <code>app/.env.example</code> for the full list of required variables and their
+          expected format.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
+  if (configError.length > 0) {
+    return <EnvSetupScreen errors={configError} />;
+  }
+
   const [screen, setScreen] = useState<"landing" | "circle">("landing");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -148,6 +244,7 @@ export default function App() {
   const [proof, setProof] = useState<ContractProof | null>(null);
   const [nullifierHash, setNullifierHash] = useState<bigint | null>(null);
   const [claimResult, setClaimResult] = useState<ClaimResult | null>(null);
+  const [nullifierClaimed, setNullifierClaimed] = useState(false);
   const [rejection, setRejection] = useState<string | null>(null);
   // Survives a reset so the landing screen can point back at the circle you
   // just left — it keeps living on-chain even though the UI has moved on.
@@ -156,6 +253,38 @@ export default function App() {
   const contribution = BigInt(contributionXlm) * STROOPS_PER_XLM;
   const fundedCount = members.filter((m) => m.funded).length;
   const fullyFunded = pot === contribution * BigInt(CIRCLE_SIZE);
+
+  // ── Focus management ────────────────────────────────────────────────────
+  // When a screen or major section appears, move keyboard focus to its
+  // heading (tabIndex={-1} makes non-interactive elements programmatically
+  // focusable without inserting them into the Tab order).
+
+  // 1. landing → circle: focus the circle card's "SHARIBO" h1
+  const circleHeadingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (screen === "circle") {
+      circleHeadingRef.current?.focus();
+    }
+  }, [screen]);
+
+  // 2. Fully funded → Claim section appears: focus "Claim" h2
+  const claimHeadingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (fullyFunded && !claimResult) {
+      claimHeadingRef.current?.focus();
+    }
+    // Only trigger when fullyFunded flips to true; ignore claimResult changes here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fullyFunded]);
+
+  // 3. Claim succeeds → Payout section appears: focus "Payout landed" h2
+  const payoutHeadingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (claimResult) {
+      payoutHeadingRef.current?.focus();
+    }
+  }, [claimResult]);
+  // ────────────────────────────────────────────────────────────────────────
 
   // Reset every piece of React state back to its initial value and return to
   // the landing screen. The circle itself is never touched on-chain — it lives
@@ -188,6 +317,7 @@ export default function App() {
     setProof(null);
     setNullifierHash(null);
     setClaimResult(null);
+    setNullifierClaimed(false);
     setRejection(null);
     setScreen("landing");
   }
@@ -302,6 +432,7 @@ export default function App() {
       setProof(generated.proof);
       setNullifierHash(generated.nullifierHash);
       setClaimResult({ recipient: recipient.publicKey(), hash });
+      setNullifierClaimed(await hasClaimed(adminClient, circleId, generated.nullifierHash));
 
       const circle = await getCircle(adminClient, circleId);
       setPot(circle.pot);
@@ -399,8 +530,35 @@ export default function App() {
   return (
     <div className="page">
       <div className="card">
+        {/*
+          Persistent live region — always in the DOM so the browser registers
+          it before any text lands inside it (a common AT pitfall).
+          aria-live="polite" lets the current reading finish first; "assertive"
+          would interrupt mid-sentence which would be rude for long proof steps.
+          aria-atomic="true" replaces the whole message on each update rather
+          than diffing individual text nodes, which is more reliable across ATs.
+        */}
+        <div
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          // Visually hidden but readable by screen readers.
+          style={{
+            position: "absolute",
+            width: "1px",
+            height: "1px",
+            padding: 0,
+            margin: "-1px",
+            overflow: "hidden",
+            clip: "rect(0,0,0,0)",
+            whiteSpace: "nowrap",
+            border: 0,
+          }}
+        >
+          {busy ?? (error ? `Error: ${error}` : "")}
+        </div>
         <div className="row space-between">
-          <h1 className="small">SHARIBO</h1>
+          <h1 className="small" ref={circleHeadingRef} tabIndex={-1}>SHARIBO</h1>
           <div className="row">
             <a className="link" href={explorerContract()} target="_blank" rel="noreferrer">
               circle #{circleId?.toString()} on-chain ↗
@@ -452,7 +610,7 @@ export default function App() {
 
         {fullyFunded && !claimResult && (
           <>
-            <h2>Claim</h2>
+            <h2 ref={claimHeadingRef} tabIndex={-1}>Claim</h2>
             <p className="sub">
               Pick which member is claiming this round — the proof will show the contract that
               they're a real member <em>without</em> revealing which one.
@@ -475,6 +633,7 @@ export default function App() {
             </button>
             {busy && (
               <p className="techline">
+                {/* Constraint count: update this AND circuits/README.md if the circuit changes. */}
                 Groth16 · BLS12-381 · 1,452 constraints · proving locally in your browser, nothing
                 sent anywhere until the proof is done
               </p>
@@ -484,7 +643,7 @@ export default function App() {
 
         {claimResult && (
           <div className="result">
-            <h2>Payout landed</h2>
+            <h2 ref={payoutHeadingRef} tabIndex={-1}>Payout landed</h2>
             <p>
               Fresh recipient <code>{short(claimResult.recipient)}</code>{" "}
               <a href={explorerAccount(claimResult.recipient)} target="_blank" rel="noreferrer">
@@ -499,9 +658,24 @@ export default function App() {
               Compare the 5 funding transactions above to this claim — same contract, no shared
               address, no visible link.
             </p>
-            <button className="btn btn-danger" disabled={!!busy} onClick={claimAgain}>
+            <button
+              className="btn btn-danger"
+              disabled={!!busy || (!!rejection && nullifierClaimed)}
+              onClick={claimAgain}
+              title={
+                rejection && nullifierClaimed
+                  ? "Nullifier already claimed (has_claimed)"
+                  : undefined
+              }
+            >
               {busy ?? "Try to claim again with the same proof"}
             </button>
+            {nullifierClaimed && !rejection && (
+              <p className="callout">
+                <code>has_claimed</code> is true for this nullifier — a replay will be rejected
+                on-chain.
+              </p>
+            )}
             {rejection && (
               <>
                 <div className="rejected">
