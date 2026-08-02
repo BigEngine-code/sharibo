@@ -5,6 +5,13 @@ import { poseidon2 } from "poseidon-bls12381";
 // bundler polyfill needed.
 const webCrypto: Crypto = globalThis.crypto;
 
+/**
+ * A user's cryptographic identity for participation in Sharibo circles.
+ *
+ * @property identityNullifier - The nullifier component of the identity.
+ * @property identitySecret - The secret component of the identity.
+ * @property commitment - The Poseidon hash of identityNullifier and identitySecret.
+ */
 export interface Identity {
   identityNullifier: bigint;
   identitySecret: bigint;
@@ -20,28 +27,55 @@ function bytesToBigInt(bytes: Uint8Array): bigint {
   return BigInt("0x" + Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join(""));
 }
 
-// Wide reduction: 64 random bytes (512 bits) mod FR_MODULUS (~2^255).
-//
-// This samples uniformly from the full field, at the cost of a small,
-// cryptographically negligible bias (< 2^-250, since 2^512 is not an exact
-// multiple of FR_MODULUS) — vastly smaller than the ~2^-128 security level
-// Poseidon and the field itself target. The previous approach (31 random
-// bytes / 248 bits, always < FR_MODULUS, no reduction needed) had ample
-// entropy on its own but only ever produced values in a 2^248 subset of the
-// ~2^255 field (top ~7 bits always zero); Poseidon's preimage security here
-// doesn't depend on full-field uniformity, but wide reduction removes the
-// deviation entirely for the cost of one extra `getRandomValues` call and a
-// `%`, so we do it rather than leave the narrower scheme as a documented
-// judgment call. See Issue #66.
+/**
+ * Generates a random field element using wide reduction.
+ *
+ * Samples uniformly from the full BLS12-381 scalar field by taking 64 random
+ * bytes (512 bits) and reducing modulo FR_MODULUS (~2^255). This has a
+ * cryptographically negligible bias (< 2^-250) which is vastly smaller than the
+ * ~2^-128 security level Poseidon targets.
+ *
+ * @returns A random field element in [0, FR_MODULUS).
+ *
+ * @remarks
+ * Wide reduction: 64 random bytes (512 bits) mod FR_MODULUS (~2^255).
+ *
+ * This samples uniformly from the full field, at the cost of a small,
+ * cryptographically negligible bias (< 2^-250, since 2^512 is not an exact
+ * multiple of FR_MODULUS) — vastly smaller than the ~2^-128 security level
+ * Poseidon and the field itself target. The previous approach (31 random
+ * bytes / 248 bits, always < FR_MODULUS, no reduction needed) had ample
+ * entropy on its own but only ever produced values in a 2^248 subset of the
+ * ~2^255 field (top ~7 bits always zero); Poseidon's preimage security here
+ * doesn't depend on full-field uniformity, but wide reduction removes the
+ * deviation entirely for the cost of one extra `getRandomValues` call and a
+ * `%`, so we do it rather than leave the narrower scheme as a documented
+ * judgment call. See Issue #66.
+ */
 export function randomFieldElement(): bigint {
   const bytes = webCrypto.getRandomValues(new Uint8Array(64));
   return bytesToBigInt(bytes) % FR_MODULUS;
 }
 
+/**
+ * Computes the Poseidon hash of two field elements.
+ *
+ * @param a - First field element.
+ * @param b - Second field element.
+ * @returns The Poseidon hash of the two inputs.
+ */
 export function poseidon(a: bigint, b: bigint): bigint {
   return poseidon2([a, b]);
 }
 
+/**
+ * Generates a new cryptographic identity.
+ *
+ * Creates a random identityNullifier and identitySecret, then computes the
+ * commitment as their Poseidon hash.
+ *
+ * @returns A new Identity with random nullifier, secret, and commitment.
+ */
 export function generateIdentity(): Identity {
   const identityNullifier = randomFieldElement();
   const identitySecret = randomFieldElement();
