@@ -176,10 +176,20 @@ Fresh-machine steps, in order. Everything below targets **Stellar testnet only**
 
 ### 0. Prerequisites
 
-- Rust + `wasm32v1-none` target (`rustup target add wasm32v1-none`)
-- [`stellar` CLI](https://developers.stellar.org/docs/tools/cli/install-cli) (the current CLI; `soroban` CLI is superseded)
-- Node.js 20+
-- [`circom` 2.x](https://docs.circom.io/getting-started/installation/) on your `PATH`
+| Tool | Minimum | Tested |
+|---|---|---|
+| [Rust](https://rustup.rs/) + `wasm32v1-none` target | rustc **1.56.0** (edition 2021) | `rustc 1.92.0` |
+| [`stellar` CLI](https://developers.stellar.org/docs/tools/cli/install-cli) | **v21.0** (protocol 22 required for BLS12-381 host functions; protocol 23 for `soroban-sdk = "23"`) | `23.4.1` |
+| [Node.js](https://nodejs.org/) | **20.6.0** (`process.loadEnvFile`, used in `scripts/e2e.ts`) | `v24.11.1` |
+| [`circom`](https://docs.circom.io/getting-started/installation/) on `PATH` | **2.1.6** (pragma in `circuits/membership.template.circom`) | `2.2.3` (built from source) |
+
+`snarkjs` (`0.7.6`) is a devDependency in `circuits/package.json` — no separate global install required; it runs via `npx` during `npm run setup`.
+
+Install the Rust target after installing Rust:
+
+```bash
+rustup target add wasm32v1-none
+```
 
 ### 1. Install and configure
 
