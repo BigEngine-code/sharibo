@@ -171,17 +171,38 @@ stellar contract id asset --asset native --network testnet
 # paste into .env as TEST_TOKEN_CONTRACT_ID
 ```
 
-### 4. End-to-end script (Node, no browser)
+### 4. Smoke test (read-only health check)
 
 ```bash
-npm run e2e
+npm run smoke                      # checks RPC, Horizon, and circle 0
+npm run smoke -- --circle-id 3     # check a specific circle
+```
+
+A fast, read-only probe that verifies your deployment is healthy: hits the Soroban RPC health endpoint, the Horizon root, and reads a circle from the contract. No transactions, no keys needed beyond `.env` contract IDs. Useful after a testnet reset, before a demo, or as a contributor's first successful command.
+
+### 5. End-to-end script (Node, no browser)
+
+```bash
+npm run e2e                                    # full run (default)
+npm run e2e -- --skip-replay                   # stop after the successful claim
+npm run e2e -- --reuse-circle 0                # skip circle creation, run against existing circle 0
+npm run e2e -- --verbose                       # echo each RPC/curl interaction
+npm run e2e -- --skip-replay --verbose         # combine flags freely
 ```
 
 Runs a full round against testnet for real: creates a 5-member circle, funds it from 5 fresh friendbot-funded accounts, generates a real Groth16 proof for one member, claims the pot to a **freshly generated recipient address**, asserts the payout/round-advance, then funds a second round and asserts that replaying the same proof's nullifier is rejected on-chain with `AlreadyClaimed`.
 
-> Uses native `fetch()` for friendbot/Horizon calls (the original `curl` workaround was removed after confirming the undici hang no longer reproduces on Node 20+ — see `NOTES.md` and #94).
+**Flags** (`node:util parseArgs`, no new deps):
 
-### 5. Browser demo
+| Flag | Effect |
+|---|---|
+| `--skip-replay` | Stop after the successful claim (skip round 2 funding + replay check) |
+| `--reuse-circle <id>` | Skip circle creation; run against an existing circle |
+| `--verbose` | Echo each RPC/curl interaction for debugging |
+
+> This script shells out to `curl` for friendbot/Horizon calls rather than using `fetch()` — see `NOTES.md` if you're curious why. Run it in the foreground (not backgrounded) for the same reason.
+
+### 6. Browser demo
 
 ```bash
 cd app
@@ -191,14 +212,29 @@ npm run dev                  # runs `sync-circuit` first (copies circuits/build/
 
 Open the printed localhost URL. The whole flow (identities, funding, proving, claiming) runs against real testnet from a single browser tab.
 
+## Changing the Merkle tree depth
+
+The Merkle tree depth (`levels`) is single-sourced in [`circuits/config.json`](circuits/config.json) — a 4-level tree fits up to 16 members, a 5-member circle fits depth 3, a 100-member circle needs depth 7, etc. Everything that needs the depth (the circuit, the circuit tests, and the client SDK's `TREE_LEVELS`) reads it from that one file; `circuits/membership.circom` itself is a **generated** file (see `circuits/scripts/gen-circuit.cjs`) and is gitignored — the committed source is `circuits/membership.template.circom`.
+
+To change the depth:
+
+1. Edit `circuits/config.json` (`{"levels": N}`).
+2. Recompile: `cd circuits && npm run compile` (this regenerates `membership.circom` from the template + new config, then runs `circom`).
+3. **Re-run the trusted setup** — this is not optional. A different `levels` value changes the circuit's constraint system, which means a **new zkey and verification key**: `npm run setup`. The old `verification_key.json` no longer matches the circuit and must be regenerated/recommitted.
+4. Sanity-check: `npm test` (circuit test suite) and `npm run prove` (proves + verifies `circuits/input.example.json` — note: `input.example.json`'s `pathElements`/`pathIndices` arrays must also be regenerated for the new depth).
+5. **Redeploy affected circles with the new verification key.** Any circle created against the old vkey needs a fresh contract deployment (or an admin vkey-rotation path if the contract supports one) — proofs generated against the old tree depth will not verify against the new vkey, and vice versa. There is no in-place migration for open circles across a depth change.
+6. If the browser app is deployed, re-run `npm run sync-circuit` (in `app/`) to pick up the new `membership.wasm` / `membership_final.zkey` / `verification_key.json`.
+
 ## Repository structure
 
 ```
 sharibo/
-├── circuits/            membership.circom, compile/setup/prove scripts, circuit tests, verification_key.json
+├── circuits/            membership.template.circom (source) + config.json, compile/setup/prove scripts, circuit tests, verification_key.json
 ├── contracts/sharibo/   the Soroban contract (lib.rs) + its test suite (test.rs)
-├── packages/client/     isomorphic TS SDK: identity.ts, tree.ts, prove.ts, contract.ts
+├── packages/client/     isomorphic TS SDK: identity.ts, tree.ts, prove.ts, contract.ts, config.ts
+├── test-vectors/        cross-implementation Poseidon fixtures shared by the client and circuit test suites
 ├── scripts/e2e.ts       full-round Node script against live testnet
+├── scripts/smoke.ts     read-only deployment health check (no transactions)
 ├── app/                 React + Vite browser demo
 ├── README.md            this file
 ├── NOTES.md             the raw build/decision log — what was discovered, when, and why
@@ -207,6 +243,10 @@ sharibo/
 ```
 
 Full annotated version (what each file does and why): [breakdown §16](full_product_breakdown.md#16-repository-structure).
+
+## Contributing
+
+We welcome contributions to Sharibo! Please ensure you have read and adhere to our [Code of Conduct](CODE_OF_CONDUCT.md) when participating in this project.
 
 ## Roadmap
 
