@@ -23,11 +23,22 @@ function bytesToBigInt(bytes: Uint8Array): bigint {
   );
 }
 
-// 31 random bytes (248 bits) are always below FR_MODULUS (~2^255), so no
-// rejection sampling / modular reduction is needed.
+// Wide reduction: 64 random bytes (512 bits) mod FR_MODULUS (~2^255).
+//
+// This samples uniformly from the full field, at the cost of a small,
+// cryptographically negligible bias (< 2^-250, since 2^512 is not an exact
+// multiple of FR_MODULUS) — vastly smaller than the ~2^-128 security level
+// Poseidon and the field itself target. The previous approach (31 random
+// bytes / 248 bits, always < FR_MODULUS, no reduction needed) had ample
+// entropy on its own but only ever produced values in a 2^248 subset of the
+// ~2^255 field (top ~7 bits always zero); Poseidon's preimage security here
+// doesn't depend on full-field uniformity, but wide reduction removes the
+// deviation entirely for the cost of one extra `getRandomValues` call and a
+// `%`, so we do it rather than leave the narrower scheme as a documented
+// judgment call. See Issue #66.
 export function randomFieldElement(): bigint {
-  const bytes = webCrypto.getRandomValues(new Uint8Array(31));
-  return bytesToBigInt(bytes);
+  const bytes = webCrypto.getRandomValues(new Uint8Array(64));
+  return bytesToBigInt(bytes) % FR_MODULUS;
 }
 
 export function poseidon(a: bigint, b: bigint): bigint {
@@ -53,6 +64,23 @@ export async function computeExternalNullifier(
   circleId: bigint,
   round: bigint,
 ): Promise<bigint> {
+  // Bounds must match the contract's field types exactly (see
+  // contracts/sharibo/src/lib.rs: `circle_id: u64`, `round: u32`).
+  // `setBigUint64`/`setUint32` below would otherwise silently truncate (or,
+  // for `Number(round)` on a bigint > 2^53, silently lose precision first),
+  // producing a valid-looking but wrong hash that the contract rejects with
+  // an opaque `WrongRoundTag` — Issue #65.
+  if (circleId < 0n || circleId >= 2n ** 64n) {
+    throw new RangeError(
+      `circleId must satisfy 0 <= circleId < 2**64 (u64), got ${circleId}`,
+    );
+  }
+  if (round < 0n || round >= 2n ** 32n) {
+    throw new RangeError(
+      `round must satisfy 0 <= round < 2**32 (u32), got ${round}`,
+    );
+  }
+
   const buf = new ArrayBuffer(12);
   const view = new DataView(buf);
   view.setBigUint64(0, circleId, false);
