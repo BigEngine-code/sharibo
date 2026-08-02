@@ -514,6 +514,13 @@ export default function App() {
       "Generating a fresh admin + 5 member identities and funding via friendbot…",
     );
     try {
+      const [{ Keypair }, client] = await Promise.all([
+        import("@stellar/stellar-sdk"),
+        import("@sharibo/client")
+      ]);
+      const { generateIdentity, MerkleTree, verificationKeyToContractFormat, connect, createCircle } = client;
+
+      setBusy("Generating a fresh admin + 5 member identities and funding via friendbot…");
       const adminKp = Keypair.random();
       await friendbotFund(adminKp.publicKey());
 
@@ -562,6 +569,10 @@ export default function App() {
     setError(null);
     setBusy(`Funding from member ${i + 1}…`);
     try {
+      const [{ Keypair }, { connect, fund, getCircle }] = await Promise.all([
+        import("@stellar/stellar-sdk"),
+        import("@sharibo/client")
+      ]);
       const m = members[i];
       await friendbotFund(m.keypair.publicKey());
       const memberClient = await connect(NETWORK, m.keypair);
@@ -648,6 +659,10 @@ export default function App() {
     setRejection(null);
     setBusy("Claiming…");
     try {
+      const [{ Keypair }, { computeExternalNullifier, generateProof, connect, claim, getCircle }] = await Promise.all([
+        import("@stellar/stellar-sdk"),
+        import("@sharibo/client")
+      ]);
       const claimant = members[claimantIndex];
       const merkleProof = tree.proof(claimantIndex);
       const externalNullifier = await computeExternalNullifier(circleId, BigInt(round));
@@ -721,6 +736,10 @@ export default function App() {
       "Refunding a new round, then replaying the same proof's nullifier…",
     );
     try {
+      const [{ Keypair }, { connect, fund, computeExternalNullifier, claim, getCircle }] = await Promise.all([
+        import("@stellar/stellar-sdk"),
+        import("@sharibo/client")
+      ]);
       // Fund round `round` again so this exercises the nullifier-reuse
       // check specifically, not just "the pot is empty" — the same
       // proof's nullifier gets rejected even against a fresh, funded round.
@@ -751,6 +770,7 @@ export default function App() {
       // Reflect the on-chain state either way: the re-funding above happened
       // for real even though the replayed claim itself was rejected.
       try {
+        const { connect, getCircle } = await import("@sharibo/client");
         const adminClient = await connect(NETWORK, admin);
         const circle = await getCircle(adminClient, circleId);
         setPot(circle.pot);
