@@ -84,7 +84,7 @@ export class MerkleTree {
 
     const capacity = 2 ** levels;
     if (leaves.length > capacity) {
-      throw new Error(
+      throw new InvalidInputError(
         `too many leaves (${leaves.length}) for ${levels} levels (capacity ${capacity})`,
       );
     }
@@ -132,7 +132,7 @@ export class MerkleTree {
    */
   proof(leafIndex: number): MerkleProof {
     if (leafIndex < 0 || leafIndex >= this.layers[0].length) {
-      throw new Error("leaf index out of range");
+      throw new InvalidInputError("leaf index out of range");
     }
 
     const pathElements: bigint[] = [];

@@ -94,7 +94,7 @@ test("computeExternalNullifier rejects round >= 2**32", async () => {
 });
 
 test("computeExternalNullifier rejects negative round", async () => {
-  await assert.rejects(() => computeExternalNullifier(1n, -1n), RangeError);
+  await assert.rejects(() => computeExternalNullifier(1n, -1n), InvalidInputError);
 });
 
 test("computeExternalNullifier accepts the circleId boundary (2**64 - 1)", async () => {
@@ -106,7 +106,7 @@ test("computeExternalNullifier rejects circleId >= 2**64", async () => {
 });
 
 test("computeExternalNullifier rejects negative circleId", async () => {
-  await assert.rejects(() => computeExternalNullifier(-1n, 1n), RangeError);
+  await assert.rejects(() => computeExternalNullifier(-1n, 1n), InvalidInputError);
 });
 
 test("computeExternalNullifier is deterministic for the same (circleId, round)", async () => {

@@ -42,6 +42,7 @@ import {
   claim,
   getCircle,
   TREE_LEVELS,
+  ContractError,
 } from "@sharibo/client";
 import { checkContractDeployed } from "./testnet-health.js";
 

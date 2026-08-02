@@ -23,6 +23,10 @@ import {
   TREE_LEVELS,
   type Identity,
   type ContractProof,
+  ContractError,
+  RpcError,
+  ProvingError,
+  InvalidInputError,
 } from "@sharibo/client";
 import { config, configError } from "./config";
 import { useI18n } from "./i18n";
@@ -732,7 +736,7 @@ export default function App() {
       setPot(circle.pot);
       setRound(circle.round);
     } catch (e) {
-      setError((e as Error).message);
+      setError(getErrorMessage(e));
     } finally {
       setBusy(null);
     }
@@ -851,7 +855,7 @@ export default function App() {
         "Unexpected: the replayed claim was accepted (this should never happen).",
       );
     } catch (e) {
-      setRejection((e as Error).message);
+      setRejection(getErrorMessage(e));
     } finally {
       // Reflect the on-chain state either way: the re-funding above happened
       // for real even though the replayed claim itself was rejected.

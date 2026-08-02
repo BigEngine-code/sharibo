@@ -1,4 +1,5 @@
 import { poseidon2 } from "poseidon-bls12381";
+import { InvalidInputError } from "./errors.js";
 
 // Web Crypto (`globalThis.crypto`) rather than `node:crypto`, so this module
 // runs unmodified in both Node (18+) and the browser app (Phase 5) — no
