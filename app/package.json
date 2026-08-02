@@ -3,6 +3,20 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "description": "Web frontend for Sharibo ROSCA platform",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/crackedstudio/sharibo.git",
+    "directory": "app"
+  },
+  "keywords": [
+    "stellar",
+    "soroban",
+    "rosca",
+    "react",
+    "frontend"
+  ],
   "scripts": {
     "sync-circuit": "node scripts/sync-circuit.mjs",
     "dev:circuits": "node scripts/sync-circuit.mjs --watch",
