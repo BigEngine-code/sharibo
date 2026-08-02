@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "e2e": "tsx e2e.ts"
+    "e2e": "tsx e2e.ts",
+    "smoke": "tsx smoke.ts",
+    "test": "node --import tsx --test smoke.test.ts"
   },
   "dependencies": {
     "@sharibo/client": "*",

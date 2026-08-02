@@ -171,7 +171,16 @@ stellar contract id asset --asset native --network testnet
 # paste into .env as TEST_TOKEN_CONTRACT_ID
 ```
 
-### 4. End-to-end script (Node, no browser)
+### 4. Smoke test (read-only health check)
+
+```bash
+npm run smoke                      # checks RPC, Horizon, and circle 0
+npm run smoke -- --circle-id 3     # check a specific circle
+```
+
+A fast, read-only probe that verifies your deployment is healthy: hits the Soroban RPC health endpoint, the Horizon root, and reads a circle from the contract. No transactions, no keys needed beyond `.env` contract IDs. Useful after a testnet reset, before a demo, or as a contributor's first successful command.
+
+### 5. End-to-end script (Node, no browser)
 
 ```bash
 npm run e2e
@@ -181,7 +190,7 @@ Runs a full round against testnet for real: creates a 5-member circle, funds it 
 
 > This script shells out to `curl` for friendbot/Horizon calls rather than using `fetch()` — see `NOTES.md` if you're curious why. Run it in the foreground (not backgrounded) for the same reason.
 
-### 5. Browser demo
+### 6. Browser demo
 
 ```bash
 cd app
@@ -213,6 +222,7 @@ sharibo/
 ├── packages/client/     isomorphic TS SDK: identity.ts, tree.ts, prove.ts, contract.ts, config.ts
 ├── test-vectors/        cross-implementation Poseidon fixtures shared by the client and circuit test suites
 ├── scripts/e2e.ts       full-round Node script against live testnet
+├── scripts/smoke.ts     read-only deployment health check (no transactions)
 ├── app/                 React + Vite browser demo
 ├── README.md            this file
 ├── NOTES.md             the raw build/decision log — what was discovered, when, and why
