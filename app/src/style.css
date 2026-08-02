@@ -332,6 +332,37 @@ h2 {
   font-size: 11px;
   color: #555;
   margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.claim-progress {
+  margin-top: 10px;
+}
+.claim-progress .stepper {
+  margin: 8px 0;
+}
+.claim-progress .step {
+  font-size: 10px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  border: 2px solid #ccc;
+  border-top-color: var(--ink);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .members {

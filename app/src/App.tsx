@@ -90,6 +90,51 @@ interface ClaimResult {
   hash: string;
 }
 
+// The visible stages of doClaim, in the order they actually occur. snarkjs's
+// fullProve is one opaque call, so "proving" covers witness computation +
+// proof generation together — it gets its own elapsed timer instead of a
+// substage breakdown, since we can't observe a finer boundary inside it.
+type ClaimStage = "artifacts" | "proving" | "funding" | "submitting";
+
+const CLAIM_STAGE_LABELS: Record<ClaimStage, string> = {
+  artifacts: "Fetching proving artifacts (wasm + zkey)…",
+  proving: "Proving…",
+  funding: "Funding a fresh, unlinked recipient…",
+  submitting: "Submitting the claim…",
+};
+
+const CLAIM_STAGES: ClaimStage[] = ["artifacts", "proving", "funding", "submitting"];
+
+// So a claim never reads as a hung tab: each real substage of doClaim gets
+// its own line here (fullProve itself stays one opaque "proving" step, per
+// snarkjs, but that step gets a live elapsed-seconds counter + spinner so a
+// slow prove still visibly ticks rather than sitting static).
+function ClaimProgress({ stage, elapsedSeconds }: { stage: ClaimStage; elapsedSeconds: number }) {
+  const activeIndex = CLAIM_STAGES.indexOf(stage);
+  return (
+    <div className="claim-progress">
+      <div className="stepper">
+        {CLAIM_STAGES.map((s, i) => (
+          <div
+            key={s}
+            className={`step ${i < activeIndex ? "done" : i === activeIndex ? "active" : ""}`}
+          >
+            <span className="step-dot">{i < activeIndex ? "✓" : i + 1}</span>
+            {CLAIM_STAGE_LABELS[s]}
+          </div>
+        ))}
+      </div>
+      {stage === "proving" && (
+        <p className="techline">
+          <span className="spinner" aria-hidden="true" /> Groth16 · BLS12-381 · 1,452 constraints ·
+          proving locally in your browser, nothing sent anywhere until the proof is done ·{" "}
+          {elapsedSeconds}s elapsed
+        </p>
+      )}
+    </div>
+  );
+}
+
 function Stepper({ step }: { step: 0 | 1 | 2 | 3 }) {
   const labels = ["Create", "Fund", "Prove & Claim", "Unlinked ✓"];
   return (
@@ -279,6 +324,8 @@ export default function App() {
   const [claimResult, setClaimResult] = useState<ClaimResult | null>(null);
   const [nullifierClaimed, setNullifierClaimed] = useState(false);
   const [rejection, setRejection] = useState<string | null>(null);
+  const [claimStage, setClaimStage] = useState<ClaimStage | null>(null);
+  const [proveElapsedSeconds, setProveElapsedSeconds] = useState(0);
   // Survives a reset so the landing screen can point back at the circle you
   // just left — it keeps living on-chain even though the UI has moved on.
   const [previousCircleId, setPreviousCircleId] = useState<bigint | null>(null);
@@ -356,6 +403,8 @@ export default function App() {
     setClaimResult(null);
     setNullifierClaimed(false);
     setRejection(null);
+    setClaimStage(null);
+    setProveElapsedSeconds(0);
     setScreen("landing");
   }
 
@@ -435,28 +484,48 @@ export default function App() {
     setError(null);
     setClaimResult(null);
     setRejection(null);
-    setBusy("Proving… (a real Groth16 proof is being generated in your browser)");
+    setBusy("Claiming…");
     try {
       const claimant = members[claimantIndex];
       const merkleProof = tree.proof(claimantIndex);
       const externalNullifier = await computeExternalNullifier(circleId, BigInt(round));
-      const generated = await generateProof(
-        {
-          identityNullifier: claimant.identity.identityNullifier,
-          identitySecret: claimant.identity.identitySecret,
-          pathElements: merkleProof.pathElements,
-          pathIndices: merkleProof.pathIndices,
-          root: tree.root,
-          externalNullifier,
-        },
-        "/circuits/membership.wasm",
-        "/circuits/membership_final.zkey",
-      );
 
-      setBusy("Submitting the claim and generating a fresh, unlinked recipient…");
+      setClaimStage("artifacts");
+      const [wasm, zkey] = await Promise.all([
+        fetch("/circuits/membership.wasm")
+          .then((r) => r.arrayBuffer())
+          .then((b) => new Uint8Array(b)),
+        fetch("/circuits/membership_final.zkey")
+          .then((r) => r.arrayBuffer())
+          .then((b) => new Uint8Array(b)),
+      ]);
+
+      setClaimStage("proving");
+      setProveElapsedSeconds(0);
+      const proveTimer = setInterval(() => setProveElapsedSeconds((s) => s + 1), 1000);
+      let generated;
+      try {
+        generated = await generateProof(
+          {
+            identityNullifier: claimant.identity.identityNullifier,
+            identitySecret: claimant.identity.identitySecret,
+            pathElements: merkleProof.pathElements,
+            pathIndices: merkleProof.pathIndices,
+            root: tree.root,
+            externalNullifier,
+          },
+          wasm,
+          zkey,
+        );
+      } finally {
+        clearInterval(proveTimer);
+      }
+
+      setClaimStage("funding");
       const recipient = Keypair.random();
       await friendbotFund(recipient.publicKey());
 
+      setClaimStage("submitting");
       const adminClient = await connect(NETWORK, admin);
       const { hash } = await claim(adminClient, {
         circleId,
@@ -478,6 +547,7 @@ export default function App() {
       setError((e as Error).message);
     } finally {
       setBusy(null);
+      setClaimStage(null);
     }
   }
 
@@ -676,7 +746,7 @@ export default function App() {
               ))}
             </div>
             <button className="btn btn-primary" disabled={!!busy} onClick={doClaim}>
-              {busy ?? "Generate proof & claim"}
+              {claimStage ? CLAIM_STAGE_LABELS[claimStage] : "Generate proof & claim"}
             </button>
             {busy && (
               <p className="techline">
