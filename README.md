@@ -1,10 +1,15 @@
 # Sharibo
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Network: Stellar Testnet](https://img.shields.io/badge/network-Stellar%20Testnet-7D00FF)](https://developers.stellar.org/docs/networks)
+[![Circom 2.2.3](https://img.shields.io/badge/circom-2.2.3-orange)](circuits/README.md)
+[![Soroban SDK 23](https://img.shields.io/badge/soroban--sdk-23-1F8DD6)](contracts/Cargo.toml)
+
 **Private rotating savings circles on Stellar — the ajo / tanda / susu / tontine, with the payout anonymized by a real Groth16 zero-knowledge proof, verified on-chain.**
 
 **ajo · esusu · tanda · cundina · susu · tontine · junta · pandero · consórcio · hui · paluwagan · chit fund**
 
-Five members fund a shared pot. One member claims it — by proving *"I'm a genuine, un-paid member of this circle"* without revealing **which** member. The proof is generated in the browser and verified by a Soroban contract using Stellar's native BLS12-381 pairing host functions. No mock. No stub. No trusted server.
+Five members fund a shared pot. One member claims it — by proving _"I'm a genuine, un-paid member of this circle"_ without revealing **which** member. The proof is generated in the browser and verified by a Soroban contract using Stellar's native BLS12-381 pairing host functions. No mock. No stub. No trusted server.
 
 Built for the **Stellar Hacks: Real-World ZK** hackathon. Testnet only, no real funds.
 
@@ -15,7 +20,7 @@ Built for the **Stellar Hacks: Real-World ZK** hackathon. Testnet only, no real 
   "fps=12,scale=960:-1" demo.gif`, keep it under ~8 MB.
 ─────────────────────────────────────────────────────────────── -->
 
-**[▶ demo video](YOUR_VIDEO_URL)** · **[🚀 live app (testnet)](https://dist-flax-three-43.vercel.app)** · **[📖 full product breakdown](full_product_breakdown.md)** · **[🛠 build log](NOTES.md)**
+**[▶ demo video](YOUR_VIDEO_URL)** · **[🚀 live app (testnet)](https://dist-flax-three-43.vercel.app)** · **[📖 full product breakdown](full_product_breakdown.md)** · **[🛠 build log](NOTES.md)** · **[🤝 contributing](CONTRIBUTING.md)**
 
 ---
 
@@ -23,14 +28,14 @@ Built for the **Stellar Hacks: Real-World ZK** hackathon. Testnet only, no real 
 
 Every claim below was produced by running this repo against live Stellar testnet infrastructure. Nothing is asserted from a test double.
 
-| What | Where |
-|---|---|
-| Sharibo contract | `CB64IZIBBSPUY63UMIVACKWDKRFNH6WJ2EPAOLM7QR4ZI6IJOT4N2LCF` |
-| Test token (native XLM SAC) | `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC` |
-| `create_circle` (circle 0) | tx `fa76e7fe7439199796db55fdde4bcaaad2cb6a98c0f29214d00605f40ca8fdb0` |
+| What                                     | Where                                                                                                        |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Sharibo contract                         | `CB64IZIBBSPUY63UMIVACKWDKRFNH6WJ2EPAOLM7QR4ZI6IJOT4N2LCF`                                                   |
+| Test token (native XLM SAC)              | `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC`                                                   |
+| `create_circle` (circle 0)               | tx `fa76e7fe7439199796db55fdde4bcaaad2cb6a98c0f29214d00605f40ca8fdb0`                                        |
 | **Real Groth16 proof accepted on-chain** | tx `2258397474e3ad420d6dd8310cb0976d270c29ec4a4ec2b60a9ae58408088087` — `successful: true`, ledger `3379702` |
-| Tampered proof **rejected** | `Error(Contract, #5)` `InvalidProof` — the pairing check genuinely fails |
-| Nullifier replay **rejected** | `Error(Contract, #4)` `AlreadyClaimed` — reproduced every run by `npm run e2e` |
+| Tampered proof **rejected**              | `Error(Contract, #5)` `InvalidProof` — the pairing check genuinely fails                                     |
+| Nullifier replay **rejected**            | `Error(Contract, #4)` `AlreadyClaimed` — reproduced every run by `npm run e2e`                               |
 
 ## Verify it yourself in 60 seconds
 
@@ -74,6 +79,8 @@ The claimant proves, in zero knowledge:
 
 An on-chain observer sees five deposits and one payout — and no way to connect them.
 
+Full structured breakdown — assets, adversaries, and which code enforces each property (and its limits) — in [docs/threat-model.md](docs/threat-model.md).
+
 ## Honest limitations
 
 - **Claim-side privacy only.** Funding is fully public, by scope: shielded deposits are a different (harder) problem — roadmap.
@@ -84,13 +91,62 @@ An on-chain observer sees five deposits and one payout — and no way to connect
 
 ## Tests
 
-| Suite | Coverage | Result |
-|---|---|---|
-| Circuit (`circuits/test/`) | valid proof, wrong root, tampered path, nullifier determinism, non-boolean path index | **5/5** |
-| Contract (`contracts/sharibo/src/test.rs`) | happy path **with a real proof**, underfunded, replay, stale round tag, forged public input (real pairing failure), CPU budget, auth ×2 | **8/8** |
-| E2E (`scripts/e2e.ts`, live testnet) | create → 5× fund → prove → claim to fresh address → assertions → round 2 fund → replay → `AlreadyClaimed` | **passing** |
+| Suite                                      | Coverage                                                                                                                                | Result      |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| Circuit (`circuits/test/`)                 | valid proof, wrong root, tampered path, nullifier determinism, non-boolean path index                                                   | **5/5**     |
+| Contract (`contracts/sharibo/src/test.rs`) | happy path **with a real proof**, underfunded, replay, stale round tag, forged public input (real pairing failure), CPU budget, auth ×2 | **8/8**     |
+| E2E (`scripts/e2e.ts`, live testnet)       | create → 5× fund → prove → claim to fresh address → assertions → round 2 fund → replay → `AlreadyClaimed`                               | **passing** |
 
 ## Architecture
+
+```mermaid
+flowchart LR
+    %% Browser / Client Layer
+    subgraph Browser ["Browser Application (packages/client)"]
+        direction TB
+        Identities["Member Identities<br/>(Nullifier & Secret)"]
+        MerkleTree["Merkle Tree Generation<br/>(tree.ts)"]
+
+        subgraph Proving ["Proof Generation (prove.ts)"]
+            direction LR
+            Circuit["circuits/membership.circom"]
+            SnarkJS["snarkjs"]
+            Wasm["WASM Witness Generator"]
+            Zkey["Proving Key (.zkey)"]
+
+            Circuit --> SnarkJS
+            Wasm --> SnarkJS
+            Zkey --> SnarkJS
+        end
+
+        Identities --> MerkleTree
+        MerkleTree -.-> |Inclusion Proof Inputs| Proving
+    end
+
+    %% Network / On-chain Layer
+    subgraph Network ["Soroban Testnet"]
+        direction TB
+        Contract["Soroban Contract<br/>(contracts/sharibo)"]
+        Pairing["BLS12-381 Pairing Verification<br/>(env.crypto)"]
+
+        Contract --> Pairing
+    end
+
+    %% Recipient Layer
+    subgraph Recipient ["Recipient Address"]
+        Wallet["Fresh Recipient Wallet"]
+    end
+
+    %% Data Flow Transitions
+    Proving --> |"claim(circle_id, recipient, ...)"| Contract
+    Pairing --> |"Success (Verification Passes)"| Wallet
+    Wallet --> |Payout Transferred| Payout(("Payout"))
+
+    style Browser fill:#f5faff,stroke:#1d3557,stroke-width:2px
+    style Network fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    style Recipient fill:#f1f8e9,stroke:#33691e,stroke-width:2px
+    style Payout fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+```
 
 ```
 create_circle(admin, token, root, contribution, size, vk) -> circle_id
@@ -114,7 +170,7 @@ Circuit: `circuits/membership.circom`. Contract: `contracts/sharibo/src/lib.rs`.
 
 - **BLS12-381** throughout — not the more common BN254/bn128. Stellar's Soroban host only accelerates BLS12-381 pairing operations; a pure-Rust BN254 pairing check measured ~560M CPU instructions against a 100M budget (see `NOTES.md`), so BN254 verification doesn't fit at all. This is the single biggest deviation from a "default" ZK stack and is documented in detail in `NOTES.md`.
 - **Commitment:** `leaf = Poseidon(identityNullifier, identitySecret)`.
-- **Nullifier:** `nullifierHash = Poseidon(identityNullifier, externalNullifier)` — Poseidon is used here and for the Merkle tree because it's cheap *inside the circuit's constraint system*.
+- **Nullifier:** `nullifierHash = Poseidon(identityNullifier, externalNullifier)` — Poseidon is used here and for the Merkle tree because it's cheap _inside the circuit's constraint system_.
 - **Round tag:** `externalNullifier = SHA256(circle_id, round) mod r` — **not** Poseidon. This binding happens outside the circuit (in the contract and in the client, not inside the SNARK), where Soroban has a native accelerated SHA-256 and no native Poseidon at all, so nothing is gained by matching the circuit's hash choice there. Deliberate and permanent, not a placeholder — see `NOTES.md`.
 - **Public signal order:** `[nullifierHash, root, externalNullifier]` (circuit output first, then declared public inputs, in that order) — this is what circom/snarkjs actually emit, not the `[root, externalNullifier, nullifierHash]` a naive reading might assume. Circuit, contract, and client all agree on this order.
 - **Field:** BLS12-381 scalar field throughout (client, contract, circuit).
@@ -125,10 +181,20 @@ Fresh-machine steps, in order. Everything below targets **Stellar testnet only**
 
 ### 0. Prerequisites
 
-- Rust + `wasm32v1-none` target (`rustup target add wasm32v1-none`)
-- [`stellar` CLI](https://developers.stellar.org/docs/tools/cli/install-cli) (the current CLI; `soroban` CLI is superseded)
-- Node.js 20+
-- [`circom` 2.x](https://docs.circom.io/getting-started/installation/) on your `PATH`
+| Tool | Minimum | Tested |
+|---|---|---|
+| [Rust](https://rustup.rs/) + `wasm32v1-none` target | rustc **1.56.0** (edition 2021) | `rustc 1.92.0` |
+| [`stellar` CLI](https://developers.stellar.org/docs/tools/cli/install-cli) | **v21.0** (protocol 22 required for BLS12-381 host functions; protocol 23 for `soroban-sdk = "23"`) | `23.4.1` |
+| [Node.js](https://nodejs.org/) | **20.6.0** (`process.loadEnvFile`, used in `scripts/e2e.ts`) | `v24.11.1` |
+| [`circom`](https://docs.circom.io/getting-started/installation/) on `PATH` | **2.1.6** (pragma in `circuits/membership.template.circom`) | `2.2.3` (built from source) |
+
+`snarkjs` (`0.7.6`) is a devDependency in `circuits/package.json` — no separate global install required; it runs via `npx` during `npm run setup`.
+
+Install the Rust target after installing Rust:
+
+```bash
+rustup target add wasm32v1-none
+```
 
 ### 1. Install and configure
 
@@ -171,17 +237,38 @@ stellar contract id asset --asset native --network testnet
 # paste into .env as TEST_TOKEN_CONTRACT_ID
 ```
 
-### 4. End-to-end script (Node, no browser)
+### 4. Smoke test (read-only health check)
 
 ```bash
-npm run e2e
+npm run smoke                      # checks RPC, Horizon, and circle 0
+npm run smoke -- --circle-id 3     # check a specific circle
+```
+
+A fast, read-only probe that verifies your deployment is healthy: hits the Soroban RPC health endpoint, the Horizon root, and reads a circle from the contract. No transactions, no keys needed beyond `.env` contract IDs. Useful after a testnet reset, before a demo, or as a contributor's first successful command.
+
+### 5. End-to-end script (Node, no browser)
+
+```bash
+npm run e2e                                    # full run (default)
+npm run e2e -- --skip-replay                   # stop after the successful claim
+npm run e2e -- --reuse-circle 0                # skip circle creation, run against existing circle 0
+npm run e2e -- --verbose                       # echo each RPC/curl interaction
+npm run e2e -- --skip-replay --verbose         # combine flags freely
 ```
 
 Runs a full round against testnet for real: creates a 5-member circle, funds it from 5 fresh friendbot-funded accounts, generates a real Groth16 proof for one member, claims the pot to a **freshly generated recipient address**, asserts the payout/round-advance, then funds a second round and asserts that replaying the same proof's nullifier is rejected on-chain with `AlreadyClaimed`.
 
+**Flags** (`node:util parseArgs`, no new deps):
+
+| Flag | Effect |
+|---|---|
+| `--skip-replay` | Stop after the successful claim (skip round 2 funding + replay check) |
+| `--reuse-circle <id>` | Skip circle creation; run against an existing circle |
+| `--verbose` | Echo each RPC/curl interaction for debugging |
+
 > This script shells out to `curl` for friendbot/Horizon calls rather than using `fetch()` — see `NOTES.md` if you're curious why. Run it in the foreground (not backgrounded) for the same reason.
 
-### 5. Browser demo
+### 6. Browser demo
 
 ```bash
 cd app
@@ -213,6 +300,7 @@ sharibo/
 ├── packages/client/     isomorphic TS SDK: identity.ts, tree.ts, prove.ts, contract.ts, config.ts
 ├── test-vectors/        cross-implementation Poseidon fixtures shared by the client and circuit test suites
 ├── scripts/e2e.ts       full-round Node script against live testnet
+├── scripts/smoke.ts     read-only deployment health check (no transactions)
 ├── app/                 React + Vite browser demo
 ├── README.md            this file
 ├── NOTES.md             the raw build/decision log — what was discovered, when, and why
@@ -226,11 +314,13 @@ Full annotated version (what each file does and why): [breakdown §16](full_prod
 
 We welcome contributions to Sharibo! See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow, how to run the test suites, and the dependency audit runbook. Please ensure you have read and adhere to our [Code of Conduct](CODE_OF_CONDUCT.md) when participating in this project.
 
+`@stellar/stellar-sdk` is declared independently in `app`, `packages/client`, and `scripts`, and pinned to a single resolved version via a root `overrides` entry. **Bump `stellar-sdk` in all three places at once** — `npm run check:stellar-sdk` (also run automatically on `npm install`) fails the build if the declared ranges ever drift apart.
+
 ## Roadmap
 
-- Funding-side shielding (hide *who* funded, not just who claimed).
+- Funding-side shielding (hide _who_ funded, not just who claimed).
 - Multi-round automation / on-chain turn ordering.
 - Multi-party trusted setup ceremony.
 - Independent audit of the BLS12-381 Poseidon parameters (or a switch to self-generated / better-provenanced constants).
 - Real stablecoin (issued test asset or mainnet equivalent) instead of native testnet XLM.
-- **Selective disclosure ("view key")** — an admin/auditor could prove a circle's *total* historical contributions (a sum over funding events already visible on-chain) without exposing which individual funded which round. Not built; the shape is in [breakdown §19](full_product_breakdown.md#19-roadmap).
+- **Selective disclosure ("view key")** — an admin/auditor could prove a circle's _total_ historical contributions (a sum over funding events already visible on-chain) without exposing which individual funded which round. Not built; the shape is in [breakdown §19](full_product_breakdown.md#19-roadmap).

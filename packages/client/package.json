@@ -4,6 +4,21 @@
   "private": true,
   "type": "module",
   "main": "src/index.ts",
+  "description": "Client SDK for interacting with Sharibo ROSCA on Stellar Soroban",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/crackedstudio/sharibo.git",
+    "directory": "packages/client"
+  },
+  "keywords": [
+    "stellar",
+    "soroban",
+    "zk",
+    "rosca",
+    "sdk",
+    "client"
+  ],
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test src/*.test.ts",
@@ -15,6 +30,7 @@
     "snarkjs": "0.7.6"
   },
   "devDependencies": {
+    "@types/node": "24.13.3",
     "@types/snarkjs": "0.7.9",
     "tsx": "4.22.4",
     "typescript": "6.0.3"

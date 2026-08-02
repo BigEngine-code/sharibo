@@ -1,0 +1,9 @@
+circuits/build/
+app/public/circuits/
+target/
+dist/
+package-lock.json
+test_snapshots/
+
+# snarkjs output; its exact bytes are hash-pinned in circuits/SETUP_TRANSCRIPT.md
+circuits/verification_key.json
