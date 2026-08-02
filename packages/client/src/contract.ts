@@ -132,6 +132,13 @@ export async function getCircle(client: ShariboClient, circleId: bigint): Promis
   return sent.result as CircleView;
 }
 
+/** Pure read: the current count of circles ever created. 0 if none yet. */
+export async function getCircleCount(client: ShariboClient): Promise<bigint> {
+  const tx = await client.get_circle_count();
+  const sent = await tx.signAndSend({ force: true });
+  return sent.result as bigint;
+}
+
 /** Pure read: whether `nullifierHash` has already claimed in this circle. */
 export async function hasClaimed(
   client: ShariboClient,
