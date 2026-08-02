@@ -125,13 +125,22 @@ fn real_valid_proof(env: &Env) -> Proof {
 
 // Real public signals for the proof above: (nullifier_hash, root, external_nullifier).
 fn real_root(env: &Env) -> Fr {
-    fr_from_dec_str(env, "26209293814355131390889932661322725195394840191932303091376020297848638697892")
+    fr_from_dec_str(
+        env,
+        "26209293814355131390889932661322725195394840191932303091376020297848638697892",
+    )
 }
 fn real_nullifier_hash(env: &Env) -> Fr {
-    fr_from_dec_str(env, "21226719646080371019275358926522886326845061441166218142415794470695116145494")
+    fr_from_dec_str(
+        env,
+        "21226719646080371019275358926522886326845061441166218142415794470695116145494",
+    )
 }
 fn real_external_nullifier_round0(env: &Env) -> Fr {
-    fr_from_dec_str(env, "9916401131788634118796694467337109503795060207059715207260235684299224251787")
+    fr_from_dec_str(
+        env,
+        "9916401131788634118796694467337109503795060207059715207260235684299224251787",
+    )
 }
 // ---- Issue #91: second trusted-setup ceremony, same identity, two rounds ----
 //
@@ -257,7 +266,8 @@ fn round_reuse_nullifier_hash_round1(env: &Env) -> Fr {
 }
 
 fn create_token(env: &Env, admin: &Address) -> Address {
-    env.register_stellar_asset_contract_v2(admin.clone()).address()
+    env.register_stellar_asset_contract_v2(admin.clone())
+        .address()
 }
 
 fn expected_external_nullifier(env: &Env, circle_id: u64, round: u32) -> Fr {
@@ -363,7 +373,8 @@ fn claim_reverts_on_tampered_public_input() {
     // the real proof's actual output is real_nullifier_hash(); claiming
     // with a different nullifier_hash means the pairing check is being
     // asked to verify a statement the proof doesn't attest to.
-    let wrong_nullifier_hash = real_nullifier_hash(&s.env) + Fr::from_u256(U256::from_u32(&s.env, 1));
+    let wrong_nullifier_hash =
+        real_nullifier_hash(&s.env) + Fr::from_u256(U256::from_u32(&s.env, 1));
     let external_nullifier = real_external_nullifier_round0(&s.env);
     let proof = real_valid_proof(&s.env);
 
@@ -733,7 +744,13 @@ fn cpu_instruction_benchmarks() {
     let nullifier_hash = real_nullifier_hash(&env);
     let external_nullifier = real_external_nullifier_round0(&env);
     let proof = real_valid_proof(&env);
-    client.claim(&0u64, &recipient, &nullifier_hash, &external_nullifier, &proof);
+    client.claim(
+        &0u64,
+        &recipient,
+        &nullifier_hash,
+        &external_nullifier,
+        &proof,
+    );
     let claim_cpu = env.cost_estimate().budget().cpu_instruction_cost();
     std::println!("bench claim:         {claim_cpu} CPU instructions");
 
@@ -762,9 +779,7 @@ fn cpu_instruction_benchmarks() {
     ];
     let _ = Contract::verify_groth16(&env, &big_vk, &proof, &big_inputs);
     let large_ic_cpu = env.cost_estimate().budget().cpu_instruction_cost();
-    std::println!(
-        "bench verify_groth16 (5 public inputs / ic=6): {large_ic_cpu} CPU instructions"
-    );
+    std::println!("bench verify_groth16 (5 public inputs / ic=6): {large_ic_cpu} CPU instructions");
 }
 
 #[test]
@@ -896,10 +911,7 @@ fn cancel_refunds_partial_funders_and_closes_circle() {
     assert_eq!(circle_before.contributors.len(), 4);
 
     // Record balances before cancel.
-    let before: StdVec<i128> = funders
-        .iter()
-        .map(|f| token_client.balance(f))
-        .collect();
+    let before: StdVec<i128> = funders.iter().map(|f| token_client.balance(f)).collect();
 
     let _admin = client.get_circle(&s.circle_id).admin;
     client.cancel_circle(&s.circle_id);

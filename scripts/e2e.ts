@@ -66,13 +66,11 @@ function verbose(...args: unknown[]) {
 
 // ---
 
-process.loadEnvFile(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", ".env"));
-
-const RPC_URL = process.env.STELLAR_RPC_URL!;
-const NETWORK_PASSPHRASE = process.env.STELLAR_NETWORK_PASSPHRASE!;
-const TOKEN = process.env.TEST_TOKEN_CONTRACT_ID!;
-const CONTRACT_ID = process.env.SHARIBO_CONTRACT_ID!;
-const ADMIN_SECRET = process.env.ADMIN_SECRET_KEY!;
+const RPC_URL = config.stellarRpcUrl;
+const NETWORK_PASSPHRASE = config.stellarNetworkPassphrase;
+const TOKEN = config.testTokenContractId;
+const CONTRACT_ID = config.shariboContractId;
+const ADMIN_SECRET = config.adminSecretKey;
 
 const LEVELS = TREE_LEVELS;
 const CIRCLE_SIZE = 5;
