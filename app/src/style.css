@@ -384,6 +384,26 @@ h2 {
 .member-addr {
   font-family: "JetBrains Mono", monospace;
   font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 2px solid var(--ink);
+  background: white;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+.copy-btn:hover {
+  background: var(--accent);
 }
 
 .radio {
