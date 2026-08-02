@@ -1,44 +1,49 @@
 # Contributing to Sharibo
 
-Thanks for contributing! Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md).
+Thank you for your interest in contributing to Sharibo! This document provides guidelines and information to help you get started.
 
-## Dependency update policy
+## Labels
 
-Sharibo is a cryptographic project: the client proves Groth16 proofs with `snarkjs`
-and the Poseidon hashes (`poseidon-bls12381`, `poseidon-bls12381-circom`), and it
-talks to the Stellar network through `@stellar/stellar-sdk`. An unreviewed minor-version
-drift in any of those packages is a supply-chain surface, so we are deliberate about
-when and how they move.
+We use a set of topic labels to categorize issues and pull requests. These labels help maintainers and contributors understand the scope and nature of each issue.
 
-### Pinning rules
+### Topic Labels
 
-- **Runtime crypto dependencies are pinned exactly** in every workspace: `snarkjs`,
-  `poseidon-*`, and `@stellar/stellar-sdk` must use exact versions (e.g. `"snarkjs": "0.7.6"`),
-  never a range (`^`, `~`, `>=`).
-- **Ranged versions are acceptable for devDependencies** and non-crypto runtime
-  dependencies, though exact pins are always welcome.
-- When a package is added to a workspace, pin it according to the rules above in the
-  same commit.
+| Label | Description | Maps to |
+|-------|-------------|---------|
+| frontend | React demo app | `app/` |
+| sdk | TypeScript client SDK | `packages/client` |
+| contracts | Soroban smart contract | `contracts/` |
+| circuits | Circom circuit & ZK tooling | `circuits/` |
+| testing | Tests and test infrastructure | Various test directories |
+| dx | Developer experience & tooling | Tooling, scripts, configuration |
+| a11y | Accessibility | UI/UX components |
+| ux | User experience & polish | UI/UX components |
+| security | Security & robustness | Security-related code |
+| e2e | End-to-end script | `scripts/e2e.ts` |
+| refactor | Code structure improvements | Codebase-wide |
+| performance | Speed & resource usage | Performance-critical code |
+| roadmap | Larger feature from the roadmap | Planned features |
 
-### How updates happen
+### GitHub Default Labels
 
-1. **Deliberate PR only.** Never run a blanket `npm update` or `npx npm-check-updates -u`.
-   Dependency bumps go through a normal review PR, one logical change at a time.
-2. **Changelog review for crypto deps.** Before upgrading `snarkjs`, `poseidon-*`, or
-   `@stellar/stellar-sdk`, read the package's changelog/release notes for security
-   fixes, breaking changes, and parameter or input-format changes that could affect
-   generated proofs or on-chain verification. State what you reviewed in the PR body.
-3. **Check for duplicates.** After any change, run `npm ls <package>` (e.g.
-   `npm ls snarkjs`, `npm ls poseidon-bls12381`) from the repo root and confirm there
-   is exactly one installed version — duplicate copies of a crypto dependency defeat
-   the purpose of pinning.
-4. **Keep the lockfile in sync.** `package-lock.json` must be updated in the same PR
-   as the manifest change (`npm install --package-lock-only --ignore-scripts`).
+| Label | Description | Maps to |
+|-------|-------------|---------|
+| good first issue | Good for newcomers | Any area, suitable for new contributors |
+| documentation | Improvements or additions to documentation | `docs/`, README files, code comments |
+| bug | Something isn't working | Any area with defects |
+| duplicate | This issue or pull request already exists | N/A |
+| enhancement | New feature or request | Any area |
+| help wanted | Extra attention is needed | Any area needing help |
+| invalid | This doesn't seem right | N/A |
+| question | Further information is requested | N/A |
+| wontfix | This will not be worked on | N/A |
 
-## Development
+### Special Labels
 
-- **Install:** `npm install` at the repo root (npm workspaces).
-- **Type-check:** `npm run typecheck --workspace=@sharibo/client`
-- **Client tests:** `npm test --workspace=@sharibo/client`
-- **Circuit tests:** `npm test --workspace=@sharibo/circuits`
-- **End-to-end:** `npm run e2e`
+| Label | Description | Maps to |
+|-------|-------------|---------|
+| Stellar Wave | Issues in the Stellar wave program | Stellar Wave program tasks |
+
+## Picking an Issue
+
+When looking for issues to work on, start by filtering by the `good first issue` label. These issues are specifically marked as suitable for newcomers and provide a great way to get familiar with the codebase. Before you start working on an issue, leave a comment to claim it and let the maintainers know you're working on it. If you have questions about the issue or need clarification, ask them directly on the issue rather than in a pull request—this helps keep the PR focused on the implementation.

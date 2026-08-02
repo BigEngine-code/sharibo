@@ -3,14 +3,32 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "description": "Helper scripts and end-to-end tests for Sharibo ROSCA platform",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/crackedstudio/sharibo.git",
+    "directory": "scripts"
+  },
+  "keywords": [
+    "stellar",
+    "soroban",
+    "e2e",
+    "scripts",
+    "rosca"
+  ],
   "scripts": {
-    "e2e": "tsx e2e.ts"
+    "e2e": "tsx e2e.ts",
+    "smoke": "tsx smoke.ts",
+    "test": "node --import tsx --test smoke.test.ts"
   },
   "dependencies": {
     "@sharibo/client": "*",
-    "@stellar/stellar-sdk": "16.0.1"
+    "@stellar/stellar-sdk": "^16.2.0"
   },
   "devDependencies": {
-    "tsx": "4.22.4"
+    "@types/node": "24.13.3",
+    "tsx": "4.22.4",
+    "typescript": "6.0.3"
   }
 }
