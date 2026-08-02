@@ -17,18 +17,42 @@ export interface ShariboNetworkConfig {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ShariboClient = any;
 
+export interface ShariboSigner {
+  publicKey: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  signTransaction: (txXdr: string, opts?: any) => Promise<string>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  signAuthEntry?: (entryXdr: string, opts?: any) => Promise<string>;
+}
+
 export async function connect(
   config: ShariboNetworkConfig,
-  keypair: Keypair,
+  keypairOrSigner: Keypair | ShariboSigner,
 ): Promise<ShariboClient> {
-  const signer = basicNodeSigner(keypair, config.networkPassphrase);
+  let publicKey: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let signTransaction: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let signAuthEntry: any;
+
+  if (keypairOrSigner instanceof Keypair) {
+    const signer = basicNodeSigner(keypairOrSigner, config.networkPassphrase);
+    publicKey = keypairOrSigner.publicKey();
+    signTransaction = signer.signTransaction;
+    signAuthEntry = signer.signAuthEntry;
+  } else {
+    publicKey = keypairOrSigner.publicKey;
+    signTransaction = keypairOrSigner.signTransaction;
+    signAuthEntry = keypairOrSigner.signAuthEntry;
+  }
+
   return ContractClient.from({
     contractId: config.contractId,
     networkPassphrase: config.networkPassphrase,
     rpcUrl: config.rpcUrl,
-    publicKey: keypair.publicKey(),
-    signTransaction: signer.signTransaction,
-    signAuthEntry: signer.signAuthEntry,
+    publicKey,
+    signTransaction,
+    signAuthEntry,
   });
 }
 
@@ -106,6 +130,13 @@ export async function getCircle(client: ShariboClient, circleId: bigint): Promis
   const tx = await client.get_circle({ circle_id: circleId });
   const sent = await tx.signAndSend({ force: true });
   return sent.result as CircleView;
+}
+
+/** Pure read: the current count of circles ever created. 0 if none yet. */
+export async function getCircleCount(client: ShariboClient): Promise<bigint> {
+  const tx = await client.get_circle_count();
+  const sent = await tx.signAndSend({ force: true });
+  return sent.result as bigint;
 }
 
 /** Pure read: whether `nullifierHash` has already claimed in this circle. */

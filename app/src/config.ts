@@ -50,9 +50,7 @@ function validate(): ValidationResult {
   if (!rpcUrl) {
     errors.push("VITE_STELLAR_RPC_URL — missing or empty");
   } else if (!isHttpUrl(rpcUrl)) {
-    errors.push(
-      `VITE_STELLAR_RPC_URL — invalid URL (got "${rpcUrl}"; expected an http/https URL)`,
-    );
+    errors.push(`VITE_STELLAR_RPC_URL — invalid URL (got "${rpcUrl}"; expected an http/https URL)`);
   }
 
   if (!networkPassphrase) {
