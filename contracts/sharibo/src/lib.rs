@@ -160,7 +160,7 @@ impl Contract {
         }
 
         let token_client = token::Client::new(&env, &circle.token);
-        token_client.transfer(&from, &env.current_contract_address(), &circle.contribution);
+        token_client.transfer(&from, env.current_contract_address(), &circle.contribution);
 
         // Defensive: with RoundFull above, pot + contribution cannot exceed
         // target when target itself fits in i128. Still use checked_add so an
@@ -205,7 +205,8 @@ impl Contract {
         }
 
         // 2. the proof's external_nullifier must be bound to this exact circle+round
-        let expected_external_nullifier = Self::compute_external_nullifier(&env, circle_id, circle.round);
+        let expected_external_nullifier =
+            Self::compute_external_nullifier(&env, circle_id, circle.round);
         if external_nullifier != expected_external_nullifier {
             panic_with_error!(&env, Error::WrongRoundTag);
         }
@@ -253,6 +254,15 @@ impl Contract {
             .persistent()
             .get(&DataKey::Circle(circle_id))
             .unwrap_or_else(|| panic_with_error!(&env, Error::CircleNotFound))
+    }
+
+    /// Pure read: the current count of circles ever created (i.e. the next
+    /// circle id that would be assigned). 0 if no circle has been created yet.
+    pub fn get_circle_count(env: Env) -> u64 {
+        env.storage()
+            .instance()
+            .get(&DataKey::NextCircleId)
+            .unwrap_or(0)
     }
 
     /// Pure read: whether `nullifier_hash` has already been used to claim in
@@ -355,14 +365,14 @@ impl Contract {
         }
 
         let neg_a = -proof.a.clone();
-        let vp1 = vec![
+        let vp1 = vec![env, neg_a, vk.alpha.clone(), vk_x, proof.c.clone()];
+        let vp2 = vec![
             env,
-            neg_a,
-            vk.alpha.clone(),
-            vk_x,
-            proof.c.clone(),
+            proof.b.clone(),
+            vk.beta.clone(),
+            vk.gamma.clone(),
+            vk.delta.clone(),
         ];
-        let vp2 = vec![env, proof.b.clone(), vk.beta.clone(), vk.gamma.clone(), vk.delta.clone()];
 
         bls.pairing_check(vp1, vp2)
     }

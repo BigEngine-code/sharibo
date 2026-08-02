@@ -6,6 +6,8 @@ Currently, Sharibo is in development and deployed to testnet only. All component
 
 ## Scope
 
+See [docs/threat-model.md](docs/threat-model.md) for the structured breakdown of assets, adversaries, and which security properties each part of the code is actually responsible for.
+
 The following components qualify as in-scope for security vulnerabilities:
 
 - **Smart contract logic:** `contracts/sharibo/src/lib.rs` (e.g., bypassing auth, double-claiming, unauthorized access to funds).
