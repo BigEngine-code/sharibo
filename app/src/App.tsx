@@ -43,6 +43,22 @@ const TOKEN = config.testTokenContractId;
 const LEVELS = 4;
 const CIRCLE_SIZE = 5;
 const STROOPS_PER_XLM = 10_000_000n;
+const README_URL = "https://github.com/crackedstudio/sharibo#honest-limitations";
+
+const isTestnet = NETWORK.networkPassphrase.includes("Test SDF Network");
+const BANNER_TEXT = isTestnet ? "Stellar testnet — no real funds" : "";
+
+function TestnetBanner() {
+  if (!BANNER_TEXT) return null;
+  return (
+    <div className="testnet-banner">
+      <span>{BANNER_TEXT}</span>
+      <a className="banner-link" href={README_URL} target="_blank" rel="noreferrer">
+        honest limitations ↗
+      </a>
+    </div>
+  );
+}
 
 const NAMES = [
   "ajo",
@@ -79,6 +95,43 @@ function short(address: string): string {
   return `${address.slice(0, 4)}…${address.slice(-4)}`;
 }
 
+// Every truncated value on screen (addresses, tx hashes) needs to be
+// pasteable in full somewhere else — a CLI call, an explorer search — so
+// this pairs with each `short(...)` display. Falls back to a prompt() (which
+// itself is trivially copyable) when the async Clipboard API isn't
+// available, e.g. non-secure contexts.
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(t);
+  }, [copied]);
+
+  async function handleCopy() {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard API unavailable");
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+    } catch {
+      window.prompt(`Clipboard unavailable — copy ${label} manually:`, value);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      className="copy-btn"
+      onClick={handleCopy}
+      aria-label={`Copy ${label}`}
+      title={`Copy ${label}`}
+    >
+      {copied ? "✓" : "📋"}
+    </button>
+  );
+}
+
 interface Member {
   keypair: Keypair;
   identity: Identity;
@@ -89,6 +142,51 @@ interface Member {
 interface ClaimResult {
   recipient: string;
   hash: string;
+}
+
+// The visible stages of doClaim, in the order they actually occur. snarkjs's
+// fullProve is one opaque call, so "proving" covers witness computation +
+// proof generation together — it gets its own elapsed timer instead of a
+// substage breakdown, since we can't observe a finer boundary inside it.
+type ClaimStage = "artifacts" | "proving" | "funding" | "submitting";
+
+const CLAIM_STAGE_LABELS: Record<ClaimStage, string> = {
+  artifacts: "Fetching proving artifacts (wasm + zkey)…",
+  proving: "Proving…",
+  funding: "Funding a fresh, unlinked recipient…",
+  submitting: "Submitting the claim…",
+};
+
+const CLAIM_STAGES: ClaimStage[] = ["artifacts", "proving", "funding", "submitting"];
+
+// So a claim never reads as a hung tab: each real substage of doClaim gets
+// its own line here (fullProve itself stays one opaque "proving" step, per
+// snarkjs, but that step gets a live elapsed-seconds counter + spinner so a
+// slow prove still visibly ticks rather than sitting static).
+function ClaimProgress({ stage, elapsedSeconds }: { stage: ClaimStage; elapsedSeconds: number }) {
+  const activeIndex = CLAIM_STAGES.indexOf(stage);
+  return (
+    <div className="claim-progress">
+      <div className="stepper">
+        {CLAIM_STAGES.map((s, i) => (
+          <div
+            key={s}
+            className={`step ${i < activeIndex ? "done" : i === activeIndex ? "active" : ""}`}
+          >
+            <span className="step-dot">{i < activeIndex ? "✓" : i + 1}</span>
+            {CLAIM_STAGE_LABELS[s]}
+          </div>
+        ))}
+      </div>
+      {stage === "proving" && (
+        <p className="techline">
+          <span className="spinner" aria-hidden="true" /> Groth16 · BLS12-381 · 1,452 constraints ·
+          proving locally in your browser, nothing sent anywhere until the proof is done ·{" "}
+          {elapsedSeconds}s elapsed
+        </p>
+      )}
+    </div>
+  );
 }
 
 function Stepper({ step }: { step: 0 | 1 | 2 | 3 }) {
@@ -119,6 +217,23 @@ function Stepper({ step }: { step: 0 | 1 | 2 | 3 }) {
         })}
       </ol>
     </nav>
+  );
+}
+
+function NetworkBanner() {
+  const isTestnet = NETWORK.networkPassphrase.toLowerCase().includes("test");
+  if (!isTestnet) return null;
+  return (
+    <div className="network-banner">
+      Stellar testnet — no real funds ·{" "}
+      <a
+        href="https://github.com/glorious21-coder/sharibo#honest-limitations"
+        target="_blank"
+        rel="noreferrer"
+      >
+        limitations ↗
+      </a>
+    </div>
   );
 }
 
@@ -263,54 +378,15 @@ export default function App() {
   const [claimResult, setClaimResult] = useState<ClaimResult | null>(null);
   const [nullifierClaimed, setNullifierClaimed] = useState(false);
   const [rejection, setRejection] = useState<string | null>(null);
-  const [resumePrompt, setResumePrompt] = useState<any>(null);
-
-  useEffect(() => {
-    const saved = sessionStorage.getItem("sharibo_demo_state");
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved, reviver);
-        if (parsed && parsed.circleId) {
-          setResumePrompt(parsed);
-        }
-      } catch (e) {
-        sessionStorage.removeItem("sharibo_demo_state");
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    if (circleId !== null && admin) {
-      const stateToSave = {
-        contributionXlm,
-        adminSecret: admin.secret(),
-        members: members.map(m => ({
-          secret: m.keypair.secret(),
-          identity: m.identity,
-          funded: m.funded,
-          fundHash: m.fundHash,
-        })),
-        circleId,
-        round,
-        pot,
-        claimantIndex,
-        proof,
-        nullifierHash,
-        claimResult,
-        rejection,
-      };
-      
-      // We use sessionStorage (not localStorage) because these are real cryptographic secrets
-      // for testnet. The app warns that identities are never reused, so they should be
-      // scoped to the current tab and cleared when it closes.
-      sessionStorage.setItem("sharibo_demo_state", JSON.stringify(stateToSave, replacer));
-    }
-  }, [
-    contributionXlm, admin, members, circleId, round, pot, claimantIndex, proof, nullifierHash, claimResult, rejection
-  ]);
+  const [claimStage, setClaimStage] = useState<ClaimStage | null>(null);
+  const [proveElapsedSeconds, setProveElapsedSeconds] = useState(0);
   // Survives a reset so the landing screen can point back at the circle you
   // just left — it keeps living on-chain even though the UI has moved on.
   const [previousCircleId, setPreviousCircleId] = useState<bigint | null>(null);
+
+  // Track the most recently completed circle so we can show a "lives on-chain" link
+  // after a reset. Stored as { id, explorerUrl } so the fineprint is self-contained.
+  const [prevCircle, setPrevCircle] = useState<{ id: string; explorerUrl: string } | null>(null);
 
   const contribution = BigInt(contributionXlm) * STROOPS_PER_XLM;
   const fundedCount = members.filter((m) => m.funded).length;
@@ -382,6 +458,8 @@ export default function App() {
     setClaimResult(null);
     setNullifierClaimed(false);
     setRejection(null);
+    setClaimStage(null);
+    setProveElapsedSeconds(0);
     setScreen("landing");
   }
 
@@ -498,35 +576,48 @@ export default function App() {
     setError(null);
     setClaimResult(null);
     setRejection(null);
-    setBusy(
-      "Proving… (a real Groth16 proof is being generated in your browser)",
-    );
+    setBusy("Claiming…");
     try {
       const claimant = members[claimantIndex];
       const merkleProof = tree.proof(claimantIndex);
-      const externalNullifier = await computeExternalNullifier(
-        circleId,
-        BigInt(round),
-      );
-      const generated = await generateProof(
-        {
-          identityNullifier: claimant.identity.identityNullifier,
-          identitySecret: claimant.identity.identitySecret,
-          pathElements: merkleProof.pathElements,
-          pathIndices: merkleProof.pathIndices,
-          root: tree.root,
-          externalNullifier,
-        },
-        "/circuits/membership.wasm",
-        "/circuits/membership_final.zkey",
-      );
+      const externalNullifier = await computeExternalNullifier(circleId, BigInt(round));
 
-      setBusy(
-        "Submitting the claim and generating a fresh, unlinked recipient…",
-      );
+      setClaimStage("artifacts");
+      const [wasm, zkey] = await Promise.all([
+        fetch("/circuits/membership.wasm")
+          .then((r) => r.arrayBuffer())
+          .then((b) => new Uint8Array(b)),
+        fetch("/circuits/membership_final.zkey")
+          .then((r) => r.arrayBuffer())
+          .then((b) => new Uint8Array(b)),
+      ]);
+
+      setClaimStage("proving");
+      setProveElapsedSeconds(0);
+      const proveTimer = setInterval(() => setProveElapsedSeconds((s) => s + 1), 1000);
+      let generated;
+      try {
+        generated = await generateProof(
+          {
+            identityNullifier: claimant.identity.identityNullifier,
+            identitySecret: claimant.identity.identitySecret,
+            pathElements: merkleProof.pathElements,
+            pathIndices: merkleProof.pathIndices,
+            root: tree.root,
+            externalNullifier,
+          },
+          wasm,
+          zkey,
+        );
+      } finally {
+        clearInterval(proveTimer);
+      }
+
+      setClaimStage("funding");
       const recipient = Keypair.random();
       await friendbotFund(recipient.publicKey());
 
+      setClaimStage("submitting");
       const adminClient = await connect(NETWORK, admin);
       const { hash } = await claim(adminClient, {
         circleId,
@@ -548,6 +639,7 @@ export default function App() {
       setError((e as Error).message);
     } finally {
       setBusy(null);
+      setClaimStage(null);
     }
   }
 
@@ -627,6 +719,7 @@ export default function App() {
   if (screen === "landing") {
     return (
       <div className="page">
+        <NetworkBanner />
         <div className="card hero">
           <div className="namewall">
             {NAMES.map((n) => (
@@ -670,15 +763,24 @@ export default function App() {
             Testnet only. Demo identities are generated fresh in your browser,
             never reused.
           </p>
+          {prevCircle && (
+            <p className="fineprint">
+              Your previous circle #{prevCircle.id} lives on-chain —{" "}
+              <a className="link" href={prevCircle.explorerUrl} target="_blank" rel="noreferrer">
+                view on explorer ↗
+              </a>
+            </p>
+          )}
         </div>
       </div>
     );
   }
 
-  const step: 0 | 1 | 2 | 3 = claimResult ? 3 : fullyFunded ? 2 : 1;
+  const step: 0 | 1 | 2 | 3 = flow.claimResult ? 3 : flow.fullyFunded ? 2 : 1;
 
   return (
     <div className="page">
+      <NetworkBanner />
       <div className="card">
         {/*
           Persistent live region — always in the DOM so the browser registers
@@ -710,19 +812,14 @@ export default function App() {
         <div className="row space-between">
           <h1 className="small" ref={circleHeadingRef} tabIndex={-1}>SHARIBO</h1>
           <div className="row">
-            <a
-              className="link"
-              href={explorerContract()}
-              target="_blank"
-              rel="noreferrer"
-            >
-              circle #{circleId?.toString()} on-chain ↗
+            <a className="link" href={explorerContract()} target="_blank" rel="noreferrer">
+              circle #{flow.circleId?.toString()} on-chain ↗
             </a>
             <button
               className="btn btn-small"
-              disabled={!!busy}
-              onClick={resetToLanding}
-              title={`Start over. Your current circle (#${circleId?.toString()}) keeps living on-chain.`}
+              disabled={!!flow.busy}
+              onClick={flow.resetToLanding}
+              title={`Start over. Your current circle (#${flow.circleId?.toString()}) keeps living on-chain.`}
             >
               Start a new circle
             </button>
@@ -731,17 +828,17 @@ export default function App() {
 
         <Stepper step={step} />
 
-        <MemberRing members={members} revealed={!!claimResult} />
+        <MemberRing members={flow.members} revealed={!!flow.claimResult} />
 
         <div className="pot-bar-wrap">
           <div
             className="pot-bar"
-            style={{ width: `${(fundedCount / CIRCLE_SIZE) * 100}%` }}
+            style={{ width: `${(flow.fundedCount / CIRCLE_SIZE) * 100}%` }}
           />
         </div>
         <p className="pot-label">
-          pot: {(Number(pot) / 1e7).toFixed(1)} /{" "}
-          {contributionXlm * CIRCLE_SIZE} XLM · round {round}
+          pot: {(Number(flow.pot) / 1e7).toFixed(1)} / {flow.contributionXlm * CIRCLE_SIZE} XLM ·
+          round {flow.round}
         </p>
 
         <h2>Fund</h2>
@@ -750,6 +847,7 @@ export default function App() {
             <div key={i} className={`member ${m.funded ? "funded" : ""}`}>
               <span className="member-addr">
                 member {i + 1} · {short(m.keypair.publicKey())}
+                <CopyButton value={m.keypair.publicKey()} label={`member ${i + 1} address`} />
               </span>
               {m.funded ? (
                 <a
@@ -794,12 +892,8 @@ export default function App() {
                 </label>
               ))}
             </div>
-            <button
-              className="btn btn-primary"
-              disabled={!!busy}
-              onClick={doClaim}
-            >
-              {busy ?? "Generate proof & claim"}
+            <button className="btn btn-primary" disabled={!!busy} onClick={doClaim}>
+              {claimStage ? CLAIM_STAGE_LABELS[claimStage] : "Generate proof & claim"}
             </button>
             {busy && (
               <p className="techline">
@@ -815,12 +909,9 @@ export default function App() {
           <div className="result">
             <h2 ref={payoutHeadingRef} tabIndex={-1}>Payout landed</h2>
             <p>
-              Fresh recipient <code>{short(claimResult.recipient)}</code>{" "}
-              <a
-                href={explorerAccount(claimResult.recipient)}
-                target="_blank"
-                rel="noreferrer"
-              >
+              Fresh recipient <code>{short(claimResult.recipient)}</code>
+              <CopyButton value={claimResult.recipient} label="recipient address" />{" "}
+              <a href={explorerAccount(claimResult.recipient)} target="_blank" rel="noreferrer">
                 ↗
               </a>{" "}
               received the pot. It has never appeared anywhere else on this
@@ -834,6 +925,7 @@ export default function App() {
             >
               view claim transaction ↗
             </a>
+            <CopyButton value={claimResult.hash} label="claim transaction hash" />
             <p className="callout">
               Compare the 5 funding transactions above to this claim — same
               contract, no shared address, no visible link.
@@ -870,10 +962,28 @@ export default function App() {
                 </button>
               </>
             )}
+            {rejection && (
+              <div className="new-circle-cta">
+                <button
+                  className="btn btn-primary"
+                  disabled={!!busy}
+                  onClick={resetToLanding}
+                >
+                  ↺ Start a new circle
+                </button>
+                <p className="fineprint">
+                  Circle #{circleId?.toString()} stays on-chain forever —{" "}
+                  <a className="link" href={explorerContract()} target="_blank" rel="noreferrer">
+                    view on explorer ↗
+                  </a>
+                  . Starting a new circle generates fresh identities and a brand-new on-chain record.
+                </p>
+              </div>
+            )}
           </div>
         )}
 
-        {error && <p className="error">{error}</p>}
+        {flow.error && <p className="error">{flow.error}</p>}
       </div>
     </div>
   );
