@@ -678,7 +678,7 @@ export default function App() {
     );
   }
 
-  const step: 0 | 1 | 2 | 3 = claimResult ? 3 : fullyFunded ? 2 : 1;
+  const step: 0 | 1 | 2 | 3 = flow.claimResult ? 3 : flow.fullyFunded ? 2 : 1;
 
   return (
     <div className="page">
@@ -715,13 +715,13 @@ export default function App() {
           <h1 className="small" ref={circleHeadingRef} tabIndex={-1}>SHARIBO</h1>
           <div className="row">
             <a className="link" href={explorerContract()} target="_blank" rel="noreferrer">
-              circle #{circleId?.toString()} on-chain ↗
+              circle #{flow.circleId?.toString()} on-chain ↗
             </a>
             <button
               className="btn btn-small"
-              disabled={!!busy}
-              onClick={resetToLanding}
-              title={`Start over. Your current circle (#${circleId?.toString()}) keeps living on-chain.`}
+              disabled={!!flow.busy}
+              onClick={flow.resetToLanding}
+              title={`Start over. Your current circle (#${flow.circleId?.toString()}) keeps living on-chain.`}
             >
               Start a new circle
             </button>
@@ -730,14 +730,17 @@ export default function App() {
 
         <Stepper step={step} />
 
-        <MemberRing members={members} revealed={!!claimResult} />
+        <MemberRing members={flow.members} revealed={!!flow.claimResult} />
 
         <div className="pot-bar-wrap">
-          <div className="pot-bar" style={{ width: `${(fundedCount / CIRCLE_SIZE) * 100}%` }} />
+          <div
+            className="pot-bar"
+            style={{ width: `${(flow.fundedCount / CIRCLE_SIZE) * 100}%` }}
+          />
         </div>
         <p className="pot-label">
-          pot: {(Number(pot) / 1e7).toFixed(1)} / {contributionXlm * CIRCLE_SIZE} XLM · round{" "}
-          {round}
+          pot: {(Number(flow.pot) / 1e7).toFixed(1)} / {flow.contributionXlm * CIRCLE_SIZE} XLM ·
+          round {flow.round}
         </p>
 
         <h2>Fund</h2>
@@ -866,7 +869,7 @@ export default function App() {
           </div>
         )}
 
-        {error && <p className="error">{error}</p>}
+        {flow.error && <p className="error">{flow.error}</p>}
       </div>
     </div>
   );
