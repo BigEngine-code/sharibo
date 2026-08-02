@@ -1,13 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
-  FR_MODULUS,
-  randomFieldElement,
-  generateIdentity,
-  computeNullifierHash,
-  computeExternalNullifier,
-  poseidon,
-} from "./identity.js";
+import { FR_MODULUS, randomFieldElement, computeExternalNullifier } from "./identity.js";
 
 // Issue #63: pin FR_MODULUS against independent sources so a transcription
 // error in the hex literal fails the suite instead of silently corrupting
@@ -97,10 +90,7 @@ test("computeExternalNullifier accepts the round boundary (2**32 - 1)", async ()
 });
 
 test("computeExternalNullifier rejects round >= 2**32", async () => {
-  await assert.rejects(
-    () => computeExternalNullifier(1n, 2n ** 32n),
-    RangeError,
-  );
+  await assert.rejects(() => computeExternalNullifier(1n, 2n ** 32n), RangeError);
 });
 
 test("computeExternalNullifier rejects negative round", async () => {
@@ -112,10 +102,7 @@ test("computeExternalNullifier accepts the circleId boundary (2**64 - 1)", async
 });
 
 test("computeExternalNullifier rejects circleId >= 2**64", async () => {
-  await assert.rejects(
-    () => computeExternalNullifier(2n ** 64n, 1n),
-    RangeError,
-  );
+  await assert.rejects(() => computeExternalNullifier(2n ** 64n, 1n), RangeError);
 });
 
 test("computeExternalNullifier rejects negative circleId", async () => {
