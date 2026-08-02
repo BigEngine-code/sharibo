@@ -256,6 +256,12 @@ fn claim_reverts_on_tampered_public_input() {
 
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")] // RoundNotFunded
+// Ideally we'd pin pot == contribution*size - 1 (the single stroop
+    // short of full) as the tightest possible underfunded case. But `fund`
+    // only ever moves whole `contribution`-sized deposits — there's no way
+    // to land the pot on a non-multiple-of-contribution value through the
+    // public API. The tightest *reachable* underfunded state is one missing
+    // depositor, so that's what this test pins instead.
 fn claim_reverts_when_underfunded() {
     let s = setup(5, 100);
     let client = ContractClient::new(&s.env, &s.client_id);
@@ -273,6 +279,48 @@ fn claim_reverts_when_underfunded() {
     client.claim(
         &s.circle_id,
         &recipient,
+        &nullifier_hash,
+        &external_nullifier,
+        &proof,
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #2)")] // RoundNotFunded
+fn claim_immediately_after_round_advance_reverts() {
+    // Regression guard: after a successful claim, pot must reset to 0 and
+    // round 2 must require its own fresh funding — not silently inherit
+    // round 1's now-stale "fully funded" state.
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+
+    for m in s.members.iter() {
+        client.fund(&s.circle_id, m);
+    }
+
+    let recipient = Address::generate(&s.env);
+    let nullifier_hash = real_nullifier_hash(&s.env);
+    let external_nullifier = real_external_nullifier_round0(&s.env);
+    let proof = real_valid_proof(&s.env);
+
+    client.claim(
+        &s.circle_id,
+        &recipient,
+        &nullifier_hash,
+        &external_nullifier,
+        &proof,
+    );
+
+    let circle = client.get_circle(&s.circle_id);
+    assert_eq!(circle.pot, 0);
+    assert_eq!(circle.round, 1);
+
+    // No one has funded round 1 yet — this must revert with RoundNotFunded,
+    // not pay out against a stale/leftover pot value.
+    let recipient2 = Address::generate(&s.env);
+    client.claim(
+        &s.circle_id,
+        &recipient2,
         &nullifier_hash,
         &external_nullifier,
         &proof,
@@ -383,6 +431,29 @@ fn create_circle_requires_admin_auth() {
     let auths = env.auths();
     assert_eq!(auths.len(), 1);
     assert_eq!(auths[0].0, admin);
+}
+
+#[test]
+fn get_circle_count_tracks_next_circle_id() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(Contract, ());
+    let client = ContractClient::new(&env, &contract_id);
+
+    assert_eq!(client.get_circle_count(), 0);
+
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = create_token(&env, &token_admin);
+    let root = real_root(&env);
+    let vk = real_verification_key(&env);
+
+    client.create_circle(&admin, &token, &root, &100i128, &5u32, &vk);
+    assert_eq!(client.get_circle_count(), 1);
+
+    client.create_circle(&admin, &token, &root, &100i128, &5u32, &vk);
+    assert_eq!(client.get_circle_count(), 2);
 }
 
 #[test]

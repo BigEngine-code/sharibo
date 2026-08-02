@@ -10,10 +10,6 @@
   ],
   "scripts": {
     "e2e": "npm run e2e --workspace=scripts",
-    "format": "prettier --write .",
-    "format:check": "prettier --check ."
-  },
-  "devDependencies": {
-    "prettier": "3.9.6"
+    "test": "npm test --workspace=app"
   }
 }
