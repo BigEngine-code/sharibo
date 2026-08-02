@@ -12,6 +12,15 @@
 //
 // Requires: circuits/build/{membership_js/membership.wasm,membership_final.zkey}
 // (run circuits/scripts/{compile,setup}.sh first) and a populated .env.
+//
+// Parallelization strategy (see #97):
+// - Friendbot funding: fully parallel via Promise.all (independent accounts).
+// - Soroban fund txs: sequential. Each fund() call reads and writes the same
+//   Circle storage entry (incrementing `funded_count` and `pot`). Parallel
+//   submission causes footprint contention: the second-to-arrive tx simulates
+//   against stale ledger state and is rejected by the RPC with a sequence or
+//   footprint conflict. This was measured — not assumed — and the sequential
+//   path is the deliberate choice.
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -68,6 +77,16 @@ const LEVELS = TREE_LEVELS;
 const CIRCLE_SIZE = 5;
 const CONTRIBUTION = 100_000_000n; // 10 XLM (7 decimals)
 const CLAIMANT_INDEX = 2;
+
+// --- Timing utility ---
+// Wraps an async step and prints wall-clock duration.
+async function timed<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  const start = performance.now();
+  const result = await fn();
+  const elapsed = ((performance.now() - start) / 1000).toFixed(1);
+  console.log(`   [${elapsed}s] ${label}`);
+  return result;
+}
 
 // Node's own fetch()/undici hung indefinitely against these two endpoints in
 // this environment even with AbortSignal.timeout set, while plain `curl`
@@ -132,14 +151,18 @@ async function main() {
 
   const admin = Keypair.fromSecret(ADMIN_SECRET);
 
-  console.log("1. Generating 5 member identities + funding their accounts via friendbot...");
+  console.log("1. Generating 5 member identities + funding accounts via friendbot...");
   const members = Array.from({ length: CIRCLE_SIZE }, () => ({
     keypair: Keypair.random(),
     identity: generateIdentity(),
   }));
-  for (const m of members) {
-    await friendbotFund(m.keypair.publicKey());
-  }
+
+  // Friendbot funding: parallelized via Promise.all. Each account is
+  // independent — no shared state, no sequence contention. This is the
+  // single biggest wall-time win (5 sequential HTTP round-trips → 1).
+  await timed("friendbot funding (parallel)", async () => {
+    await Promise.all(members.map((m) => friendbotFund(m.keypair.publicKey())));
+  });
   console.log(
     "   members:",
     members.map((m) => m.keypair.publicKey()),
@@ -225,17 +248,19 @@ async function main() {
   );
   verbose("generating proof with wasm + zkey from", circuitsBuildDir);
   const { proof, nullifierHash, root, externalNullifier: provenExternalNullifier } =
-    await generateProof(
-      {
-        identityNullifier: claimant.identity.identityNullifier,
-        identitySecret: claimant.identity.identitySecret,
-        pathElements: merkleProof.pathElements,
-        pathIndices: merkleProof.pathIndices,
-        root: tree.root,
-        externalNullifier,
-      },
-      path.join(circuitsBuildDir, "membership_js", "membership.wasm"),
-      path.join(circuitsBuildDir, "membership_final.zkey"),
+    await timed("proof generation", () =>
+      generateProof(
+        {
+          identityNullifier: claimant.identity.identityNullifier,
+          identitySecret: claimant.identity.identitySecret,
+          pathElements: merkleProof.pathElements,
+          pathIndices: merkleProof.pathIndices,
+          root: tree.root,
+          externalNullifier,
+        },
+        path.join(circuitsBuildDir, "membership_js", "membership.wasm"),
+        path.join(circuitsBuildDir, "membership_final.zkey"),
+      ),
     );
   assert(root === tree.root, "proof's public root must match the circle's root");
   assert(
