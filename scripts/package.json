@@ -24,7 +24,7 @@
   },
   "dependencies": {
     "@sharibo/client": "*",
-    "@stellar/stellar-sdk": "^16.0.1"
+    "@stellar/stellar-sdk": "^16.2.0"
   },
   "devDependencies": {
     "@types/node": "24.13.3",
