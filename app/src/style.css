@@ -116,6 +116,19 @@ h2 {
   margin-top: 16px;
 }
 
+.network-banner {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  text-align: center;
+  padding: 6px 12px;
+  background: #f0f0f0;
+  border: 2px solid #ccc;
+  color: #555;
+  margin-bottom: 16px;
+  width: 100%;
+  max-width: 620px;
+}
+
 .btn {
   font-family: "Space Grotesk", sans-serif;
   font-weight: 700;
