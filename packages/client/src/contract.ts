@@ -2,25 +2,25 @@ import { Client as ContractClient, basicNodeSigner } from "@stellar/stellar-sdk/
 import { Keypair } from "@stellar/stellar-sdk";
 import type { ContractProof, ContractVerificationKey } from "./prove.js";
 
-export interface SharaboNetworkConfig {
+export interface ShariboNetworkConfig {
   contractId: string;
   rpcUrl: string;
   networkPassphrase: string;
 }
 
-// The contract's methods (create_circle/fund/claim/get_circle) are attached
-// to the Client at runtime from the on-chain contract spec (see
+// The contract's methods (create_circle/fund/claim/get_circle/has_claimed)
+// are attached to the Client at runtime from the on-chain contract spec (see
 // @stellar/stellar-sdk's `contract.Client.from`), so they aren't visible to
 // TypeScript's static checker — hence `any` here rather than a hand-rolled
 // or codegen'd interface. Keeps this SDK working against whatever the
 // deployed contract's real spec is, rather than a copy that can drift.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type SharaboClient = any;
+export type ShariboClient = any;
 
 export async function connect(
-  config: SharaboNetworkConfig,
+  config: ShariboNetworkConfig,
   keypair: Keypair,
-): Promise<SharaboClient> {
+): Promise<ShariboClient> {
   const signer = basicNodeSigner(keypair, config.networkPassphrase);
   return ContractClient.from({
     contractId: config.contractId,
@@ -38,7 +38,7 @@ export interface TxResult<T> {
 }
 
 export async function createCircle(
-  client: SharaboClient,
+  client: ShariboClient,
   args: {
     admin: string;
     token: string;
@@ -61,7 +61,7 @@ export async function createCircle(
 }
 
 export async function fund(
-  client: SharaboClient,
+  client: ShariboClient,
   args: { circleId: bigint; from: string },
 ): Promise<TxResult<void>> {
   const tx = await client.fund({ circle_id: args.circleId, from: args.from });
@@ -70,7 +70,7 @@ export async function fund(
 }
 
 export async function claim(
-  client: SharaboClient,
+  client: ShariboClient,
   args: {
     circleId: bigint;
     recipient: string;
@@ -100,10 +100,24 @@ export interface CircleView {
   pot: bigint;
 }
 
-export async function getCircle(client: SharaboClient, circleId: bigint): Promise<CircleView> {
+export async function getCircle(client: ShariboClient, circleId: bigint): Promise<CircleView> {
   // get_circle is a pure read: the SDK detects no signature is needed and
   // refuses signAndSend() without `force` (there's nothing to sign/submit).
   const tx = await client.get_circle({ circle_id: circleId });
   const sent = await tx.signAndSend({ force: true });
   return sent.result as CircleView;
+}
+
+/** Pure read: whether `nullifierHash` has already claimed in this circle. */
+export async function hasClaimed(
+  client: ShariboClient,
+  circleId: bigint,
+  nullifierHash: bigint,
+): Promise<boolean> {
+  const tx = await client.has_claimed({
+    circle_id: circleId,
+    nullifier_hash: nullifierHash,
+  });
+  const sent = await tx.signAndSend({ force: true });
+  return sent.result as boolean;
 }
