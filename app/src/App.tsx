@@ -24,6 +24,7 @@ import {
   type ContractProof,
 } from "@sharibo/client";
 import { config, configError } from "./config";
+import { useI18n } from "./i18n";
 
 const BIGINT_MARKER = 'BIGINT::';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -200,7 +201,8 @@ function ClaimProgress({ stage, elapsedSeconds }: { stage: ClaimStage; elapsedSe
 }
 
 function Stepper({ step }: { step: 0 | 1 | 2 | 3 }) {
-  const labels = ["Create", "Fund", "Prove & Claim", "Unlinked ✓"];
+  const { t } = useI18n();
+  const labels = [t("step.create"), t("step.fund"), t("step.proveClaim"), t("step.unlinked")];
   return (
     // nav + ol give screen readers "step N of 4" list semantics without
     // changing any visual output — CSS targets .stepper and .step as before.
@@ -340,15 +342,16 @@ function MemberRing({
 }
 
 function EnvSetupScreen({ errors }: { errors: string[] }) {
+  const { t } = useI18n();
+
   return (
     <div className="page">
       <div className="card hero">
+        <LanguageSwitcher className="language-switcher-hero" />
         <h1>SHARIBO</h1>
-        <h2 style={{ color: "var(--color-error, #e55)" }}>Setup required</h2>
+        <h2 style={{ color: "var(--color-error, #e55)" }}>{t("env.setupRequired")}</h2>
         <p className="sub">
-          The app cannot start because one or more environment variables are missing or invalid.
-          Copy <code>app/.env.example</code> to <code>app/.env</code> and fill in the values below,
-          then restart the dev server.
+          {t("env.setupIntro")} {t("env.setupHowTo")}
         </p>
         <ul style={{ textAlign: "left", margin: "1rem 0", padding: "0 1.25rem" }}>
           {errors.map((err) => (
@@ -358,8 +361,7 @@ function EnvSetupScreen({ errors }: { errors: string[] }) {
           ))}
         </ul>
         <p className="fineprint">
-          See <code>app/.env.example</code> for the full list of required variables and their
-          expected format.
+          {t("env.setupDetails")}
         </p>
       </div>
     </div>
@@ -367,6 +369,8 @@ function EnvSetupScreen({ errors }: { errors: string[] }) {
 }
 
 export default function App() {
+  const { t } = useI18n();
+
   if (configError.length > 0) {
     return <EnvSetupScreen errors={configError} />;
   }
@@ -816,6 +820,7 @@ export default function App() {
       <div className="page">
         <NetworkBanner />
         <div className="card hero">
+          <LanguageSwitcher className="language-switcher-hero" />
           <div className="namewall">
             {NAMES.map((n) => (
               <span key={n} className="namewall-item">
@@ -877,6 +882,7 @@ export default function App() {
     <div className="page">
       <NetworkBanner />
       <div className="card">
+        <LanguageSwitcher />
         {/*
           Persistent live region — always in the DOM so the browser registers
           it before any text lands inside it (a common AT pitfall).
@@ -916,7 +922,7 @@ export default function App() {
               onClick={flow.resetToLanding}
               title={`Start over. Your current circle (#${flow.circleId?.toString()}) keeps living on-chain.`}
             >
-              Start a new circle
+              {t("common.startNewCircle")}
             </button>
           </div>
         </div>
