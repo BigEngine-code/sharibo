@@ -3,12 +3,14 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "compile": "bash scripts/compile.sh",
+    "check-constants": "node scripts/check-poseidon-constants.mjs",
+    "compile": "npm run check-constants && bash scripts/compile.sh",
     "setup": "bash scripts/setup.sh",
     "prove": "bash scripts/prove.sh",
     "test": "mocha --require tsx/cjs test/**/*.test.js --timeout 120000"
   },
   "dependencies": {
+    "poseidon-bls12381": "1.0.2",
     "poseidon-bls12381-circom": "1.0.0"
   },
   "devDependencies": {
