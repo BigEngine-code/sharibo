@@ -250,6 +250,10 @@ export default function App() {
   // just left — it keeps living on-chain even though the UI has moved on.
   const [previousCircleId, setPreviousCircleId] = useState<bigint | null>(null);
 
+  // Track the most recently completed circle so we can show a "lives on-chain" link
+  // after a reset. Stored as { id, explorerUrl } so the fineprint is self-contained.
+  const [prevCircle, setPrevCircle] = useState<{ id: string; explorerUrl: string } | null>(null);
+
   const contribution = BigInt(contributionXlm) * STROOPS_PER_XLM;
   const fundedCount = members.filter((m) => m.funded).length;
   const fullyFunded = pot === contribution * BigInt(CIRCLE_SIZE);
@@ -520,6 +524,14 @@ export default function App() {
           <p className="fineprint">
             Testnet only. Demo identities are generated fresh in your browser, never reused.
           </p>
+          {prevCircle && (
+            <p className="fineprint">
+              Your previous circle #{prevCircle.id} lives on-chain —{" "}
+              <a className="link" href={prevCircle.explorerUrl} target="_blank" rel="noreferrer">
+                view on explorer ↗
+              </a>
+            </p>
+          )}
         </div>
       </div>
     );
@@ -685,6 +697,24 @@ export default function App() {
                   Start a new circle
                 </button>
               </>
+            )}
+            {rejection && (
+              <div className="new-circle-cta">
+                <button
+                  className="btn btn-primary"
+                  disabled={!!busy}
+                  onClick={resetToLanding}
+                >
+                  ↺ Start a new circle
+                </button>
+                <p className="fineprint">
+                  Circle #{circleId?.toString()} stays on-chain forever —{" "}
+                  <a className="link" href={explorerContract()} target="_blank" rel="noreferrer">
+                    view on explorer ↗
+                  </a>
+                  . Starting a new circle generates fresh identities and a brand-new on-chain record.
+                </p>
+              </div>
             )}
           </div>
         )}
