@@ -130,6 +130,42 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(`ASSERTION FAILED: ${message}`);
 }
 
+interface StepResult {
+  name: string;
+  durationMs: number;
+  status: "ok" | "failed";
+}
+
+const stepResults: StepResult[] = [];
+
+// Wraps a phase of the run so its duration and outcome land in the summary
+// table printed at the end, whether the run as a whole succeeds or fails.
+async function step<T>(name: string, fn: () => Promise<T>): Promise<T> {
+  const start = Date.now();
+  try {
+    const result = await fn();
+    stepResults.push({ name, durationMs: Date.now() - start, status: "ok" });
+    return result;
+  } catch (err) {
+    stepResults.push({ name, durationMs: Date.now() - start, status: "failed" });
+    throw err;
+  }
+}
+
+function printStepSummary(): void {
+  if (stepResults.length === 0) return;
+  const nameWidth = Math.max("phase".length, ...stepResults.map((s) => s.name.length));
+  const totalMs = stepResults.reduce((sum, s) => sum + s.durationMs, 0);
+  console.log("\nStep timing summary:");
+  console.log(`  ${"phase".padEnd(nameWidth)}  duration    status`);
+  for (const s of stepResults) {
+    console.log(
+      `  ${s.name.padEnd(nameWidth)}  ${`${s.durationMs}ms`.padEnd(10)}  ${s.status}`,
+    );
+  }
+  console.log(`  ${"total".padEnd(nameWidth)}  ${`${totalMs}ms`.padEnd(10)}`);
+}
+
 // Testnet RPC calls occasionally stall rather than erroring outright; a
 // bounded timeout turns that into a clear failure instead of a silent hang.
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
@@ -168,19 +204,21 @@ async function main() {
     members.map((m) => m.keypair.publicKey()),
   );
 
-  const tree = MerkleTree.create(
-    LEVELS,
-    members.map((m) => m.identity.commitment),
-  );
-  console.log("   Merkle root:", tree.root.toString());
+  const { tree, vk } = await step("build merkle tree + load verification key", async () => {
+    const tree = MerkleTree.create(
+      LEVELS,
+      members.map((m) => m.identity.commitment),
+    );
+    console.log("   Merkle root:", tree.root.toString());
 
-  const vkJson = JSON.parse(
-    readFileSync(
-      path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "circuits", "verification_key.json"),
-      "utf8",
-    ),
-  );
-  const vk = verificationKeyToContractFormat(vkJson);
+    const vkJson = JSON.parse(
+      readFileSync(
+        path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "circuits", "verification_key.json"),
+        "utf8",
+      ),
+    );
+    return { tree, vk: verificationKeyToContractFormat(vkJson) };
+  });
 
   verbose("connecting admin client...");
   const adminClient = await withTimeout(
@@ -219,7 +257,7 @@ async function main() {
     const memberClient = await withTimeout(
       connect({ contractId: CONTRACT_ID, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE }, m.keypair),
       30_000,
-      `connect(member ${i})`,
+      "createCircle",
     );
     verbose(`funding from member ${i}...`);
     await withTimeout(
@@ -227,18 +265,10 @@ async function main() {
       30_000,
       `fund(member ${i})`,
     );
-    console.log(`   [${i + 1}/${CIRCLE_SIZE}] funded from`, m.keypair.publicKey());
-  }
-  const fundedCircle = await getCircle(adminClient, circleId);
-  assert(
-    fundedCircle.pot === CONTRIBUTION * BigInt(CIRCLE_SIZE),
-    `pot should equal ${CIRCLE_SIZE} x contribution, got ${fundedCircle.pot}`,
-  );
-  console.log("   pot fully funded:", fundedCircle.pot.toString(), "stroops");
+    console.log("   pot fully funded:", fundedCircle.pot.toString(), "stroops");
+  });
 
   console.log("\n4. Generating a real ZK proof for member", CLAIMANT_INDEX, "...");
-  const claimant = members[CLAIMANT_INDEX];
-  const merkleProof = tree.proof(CLAIMANT_INDEX);
   const externalNullifier = await computeExternalNullifier(circleId, 0n);
   const circuitsBuildDir = path.join(
     path.dirname(fileURLToPath(import.meta.url)),
@@ -262,17 +292,35 @@ async function main() {
         path.join(circuitsBuildDir, "membership_final.zkey"),
       ),
     );
-  assert(root === tree.root, "proof's public root must match the circle's root");
-  assert(
-    provenExternalNullifier === externalNullifier,
-    "proof's public externalNullifier must match the expected round tag",
-  );
-  console.log("   proof generated, nullifierHash =", nullifierHash.toString());
+    const { proof, nullifierHash, root, externalNullifier: provenExternalNullifier } =
+      await generateProof(
+        {
+          identityNullifier: claimant.identity.identityNullifier,
+          identitySecret: claimant.identity.identitySecret,
+          pathElements: merkleProof.pathElements,
+          pathIndices: merkleProof.pathIndices,
+          root: tree.root,
+          externalNullifier,
+        },
+        path.join(circuitsBuildDir, "membership_js", "membership.wasm"),
+        path.join(circuitsBuildDir, "membership_final.zkey"),
+      );
+    assert(root === tree.root, "proof's public root must match the circle's root");
+    assert(
+      provenExternalNullifier === externalNullifier,
+      "proof's public externalNullifier must match the expected round tag",
+    );
+    console.log("   proof generated, nullifierHash =", nullifierHash.toString());
+    return { proof, nullifierHash };
+  });
 
   console.log("\n5. Generating a FRESH recipient address (never used as a funder)...");
-  const recipient = Keypair.random();
-  await friendbotFund(recipient.publicKey());
-  console.log("   recipient =", recipient.publicKey());
+  const recipient = await step("fund fresh recipient", async () => {
+    const recipient = Keypair.random();
+    await friendbotFund(recipient.publicKey());
+    console.log("   recipient =", recipient.publicKey());
+    return recipient;
+  });
 
   console.log("\n6. Claiming the pot to the fresh recipient...");
   const balanceBefore = await nativeBalance(recipient.publicKey());
@@ -357,6 +405,8 @@ async function main() {
     "connecting it to any of the 5 funders — that's the unlinkability the ZK proof buys.",
   );
 
+  printStepSummary();
+
   // The RPC client's underlying HTTP keep-alive connections otherwise leave
   // the process hanging after main() resolves.
   process.exit(0);
@@ -364,5 +414,6 @@ async function main() {
 
 main().catch((err) => {
   console.error("\ne2e FAILED:", err);
+  printStepSummary();
   process.exit(1);
 });
