@@ -14,10 +14,7 @@ const ROOT = path.join(__dirname, "..");
 
 function generate() {
   const config = JSON.parse(fs.readFileSync(path.join(ROOT, "config.json"), "utf8"));
-  const template = fs.readFileSync(
-    path.join(ROOT, "membership.template.circom"),
-    "utf8",
-  );
+  const template = fs.readFileSync(path.join(ROOT, "membership.template.circom"), "utf8");
 
   const output =
     template.trimEnd() +

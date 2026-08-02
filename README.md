@@ -4,7 +4,7 @@
 
 **ajo · esusu · tanda · cundina · susu · tontine · junta · pandero · consórcio · hui · paluwagan · chit fund**
 
-Five members fund a shared pot. One member claims it — by proving *"I'm a genuine, un-paid member of this circle"* without revealing **which** member. The proof is generated in the browser and verified by a Soroban contract using Stellar's native BLS12-381 pairing host functions. No mock. No stub. No trusted server.
+Five members fund a shared pot. One member claims it — by proving _"I'm a genuine, un-paid member of this circle"_ without revealing **which** member. The proof is generated in the browser and verified by a Soroban contract using Stellar's native BLS12-381 pairing host functions. No mock. No stub. No trusted server.
 
 Built for the **Stellar Hacks: Real-World ZK** hackathon. Testnet only, no real funds.
 
@@ -23,14 +23,14 @@ Built for the **Stellar Hacks: Real-World ZK** hackathon. Testnet only, no real 
 
 Every claim below was produced by running this repo against live Stellar testnet infrastructure. Nothing is asserted from a test double.
 
-| What | Where |
-|---|---|
-| Sharibo contract | `CB64IZIBBSPUY63UMIVACKWDKRFNH6WJ2EPAOLM7QR4ZI6IJOT4N2LCF` |
-| Test token (native XLM SAC) | `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC` |
-| `create_circle` (circle 0) | tx `fa76e7fe7439199796db55fdde4bcaaad2cb6a98c0f29214d00605f40ca8fdb0` |
+| What                                     | Where                                                                                                        |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Sharibo contract                         | `CB64IZIBBSPUY63UMIVACKWDKRFNH6WJ2EPAOLM7QR4ZI6IJOT4N2LCF`                                                   |
+| Test token (native XLM SAC)              | `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC`                                                   |
+| `create_circle` (circle 0)               | tx `fa76e7fe7439199796db55fdde4bcaaad2cb6a98c0f29214d00605f40ca8fdb0`                                        |
 | **Real Groth16 proof accepted on-chain** | tx `2258397474e3ad420d6dd8310cb0976d270c29ec4a4ec2b60a9ae58408088087` — `successful: true`, ledger `3379702` |
-| Tampered proof **rejected** | `Error(Contract, #5)` `InvalidProof` — the pairing check genuinely fails |
-| Nullifier replay **rejected** | `Error(Contract, #4)` `AlreadyClaimed` — reproduced every run by `npm run e2e` |
+| Tampered proof **rejected**              | `Error(Contract, #5)` `InvalidProof` — the pairing check genuinely fails                                     |
+| Nullifier replay **rejected**            | `Error(Contract, #4)` `AlreadyClaimed` — reproduced every run by `npm run e2e`                               |
 
 ## Verify it yourself in 60 seconds
 
@@ -84,11 +84,11 @@ An on-chain observer sees five deposits and one payout — and no way to connect
 
 ## Tests
 
-| Suite | Coverage | Result |
-|---|---|---|
-| Circuit (`circuits/test/`) | valid proof, wrong root, tampered path, nullifier determinism, non-boolean path index | **5/5** |
-| Contract (`contracts/sharibo/src/test.rs`) | happy path **with a real proof**, underfunded, replay, stale round tag, forged public input (real pairing failure), CPU budget, auth ×2 | **8/8** |
-| E2E (`scripts/e2e.ts`, live testnet) | create → 5× fund → prove → claim to fresh address → assertions → round 2 fund → replay → `AlreadyClaimed` | **passing** |
+| Suite                                      | Coverage                                                                                                                                | Result      |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| Circuit (`circuits/test/`)                 | valid proof, wrong root, tampered path, nullifier determinism, non-boolean path index                                                   | **5/5**     |
+| Contract (`contracts/sharibo/src/test.rs`) | happy path **with a real proof**, underfunded, replay, stale round tag, forged public input (real pairing failure), CPU budget, auth ×2 | **8/8**     |
+| E2E (`scripts/e2e.ts`, live testnet)       | create → 5× fund → prove → claim to fresh address → assertions → round 2 fund → replay → `AlreadyClaimed`                               | **passing** |
 
 ## Architecture
 
@@ -114,7 +114,7 @@ Circuit: `circuits/membership.circom`. Contract: `contracts/sharibo/src/lib.rs`.
 
 - **BLS12-381** throughout — not the more common BN254/bn128. Stellar's Soroban host only accelerates BLS12-381 pairing operations; a pure-Rust BN254 pairing check measured ~560M CPU instructions against a 100M budget (see `NOTES.md`), so BN254 verification doesn't fit at all. This is the single biggest deviation from a "default" ZK stack and is documented in detail in `NOTES.md`.
 - **Commitment:** `leaf = Poseidon(identityNullifier, identitySecret)`.
-- **Nullifier:** `nullifierHash = Poseidon(identityNullifier, externalNullifier)` — Poseidon is used here and for the Merkle tree because it's cheap *inside the circuit's constraint system*.
+- **Nullifier:** `nullifierHash = Poseidon(identityNullifier, externalNullifier)` — Poseidon is used here and for the Merkle tree because it's cheap _inside the circuit's constraint system_.
 - **Round tag:** `externalNullifier = SHA256(circle_id, round) mod r` — **not** Poseidon. This binding happens outside the circuit (in the contract and in the client, not inside the SNARK), where Soroban has a native accelerated SHA-256 and no native Poseidon at all, so nothing is gained by matching the circuit's hash choice there. Deliberate and permanent, not a placeholder — see `NOTES.md`.
 - **Public signal order:** `[nullifierHash, root, externalNullifier]` (circuit output first, then declared public inputs, in that order) — this is what circom/snarkjs actually emit, not the `[root, externalNullifier, nullifierHash]` a naive reading might assume. Circuit, contract, and client all agree on this order.
 - **Field:** BLS12-381 scalar field throughout (client, contract, circuit).
@@ -250,9 +250,9 @@ We welcome contributions to Sharibo! Please ensure you have read and adhere to o
 
 ## Roadmap
 
-- Funding-side shielding (hide *who* funded, not just who claimed).
+- Funding-side shielding (hide _who_ funded, not just who claimed).
 - Multi-round automation / on-chain turn ordering.
 - Multi-party trusted setup ceremony.
 - Independent audit of the BLS12-381 Poseidon parameters (or a switch to self-generated / better-provenanced constants).
 - Real stablecoin (issued test asset or mainnet equivalent) instead of native testnet XLM.
-- **Selective disclosure ("view key")** — an admin/auditor could prove a circle's *total* historical contributions (a sum over funding events already visible on-chain) without exposing which individual funded which round. Not built; the shape is in [breakdown §19](full_product_breakdown.md#19-roadmap).
+- **Selective disclosure ("view key")** — an admin/auditor could prove a circle's _total_ historical contributions (a sum over funding events already visible on-chain) without exposing which individual funded which round. Not built; the shape is in [breakdown §19](full_product_breakdown.md#19-roadmap).

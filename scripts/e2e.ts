@@ -287,7 +287,10 @@ async function main() {
 
   verbose("connecting admin client...");
   const adminClient = await withTimeout(
-    connect({ contractId: CONTRACT_ID, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE }, admin),
+    connect(
+      { contractId: CONTRACT_ID, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE },
+      admin,
+    ),
     30_000,
     "connect(admin)",
   );
@@ -320,7 +323,10 @@ async function main() {
   for (const [i, m] of members.entries()) {
     verbose(`connecting member ${i}...`);
     const memberClient = await withTimeout(
-      connect({ contractId: CONTRACT_ID, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE }, m.keypair),
+      connect(
+        { contractId: CONTRACT_ID, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE },
+        m.keypair,
+      ),
       30_000,
       "createCircle",
     );

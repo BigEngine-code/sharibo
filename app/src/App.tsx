@@ -279,13 +279,7 @@ function useRingRadius(): number {
   return radius;
 }
 
-function MemberRing({
-  members,
-  revealed,
-}: {
-  members: { funded: boolean }[];
-  revealed: boolean;
-}) {
+function MemberRing({ members, revealed }: { members: { funded: boolean }[]; revealed: boolean }) {
   const radius = useRingRadius();
   const fundedCount = members.filter((m) => m.funded).length;
 
@@ -965,7 +959,9 @@ export default function App() {
           {busy ?? (error ? `Error: ${error}` : "")}
         </div>
         <div className="row space-between">
-          <h1 className="small" ref={circleHeadingRef} tabIndex={-1}>SHARIBO</h1>
+          <h1 className="small" ref={circleHeadingRef} tabIndex={-1}>
+            SHARIBO
+          </h1>
           <div className="row">
             <a className="link" href={explorerContract()} target="_blank" rel="noreferrer">
               circle #{flow.circleId?.toString()} on-chain ↗
@@ -1039,7 +1035,9 @@ export default function App() {
 
         {fullyFunded && !claimResult && (
           <>
-            <h2 ref={claimHeadingRef} tabIndex={-1}>Claim</h2>
+            <h2 ref={claimHeadingRef} tabIndex={-1}>
+              Claim
+            </h2>
             <p className="sub">
               Pick which member is claiming this round — the proof will show the
               contract that they're a real member <em>without</em> revealing
@@ -1075,7 +1073,9 @@ export default function App() {
 
         {claimResult && (
           <div className="result">
-            <h2 ref={payoutHeadingRef} tabIndex={-1}>Payout landed</h2>
+            <h2 ref={payoutHeadingRef} tabIndex={-1}>
+              Payout landed
+            </h2>
             <p>
               Fresh recipient <code>{short(claimResult.recipient)}</code>
               <CopyButton value={claimResult.recipient} label="recipient address" />{" "}
