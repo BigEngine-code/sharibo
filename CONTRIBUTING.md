@@ -1,48 +1,64 @@
 # Contributing to Sharibo
 
-We're glad you're interested in contributing! Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before participating.
+Thank you for your interest in contributing! Sharibo is a project for private rotating savings circles on Stellar, using zero-knowledge proofs to anonymize payouts. This guide covers setup, workflow, and PR expectations.
 
-## Development Setup
+## Project orientation
 
-See [README.md](README.md#run-it) for full setup instructions.
+Sharibo is a full-stack application that combines a Circom/Groth16 zero-knowledge circuit, a Soroban smart contract, a TypeScript client SDK, and a browser demo. The project lives in an npm workspace at the repo root. For a high-level overview of the system, see the [README.md](README.md) and the [full product breakdown](full_product_breakdown.md).
 
-## Pre-commit Hook (opt-in)
+## Prerequisites
 
-Sharibo can optionally run a pre-commit hook that scans staged files for accidentally-included
-Stellar secret keys (`S…`). This helps prevent leaking secrets to a public repository.
+- **Node.js 20+** — [download](https://nodejs.org/)
+- **Rust** (latest stable) + **wasm32v1-none** target — [rustup](https://rustup.rs/), then `rustup target add wasm32v1-none`
+- **stellar CLI** — [installation guide](https://developers.stellar.org/docs/tools/cli/install-cli)
+- **circom 2.x** — [installation guide](https://docs.circom.io/getting-started/installation/)
 
-### Install
+## Setup
 
-```bash
-bash scripts/install-hooks.sh
-```
-
-This symlinks `scripts/check-secrets.mjs` into `.git/hooks/pre-commit`.
-
-### What it checks
-
-1. **Stellar secret keys** — any text matching `S[A-Z2-7]{55}` in staged file contents.
-2. **Env-style filenames** — files named `.env` or `.env.*` (e.g. `.env.backup`) in the staged list.
-
-Contract IDs (`C…`) and public keys (`G…`) are intentionally **not** flagged.
-
-### Bypass
-
-If you need to commit something that triggers a false positive, skip the hook with:
+1. Fork and clone the repo.
+2. Install dependencies at the root (this is an npm workspace):
 
 ```bash
-git commit --no-verify
+npm install
 ```
 
-### Uninstall
+This installs everything in the workspace: `circuits/`, `packages/client/`, `scripts/`, and `app/`.
+
+## Running tests
+
+### Circuit tests
 
 ```bash
-rm .git/hooks/pre-commit
+cd circuits
+npm test
 ```
 
-## Pull Request Process
+This runs the mocha/circom_tester suite (`circuits/test/membership.test.js`) — valid proof, wrong root, tampered path, nullifier determinism, and boolean checks.
 
-1. Ensure your branch is based on the latest `main`.
-2. Run relevant tests before opening a PR (see [README.md](README.md#tests)).
-3. Link your PR to the issue it resolves (if applicable).
-4. A maintainer will review your changes.
+### Contract tests
+
+```bash
+cd contracts
+cargo test
+```
+
+This runs the Soroban contract test suite (`contracts/sharibo/src/test.rs`) — happy path with a real proof, underfunded, replay, stale round tag, forged public input, CPU budget, and auth checks.
+
+### End-to-end tests
+
+```bash
+npm run e2e
+```
+
+Runs the full round against Stellar testnet from the repo root. Requires a populated `.env` and the circuit build artifacts (`circuits/build/`). See the [README.md](README.md) for the full setup steps before running e2e.
+
+## Branch and PR conventions
+
+- Fork the repo and create a branch from `main` for each change.
+- Keep PRs small and focused — one logical change per PR.
+- Include a clear description of what you changed and what you tested.
+- If your PR touches circuits, include the circuit test results. If it touches the contract, include `cargo test` output. If it touches the e2e script, note the testnet run result.
+
+## Where to start
+
+New contributors looking for a first issue should look for issues tagged [good first issue](https://github.com/crackedstudio/sharibo/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22). These are well-scoped tasks suitable for getting familiar with the codebase.
