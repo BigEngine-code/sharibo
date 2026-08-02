@@ -1,83 +1,127 @@
 import { Client as ContractClient, basicNodeSigner } from "@stellar/stellar-sdk/contract";
-import { Keypair } from "@stellar/stellar-sdk";
+import { Keypair, StrKey } from "@stellar/stellar-sdk";
 import type { ContractProof, ContractVerificationKey } from "./prove.js";
 
+/**
+ * Network configuration for connecting to the Sharibo contract.
+ *
+ * @property contractId - The Stellar contract ID.
+ * @property rpcUrl - The RPC URL for the Stellar network.
+ * @property networkPassphrase - The network passphrase (e.g., "Test SDF Network").
+ */
 export interface ShariboNetworkConfig {
   contractId: string;
   rpcUrl: string;
   networkPassphrase: string;
 }
 
-// Methods are still attached at runtime from the on-chain contract spec via
-// `@stellar/stellar-sdk`'s `contract.Client.from`. This interface is only the
-// call-site contract for our wrappers (not a full client) so typos like
-// `creat_circle` fail typecheck; we cast once in `connect()`.
-//
-// We evaluated `stellar contract bindings typescript` codegen and skipped it:
-// it would freeze a build-time copy of the spec (drift vs live `from`), needs
-// a wasm/bindings pipeline this package does not have, and we only call five
-// method shapes — a structural interface + one cast is enough.
-interface AssembledTx<T> {
-  signAndSend(opts?: { force?: boolean }): Promise<{
-    result: T;
-    sendTransactionResponse: { hash: string };
-  }>;
-}
+/**
+ * A Sharibo contract client with dynamically attached methods.
+ *
+ * The contract's methods (create_circle/fund/claim/get_circle/has_claimed)
+ * are attached to the Client at runtime from the on-chain contract spec (see
+ * @stellar/stellar-sdk's `contract.Client.from`), so they aren't visible to
+ * TypeScript's static checker — hence `any` here rather than a hand-rolled
+ * or codegen'd interface. Keeps this SDK working against whatever the
+ * deployed contract's real spec is, rather than a copy that can drift.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type ShariboClient = any;
 
-export interface CircleView {
-  admin: string;
-  token: string;
-  root: bigint;
-  contribution: bigint;
-  size: number;
-  round: number;
-  pot: bigint;
-}
-
-export interface ShariboClient {
-  create_circle(args: {
-    admin: string;
-    token: string;
-    root: bigint;
-    contribution: bigint;
-    size: number;
-    vk: ContractVerificationKey;
-  }): Promise<AssembledTx<bigint>>;
-  fund(args: { circle_id: bigint; from: string }): Promise<AssembledTx<void>>;
-  claim(args: {
-    circle_id: bigint;
-    recipient: string;
-    nullifier_hash: bigint;
-    external_nullifier: bigint;
-    proof: ContractProof;
-  }): Promise<AssembledTx<void>>;
-  get_circle(args: { circle_id: bigint }): Promise<AssembledTx<CircleView>>;
-  has_claimed(args: {
-    circle_id: bigint;
-    nullifier_hash: bigint;
-  }): Promise<AssembledTx<boolean>>;
+export interface ShariboSigner {
+  publicKey: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  signTransaction: (txXdr: string, opts?: any) => Promise<string>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  signAuthEntry?: (entryXdr: string, opts?: any) => Promise<string>;
 }
 
 export async function connect(
   config: ShariboNetworkConfig,
-  keypair: Keypair,
+  keypairOrSigner: Keypair | ShariboSigner,
 ): Promise<ShariboClient> {
-  const signer = basicNodeSigner(keypair, config.networkPassphrase);
-  return (await ContractClient.from({
+  let publicKey: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let signTransaction: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let signAuthEntry: any;
+
+  if (keypairOrSigner instanceof Keypair) {
+    const signer = basicNodeSigner(keypairOrSigner, config.networkPassphrase);
+    publicKey = keypairOrSigner.publicKey();
+    signTransaction = signer.signTransaction;
+    signAuthEntry = signer.signAuthEntry;
+  } else {
+    publicKey = keypairOrSigner.publicKey;
+    signTransaction = keypairOrSigner.signTransaction;
+    signAuthEntry = keypairOrSigner.signAuthEntry;
+  }
+
+  return ContractClient.from({
     contractId: config.contractId,
     networkPassphrase: config.networkPassphrase,
     rpcUrl: config.rpcUrl,
-    publicKey: keypair.publicKey(),
-    signTransaction: signer.signTransaction,
-    signAuthEntry: signer.signAuthEntry,
-  })) as unknown as ShariboClient;
+    publicKey,
+    signTransaction,
+    signAuthEntry,
+  });
 }
 
+/**
+ * Result of a contract transaction.
+ *
+ * @template T - The type of the transaction result.
+ * @property result - The return value from the contract method.
+ * @property hash - The transaction hash.
+ */
 export interface TxResult<T> {
   result: T;
   hash: string;
+  /** Ledger sequence number the transaction was included in, if available. */
+  ledger?: number;
+  /** Fee charged for the transaction in stroops, if available. */
+  feeCharged?: string;
 }
 
+/**
+ * Build a Stellar explorer URL for a transaction hash, network-aware.
+ *
+ * @param hash - Transaction hash (hex string).
+ * @param networkPassphrase - Stellar network passphrase (e.g. "Test SDF Network ; September 2015").
+ * @returns A fully-qualified stellar.expert URL.
+ */
+export function explorerTxUrl(hash: string, networkPassphrase: string): string {
+  const subdomain = networkPassphrase.includes("Public Global")
+    ? "" // mainnet — no subdomain prefix
+    : "testnet.";
+  return `https://${subdomain}stellar.expert/explorer/tx/${hash}`;
+}
+
+function populateTxResult<T>(
+  result: T,
+  sent: { sendTransactionResponse: { hash: string }; getTransactionResponse?: { ledger?: number; feeCharged?: string } },
+): TxResult<T> {
+  return {
+    result,
+    hash: sent.sendTransactionResponse.hash,
+    ledger: sent.getTransactionResponse?.ledger,
+    feeCharged: sent.getTransactionResponse?.feeCharged,
+  };
+}
+
+/**
+ * Creates a new Sharibo circle.
+ *
+ * @param client - The Sharibo contract client.
+ * @param args - Circle creation parameters.
+ * @param args.admin - The admin address for the circle.
+ * @param args.token - The token address for contributions.
+ * @param args.root - The Merkle tree root of identity commitments.
+ * @param args.contribution - The required contribution amount per participant.
+ * @param args.size - The maximum number of participants.
+ * @param args.vk - The verification key for the zero-knowledge proof circuit.
+ * @returns The circle ID and transaction hash.
+ */
 export async function createCircle(
   client: ShariboClient,
   args: {
@@ -89,27 +133,48 @@ export async function createCircle(
     vk: ContractVerificationKey;
   },
 ): Promise<TxResult<bigint>> {
-  const tx = await client.create_circle({
+  const tx = await withRetry(() => client.create_circle({
     admin: args.admin,
     token: args.token,
     root: args.root,
     contribution: args.contribution,
     size: args.size,
     vk: args.vk,
-  });
+  }));
   const sent = await tx.signAndSend();
-  return { result: sent.result, hash: sent.sendTransactionResponse.hash };
+  return populateTxResult(sent.result as bigint, sent);
 }
 
+/**
+ * Funds a circle with a contribution.
+ *
+ * @param client - The Sharibo contract client.
+ * @param args - Funding parameters.
+ * @param args.circleId - The ID of the circle to fund.
+ * @param args.from - The address sending the contribution.
+ * @returns The transaction hash.
+ */
 export async function fund(
   client: ShariboClient,
   args: { circleId: bigint; from: string },
 ): Promise<TxResult<void>> {
-  const tx = await client.fund({ circle_id: args.circleId, from: args.from });
+  const tx = await withRetry(() => client.fund({ circle_id: args.circleId, from: args.from }));
   const sent = await tx.signAndSend();
-  return { result: undefined, hash: sent.sendTransactionResponse.hash };
+  return populateTxResult(undefined, sent);
 }
 
+/**
+ * Claims a reward from a circle using a zero-knowledge proof.
+ *
+ * @param client - The Sharibo contract client.
+ * @param args - Claim parameters.
+ * @param args.circleId - The ID of the circle to claim from.
+ * @param args.recipient - The address to receive the reward.
+ * @param args.nullifierHash - The nullifier hash to prevent double-claiming.
+ * @param args.externalNullifier - The external nullifier binding to circle and round.
+ * @param args.proof - The Groth16 zero-knowledge proof.
+ * @returns The transaction hash.
+ */
 export async function claim(
   client: ShariboClient,
   args: {
@@ -120,23 +185,58 @@ export async function claim(
     proof: ContractProof;
   },
 ): Promise<TxResult<void>> {
-  const tx = await client.claim({
+  const tx = await withRetry(() => client.claim({
     circle_id: args.circleId,
     recipient: args.recipient,
     nullifier_hash: args.nullifierHash,
     external_nullifier: args.externalNullifier,
     proof: args.proof,
-  });
+  }));
   const sent = await tx.signAndSend();
-  return { result: undefined, hash: sent.sendTransactionResponse.hash };
+  return populateTxResult(undefined, sent);
 }
 
+/**
+ * A view of a Sharibo circle's state.
+ *
+ * @property admin - The admin address for the circle.
+ * @property token - The token address for contributions.
+ * @property root - The Merkle tree root of identity commitments.
+ * @property contribution - The required contribution amount per participant.
+ * @property size - The maximum number of participants.
+ * @property round - The current round number.
+ * @property pot - The total amount in the prize pot.
+ */
+export interface CircleView {
+  admin: string;
+  token: string;
+  root: bigint;
+  contribution: bigint;
+  size: number;
+  round: number;
+  pot: bigint;
+}
+
+/**
+ * Retrieves the current state of a circle.
+ *
+ * @param client - The Sharibo contract client.
+ * @param circleId - The ID of the circle to query.
+ * @returns The circle's current state.
+ */
 export async function getCircle(client: ShariboClient, circleId: bigint): Promise<CircleView> {
   // get_circle is a pure read: the SDK detects no signature is needed and
   // refuses signAndSend() without `force` (there's nothing to sign/submit).
-  const tx = await client.get_circle({ circle_id: circleId });
+  const tx = await withRetry(() => client.get_circle({ circle_id: circleId }));
   const sent = await tx.signAndSend({ force: true });
   return sent.result;
+}
+
+/** Pure read: the current count of circles ever created. 0 if none yet. */
+export async function getCircleCount(client: ShariboClient): Promise<bigint> {
+  const tx = await client.get_circle_count();
+  const sent = await tx.signAndSend({ force: true });
+  return sent.result as bigint;
 }
 
 /** Pure read: whether `nullifierHash` has already claimed in this circle. */
@@ -145,10 +245,10 @@ export async function hasClaimed(
   circleId: bigint,
   nullifierHash: bigint,
 ): Promise<boolean> {
-  const tx = await client.has_claimed({
+  const tx = await withRetry(() => client.has_claimed({
     circle_id: circleId,
     nullifier_hash: nullifierHash,
-  });
+  }));
   const sent = await tx.signAndSend({ force: true });
   return sent.result;
 }
