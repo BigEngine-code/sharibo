@@ -1,7 +1,7 @@
 {
   "name": "sharibo",
-  "private": true,
   "version": "0.0.0",
+  "type": "module",
   "workspaces": [
     "circuits",
     "packages/client",
@@ -10,7 +10,6 @@
   ],
   "scripts": {
     "e2e": "npm run e2e --workspace=scripts",
-    "clean": "node scripts/clean.mjs",
-    "clean:all": "node scripts/clean.mjs --all"
+    "test": "npm test --workspace=app"
   }
 }

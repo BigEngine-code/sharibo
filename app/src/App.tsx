@@ -1,6 +1,14 @@
 import { useState, useRef, useEffect } from "react";
 import { Keypair } from "@stellar/stellar-sdk";
 import {
+  isConnected,
+  requestAccess,
+  isAllowed,
+  getAddress,
+  getNetworkDetails,
+  signTransaction as freighterSignTx
+} from "@stellar/freighter-api";
+import {
   generateIdentity,
   computeExternalNullifier,
   MerkleTree,
@@ -12,10 +20,34 @@ import {
   claim,
   getCircle,
   hasClaimed,
+  TREE_LEVELS,
   type Identity,
   type ContractProof,
 } from "@sharibo/client";
 import { config, configError } from "./config";
+import { useI18n } from "./i18n";
+import {
+  friendbotFund as fundWithFriendbot,
+  FriendbotRetryableError,
+  FRIEND_BOT_RATE_LIMIT_MESSAGE,
+} from "./lib/friendbot";
+
+const BIGINT_MARKER = 'BIGINT::';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function replacer(key: string, value: any) {
+  if (typeof value === 'bigint') {
+    return BIGINT_MARKER + value.toString();
+  }
+  return value;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function reviver(key: string, value: any) {
+  if (typeof value === 'string' && value.startsWith(BIGINT_MARKER)) {
+    return BigInt(value.slice(BIGINT_MARKER.length));
+  }
+  return value;
+}
 
 const NETWORK = {
   contractId: config.contractId,
@@ -23,9 +55,25 @@ const NETWORK = {
   networkPassphrase: config.networkPassphrase,
 };
 const TOKEN = config.testTokenContractId;
-const LEVELS = 4;
+const LEVELS = TREE_LEVELS;
 const CIRCLE_SIZE = 5;
 const STROOPS_PER_XLM = 10_000_000n;
+const README_URL = "https://github.com/crackedstudio/sharibo#honest-limitations";
+
+const isTestnet = NETWORK.networkPassphrase.includes("Test SDF Network");
+const BANNER_TEXT = isTestnet ? "Stellar testnet — no real funds" : "";
+
+function TestnetBanner() {
+  if (!BANNER_TEXT) return null;
+  return (
+    <div className="testnet-banner">
+      <span>{BANNER_TEXT}</span>
+      <a className="banner-link" href={README_URL} target="_blank" rel="noreferrer">
+        honest limitations ↗
+      </a>
+    </div>
+  );
+}
 
 const NAMES = [
   "ajo",
@@ -42,16 +90,18 @@ const NAMES = [
   "chit fund",
 ];
 
-async function friendbotFund(publicKey: string): Promise<void> {
-  const res = await fetch(`https://friendbot.stellar.org?addr=${publicKey}`);
-  if (!res.ok && res.status !== 400) {
-    throw new Error(`friendbot funding failed: ${res.status}`);
+function toUiError(error: unknown): string {
+  if (error instanceof FriendbotRetryableError) {
+    return FRIEND_BOT_RATE_LIMIT_MESSAGE;
   }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "Something went wrong. Please retry.";
 }
 
-function explorerTx(hash: string): string {
-  return `https://stellar.expert/explorer/testnet/tx/${hash}`;
-}
 function explorerAccount(address: string): string {
   return `https://stellar.expert/explorer/testnet/account/${address}`;
 }
@@ -62,20 +112,105 @@ function short(address: string): string {
   return `${address.slice(0, 4)}…${address.slice(-4)}`;
 }
 
+// Every truncated value on screen (addresses, tx hashes) needs to be
+// pasteable in full somewhere else — a CLI call, an explorer search — so
+// this pairs with each `short(...)` display. Falls back to a prompt() (which
+// itself is trivially copyable) when the async Clipboard API isn't
+// available, e.g. non-secure contexts.
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(t);
+  }, [copied]);
+
+  async function handleCopy() {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard API unavailable");
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+    } catch {
+      window.prompt(`Clipboard unavailable — copy ${label} manually:`, value);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      className="copy-btn"
+      onClick={handleCopy}
+      aria-label={`Copy ${label}`}
+      title={`Copy ${label}`}
+    >
+      {copied ? "✓" : "📋"}
+    </button>
+  );
+}
+
 interface Member {
   keypair: Keypair;
   identity: Identity;
   funded: boolean;
   fundHash?: string;
+  freighterKey?: string;
 }
 
 interface ClaimResult {
   recipient: string;
   hash: string;
+  proofDurationMs: number;
+}
+
+// The visible stages of doClaim, in the order they actually occur. snarkjs's
+// fullProve is one opaque call, so "proving" covers witness computation +
+// proof generation together — it gets its own elapsed timer instead of a
+// substage breakdown, since we can't observe a finer boundary inside it.
+type ClaimStage = "artifacts" | "proving" | "funding" | "submitting";
+
+const CLAIM_STAGE_LABELS: Record<ClaimStage, string> = {
+  artifacts: "Fetching proving artifacts (wasm + zkey)…",
+  proving: "Proving…",
+  funding: "Funding a fresh, unlinked recipient…",
+  submitting: "Submitting the claim…",
+};
+
+const CLAIM_STAGES: ClaimStage[] = ["artifacts", "proving", "funding", "submitting"];
+
+// So a claim never reads as a hung tab: each real substage of doClaim gets
+// its own line here (fullProve itself stays one opaque "proving" step, per
+// snarkjs, but that step gets a live elapsed-seconds counter + spinner so a
+// slow prove still visibly ticks rather than sitting static).
+function ClaimProgress({ stage, elapsedSeconds }: { stage: ClaimStage; elapsedSeconds: number }) {
+  const activeIndex = CLAIM_STAGES.indexOf(stage);
+  return (
+    <div className="claim-progress">
+      <div className="stepper">
+        {CLAIM_STAGES.map((s, i) => (
+          <div
+            key={s}
+            className={`step ${i < activeIndex ? "done" : i === activeIndex ? "active" : ""}`}
+          >
+            <span className="step-dot">{i < activeIndex ? "✓" : i + 1}</span>
+            {CLAIM_STAGE_LABELS[s]}
+          </div>
+        ))}
+      </div>
+      {stage === "proving" && (
+        <p className="techline">
+          <span className="spinner" aria-hidden="true" /> Groth16 · BLS12-381 · 1,452 constraints ·
+          proving locally in your browser, nothing sent anywhere until the proof is done ·{" "}
+          {elapsedSeconds}s elapsed
+        </p>
+      )}
+    </div>
+  );
 }
 
 function Stepper({ step }: { step: 0 | 1 | 2 | 3 }) {
-  const labels = ["Create", "Fund", "Prove & Claim", "Unlinked ✓"];
+  const { t } = useI18n();
+  const labels = [t("step.create"), t("step.fund"), t("step.proveClaim"), t("step.unlinked")];
   return (
     // nav + ol give screen readers "step N of 4" list semantics without
     // changing any visual output — CSS targets .stepper and .step as before.
@@ -105,6 +240,23 @@ function Stepper({ step }: { step: 0 | 1 | 2 | 3 }) {
   );
 }
 
+function NetworkBanner() {
+  const isTestnet = NETWORK.networkPassphrase.toLowerCase().includes("test");
+  if (!isTestnet) return null;
+  return (
+    <div className="network-banner">
+      Stellar testnet — no real funds ·{" "}
+      <a
+        href="https://github.com/glorious21-coder/sharibo#honest-limitations"
+        target="_blank"
+        rel="noreferrer"
+      >
+        limitations ↗
+      </a>
+    </div>
+  );
+}
+
 // Purely presentational: after a claim, none of the 5 nodes are highlighted
 // as "the one that claimed" — that's the point. From outside the ring, all
 // five remain equally plausible; only the demo operator (via the radio
@@ -125,13 +277,7 @@ function useRingRadius(): number {
   return radius;
 }
 
-function MemberRing({
-  members,
-  revealed,
-}: {
-  members: { funded: boolean }[];
-  revealed: boolean;
-}) {
+function MemberRing({ members, revealed }: { members: { funded: boolean }[]; revealed: boolean }) {
   const radius = useRingRadius();
   const fundedCount = members.filter((m) => m.funded).length;
 
@@ -190,7 +336,7 @@ function MemberRing({
         // this is supplementary information attached to the figure.
         <p id={captionId} role="note" className="ring-caption">
           Payout landed on the address above — cryptographically, it could be tied to <em>any</em>{" "}
-          of the 5 members in the ring. An outside observer cannot tell which.
+          of the {members.length} members in the ring. An outside observer cannot tell which.
         </p>
       )}
     </div>
@@ -198,15 +344,16 @@ function MemberRing({
 }
 
 function EnvSetupScreen({ errors }: { errors: string[] }) {
+  const { t } = useI18n();
+
   return (
     <div className="page">
       <div className="card hero">
+        <LanguageSwitcher className="language-switcher-hero" />
         <h1>SHARIBO</h1>
-        <h2 style={{ color: "var(--color-error, #e55)" }}>Setup required</h2>
+        <h2 style={{ color: "var(--color-error, #e55)" }}>{t("env.setupRequired")}</h2>
         <p className="sub">
-          The app cannot start because one or more environment variables are missing or invalid.
-          Copy <code>app/.env.example</code> to <code>app/.env</code> and fill in the values below,
-          then restart the dev server.
+          {t("env.setupIntro")} {t("env.setupHowTo")}
         </p>
         <ul style={{ textAlign: "left", margin: "1rem 0", padding: "0 1.25rem" }}>
           {errors.map((err) => (
@@ -216,15 +363,60 @@ function EnvSetupScreen({ errors }: { errors: string[] }) {
           ))}
         </ul>
         <p className="fineprint">
-          See <code>app/.env.example</code> for the full list of required variables and their
-          expected format.
+          {t("env.setupDetails")}
         </p>
       </div>
     </div>
   );
 }
 
+function ClaimExplainer() {
+  return (
+    <details className="claim-explainer">
+      <summary>How this claim proof works</summary>
+      <div className="claim-explainer-body">
+        <section>
+          <h3>What the proof is saying</h3>
+          <p>
+            It proves the claimant knows a secret identity that is in this circle&apos;s Merkle root,
+            and binds that proof to this exact circle and round via the round tag
+            (<code>external_nullifier</code>).
+          </p>
+        </section>
+
+        <section>
+          <h3>What stays secret</h3>
+          <p>
+            Which member generated the proof stays private. The transaction proves valid membership
+            without revealing which one of the 5 members claimed.
+          </p>
+        </section>
+
+        <section>
+          <h3>What the contract checks (in order)</h3>
+          <ol>
+            <li>The round is fully funded: pot equals contribution × size.</li>
+            <li>The round tag matches this exact circle and round.</li>
+            <li>This nullifier has never claimed before in this circle.</li>
+            <li>The Groth16 proof verifies against the circle&apos;s committed root.</li>
+          </ol>
+        </section>
+
+        <section>
+          <h3>What observers can see</h3>
+          <p>
+            On-chain observers see 5 deposits in and 1 payout out, but no visible link from that
+            payout address to a specific member address.
+          </p>
+        </section>
+      </div>
+    </details>
+  );
+}
+
 export default function App() {
+  const { t } = useI18n();
+
   if (configError.length > 0) {
     return <EnvSetupScreen errors={configError} />;
   }
@@ -238,21 +430,56 @@ export default function App() {
   const [members, setMembers] = useState<Member[]>([]);
   const [tree, setTree] = useState<MerkleTree | null>(null);
   const [circleId, setCircleId] = useState<bigint | null>(null);
+  const [hasFreighter, setHasFreighter] = useState(false);
+
+  useEffect(() => {
+    isConnected().then((res) => setHasFreighter(res.isConnected)).catch(() => setHasFreighter(false));
+  }, []);
   const [round, setRound] = useState(0);
   const [pot, setPot] = useState(0n);
   const [claimantIndex, setClaimantIndex] = useState(0);
   const [proof, setProof] = useState<ContractProof | null>(null);
   const [nullifierHash, setNullifierHash] = useState<bigint | null>(null);
   const [claimResult, setClaimResult] = useState<ClaimResult | null>(null);
+  const [isProving, setIsProving] = useState(false);
+  const [provingElapsedMs, setProvingElapsedMs] = useState<number | null>(null);
   const [nullifierClaimed, setNullifierClaimed] = useState(false);
   const [rejection, setRejection] = useState<string | null>(null);
+  const [claimStage, setClaimStage] = useState<ClaimStage | null>(null);
+  const [proveElapsedSeconds, setProveElapsedSeconds] = useState(0);
   // Survives a reset so the landing screen can point back at the circle you
   // just left — it keeps living on-chain even though the UI has moved on.
   const [previousCircleId, setPreviousCircleId] = useState<bigint | null>(null);
 
+  // Track the most recently completed circle so we can show a "lives on-chain" link
+  // after a reset. Stored as { id, explorerUrl } so the fineprint is self-contained.
+  const [prevCircle, setPrevCircle] = useState<{ id: string; explorerUrl: string } | null>(null);
+
   const contribution = BigInt(contributionXlm) * STROOPS_PER_XLM;
   const fundedCount = members.filter((m) => m.funded).length;
   const fullyFunded = pot === contribution * BigInt(CIRCLE_SIZE);
+  const { announce, message: liveRegionMessage } = usePoliteLiveRegion(120);
+
+  useEffect(() => {
+    if (busy) {
+      announce(`Help: ${busy}`);
+      return;
+    }
+
+    if (claimResult) {
+      announce("Price update complete. The claim result is ready.");
+      return;
+    }
+
+    if (error) {
+      announce(`Error: ${error}`);
+      return;
+    }
+
+    if (fullyFunded) {
+      announce("Price update complete. The claim step is ready.");
+    }
+  }, [announce, busy, claimResult, error, fullyFunded]);
 
   // ── Focus management ────────────────────────────────────────────────────
   // When a screen or major section appears, move keyboard focus to its
@@ -286,6 +513,15 @@ export default function App() {
   }, [claimResult]);
   // ────────────────────────────────────────────────────────────────────────
 
+  // Every hook above must run on every render, so this check — which used to
+  // sit at the top of the component and return before any hooks ran — moved
+  // here instead. configError is computed once at module load, so this still
+  // reliably short-circuits into the setup screen; it just no longer skips
+  // hook calls to do it.
+  if (configError.length > 0) {
+    return <EnvSetupScreen errors={configError} />;
+  }
+
   // Reset every piece of React state back to its initial value and return to
   // the landing screen. The circle itself is never touched on-chain — it lives
   // on forever; we just stop pointing the UI at it (and remember its id so the
@@ -303,6 +539,7 @@ export default function App() {
     }
 
     setPreviousCircleId(circleId);
+    sessionStorage.removeItem("sharibo_demo_state");
 
     setBusy(null);
     setError(null);
@@ -317,17 +554,61 @@ export default function App() {
     setProof(null);
     setNullifierHash(null);
     setClaimResult(null);
+    setIsProving(false);
+    setProvingElapsedMs(null);
     setNullifierClaimed(false);
     setRejection(null);
+    setClaimStage(null);
+    setProveElapsedSeconds(0);
     setScreen("landing");
+  }
+
+  function loadState(parsed: any) {
+    setContributionXlm(parsed.contributionXlm);
+    setAdmin(Keypair.fromSecret(parsed.adminSecret));
+    
+    const loadedMembers = parsed.members.map((m: any) => ({
+      keypair: Keypair.fromSecret(m.secret),
+      identity: m.identity,
+      funded: m.funded,
+      fundHash: m.fundHash,
+    }));
+    setMembers(loadedMembers);
+    
+    const newTree = MerkleTree.create(
+      LEVELS,
+      loadedMembers.map((m: any) => m.identity.commitment)
+    );
+    setTree(newTree);
+
+    setCircleId(parsed.circleId);
+    setRound(parsed.round);
+    setPot(parsed.pot);
+    setClaimantIndex(parsed.claimantIndex);
+    setProof(parsed.proof);
+    setNullifierHash(parsed.nullifierHash);
+    setClaimResult(parsed.claimResult);
+    setRejection(parsed.rejection);
+    
+    setScreen("circle");
+    setResumePrompt(null);
   }
 
   async function startCircle() {
     setError(null);
-    setBusy("Generating a fresh admin + 5 member identities and funding via friendbot…");
+    setBusy(
+      "Generating a fresh admin + 5 member identities and funding via friendbot…",
+    );
     try {
+      const [{ Keypair }, client] = await Promise.all([
+        import("@stellar/stellar-sdk"),
+        import("@sharibo/client")
+      ]);
+      const { generateIdentity, MerkleTree, verificationKeyToContractFormat, connect, createCircle } = client;
+
+      setBusy("Generating a fresh admin + 5 member identities and funding via friendbot…");
       const adminKp = Keypair.random();
-      await friendbotFund(adminKp.publicKey());
+      await fundWithFriendbot(adminKp.publicKey());
 
       const newMembers: Member[] = Array.from({ length: CIRCLE_SIZE }, () => ({
         keypair: Keypair.random(),
@@ -341,7 +622,9 @@ export default function App() {
       );
 
       setBusy("Creating the circle on testnet…");
-      const vkJson = await fetch("/circuits/verification_key.json").then((r) => r.json());
+      const vkJson = await fetch("/circuits/verification_key.json").then((r) =>
+        r.json(),
+      );
       const vk = verificationKeyToContractFormat(vkJson);
       const adminClient = await connect(NETWORK, adminKp);
       const { result: newCircleId } = await createCircle(adminClient, {
@@ -361,7 +644,7 @@ export default function App() {
       setPot(0n);
       setScreen("circle");
     } catch (e) {
-      setError((e as Error).message);
+      setError(toUiError(e));
     } finally {
       setBusy(null);
     }
@@ -372,16 +655,78 @@ export default function App() {
     setError(null);
     setBusy(`Funding from member ${i + 1}…`);
     try {
+      const [{ Keypair }, { connect, fund, getCircle }] = await Promise.all([
+        import("@stellar/stellar-sdk"),
+        import("@sharibo/client")
+      ]);
       const m = members[i];
-      await friendbotFund(m.keypair.publicKey());
+      await fundWithFriendbot(m.keypair.publicKey());
       const memberClient = await connect(NETWORK, m.keypair);
       const { hash } = await fund(memberClient, {
         circleId,
         from: m.keypair.publicKey(),
       });
       setMembers((prev) =>
-        prev.map((mm, idx) => (idx === i ? { ...mm, funded: true, fundHash: hash } : mm)),
+        prev.map((mm, idx) =>
+          idx === i ? { ...mm, funded: true, fundHash: hash } : mm,
+        ),
       );
+      const adminClient = await connect(NETWORK, admin);
+      const circle = await getCircle(adminClient, circleId);
+      setPot(circle.pot);
+      setRound(circle.round);
+    } catch (e) {
+      setError(toUiError(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function fundWithFreighter(i: number) {
+    if (!admin || circleId === null) return;
+    setError(null);
+    setBusy(`Funding from member ${i + 1} via Freighter…`);
+    try {
+      const allowedRes = await isAllowed();
+      if (!allowedRes.isAllowed) {
+        await requestAccess();
+      }
+
+      const networkRes = await getNetworkDetails();
+      if (networkRes.network !== "TESTNET") {
+        throw new Error("Freighter is not set to Testnet. Please switch your network in Freighter.");
+      }
+
+      const addressRes = await getAddress();
+      const pubKey = addressRes.address;
+      if (!pubKey) {
+        throw new Error("Could not get address from Freighter.");
+      }
+      
+      const freighterSigner = {
+        publicKey: pubKey,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        signTransaction: async (txXdr: string, opts?: any) => {
+          const signedRes = await freighterSignTx(txXdr, {
+            networkPassphrase: networkRes.networkPassphrase
+          });
+          if (signedRes.error) {
+            throw new Error(signedRes.error.toString());
+          }
+          return signedRes.signedTxXdr;
+        }
+      };
+
+      const memberClient = await connect(NETWORK, freighterSigner);
+      const { hash } = await fund(memberClient, {
+        circleId,
+        from: pubKey,
+      });
+
+      setMembers((prev) =>
+        prev.map((mm, idx) => (idx === i ? { ...mm, funded: true, fundHash: hash, freighterKey: pubKey } : mm)),
+      );
+
       const adminClient = await connect(NETWORK, admin);
       const circle = await getCircle(adminClient, circleId);
       setPot(circle.pot);
@@ -398,28 +743,52 @@ export default function App() {
     setError(null);
     setClaimResult(null);
     setRejection(null);
-    setBusy("Proving… (a real Groth16 proof is being generated in your browser)");
+    setBusy("Claiming…");
     try {
+      const [{ Keypair }, { computeExternalNullifier, generateProof, connect, claim, getCircle }] = await Promise.all([
+        import("@stellar/stellar-sdk"),
+        import("@sharibo/client")
+      ]);
       const claimant = members[claimantIndex];
       const merkleProof = tree.proof(claimantIndex);
       const externalNullifier = await computeExternalNullifier(circleId, BigInt(round));
-      const generated = await generateProof(
-        {
-          identityNullifier: claimant.identity.identityNullifier,
-          identitySecret: claimant.identity.identitySecret,
-          pathElements: merkleProof.pathElements,
-          pathIndices: merkleProof.pathIndices,
-          root: tree.root,
-          externalNullifier,
-        },
-        "/circuits/membership.wasm",
-        "/circuits/membership_final.zkey",
-      );
 
-      setBusy("Submitting the claim and generating a fresh, unlinked recipient…");
+      setClaimStage("artifacts");
+      const [wasm, zkey] = await Promise.all([
+        fetch("/circuits/membership.wasm")
+          .then((r) => r.arrayBuffer())
+          .then((b) => new Uint8Array(b)),
+        fetch("/circuits/membership_final.zkey")
+          .then((r) => r.arrayBuffer())
+          .then((b) => new Uint8Array(b)),
+      ]);
+
+      setClaimStage("proving");
+      setProveElapsedSeconds(0);
+      const proveTimer = setInterval(() => setProveElapsedSeconds((s) => s + 1), 1000);
+      let generated;
+      try {
+        generated = await generateProof(
+          {
+            identityNullifier: claimant.identity.identityNullifier,
+            identitySecret: claimant.identity.identitySecret,
+            pathElements: merkleProof.pathElements,
+            pathIndices: merkleProof.pathIndices,
+            root: tree.root,
+            externalNullifier,
+          },
+          wasm,
+          zkey,
+        );
+      } finally {
+        clearInterval(proveTimer);
+      }
+
+      setClaimStage("funding");
       const recipient = Keypair.random();
-      await friendbotFund(recipient.publicKey());
+      await fundWithFriendbot(recipient.publicKey());
 
+      setClaimStage("submitting");
       const adminClient = await connect(NETWORK, admin);
       const { hash } = await claim(adminClient, {
         circleId,
@@ -431,16 +800,17 @@ export default function App() {
 
       setProof(generated.proof);
       setNullifierHash(generated.nullifierHash);
-      setClaimResult({ recipient: recipient.publicKey(), hash });
+      setClaimResult({ recipient: recipient.publicKey(), hash, proofDurationMs });
       setNullifierClaimed(await hasClaimed(adminClient, circleId, generated.nullifierHash));
 
       const circle = await getCircle(adminClient, circleId);
       setPot(circle.pot);
       setRound(circle.round);
     } catch (e) {
-      setError((e as Error).message);
+      setError(toUiError(e));
     } finally {
       setBusy(null);
+      setClaimStage(null);
     }
   }
 
@@ -448,8 +818,14 @@ export default function App() {
     if (!admin || circleId === null || !proof || nullifierHash === null) return;
     setError(null);
     setRejection(null);
-    setBusy("Refunding a new round, then replaying the same proof's nullifier…");
+    setBusy(
+      "Refunding a new round, then replaying the same proof's nullifier…",
+    );
     try {
+      const [{ Keypair }, { connect, fund, computeExternalNullifier, claim, getCircle }] = await Promise.all([
+        import("@stellar/stellar-sdk"),
+        import("@sharibo/client")
+      ]);
       // Fund round `round` again so this exercises the nullifier-reuse
       // check specifically, not just "the pot is empty" — the same
       // proof's nullifier gets rejected even against a fresh, funded round.
@@ -458,7 +834,10 @@ export default function App() {
         const memberClient = await connect(NETWORK, m.keypair);
         await fund(memberClient, { circleId, from: m.keypair.publicKey() });
       }
-      const freshExternalNullifier = await computeExternalNullifier(circleId, BigInt(round));
+      const freshExternalNullifier = await computeExternalNullifier(
+        circleId,
+        BigInt(round),
+      );
 
       setBusy("Replaying the used nullifier…");
       await claim(adminClient, {
@@ -468,13 +847,16 @@ export default function App() {
         externalNullifier: freshExternalNullifier,
         proof,
       });
-      setRejection("Unexpected: the replayed claim was accepted (this should never happen).");
+      setRejection(
+        "Unexpected: the replayed claim was accepted (this should never happen).",
+      );
     } catch (e) {
       setRejection((e as Error).message);
     } finally {
       // Reflect the on-chain state either way: the re-funding above happened
       // for real even though the replayed claim itself was rejected.
       try {
+        const { connect, getCircle } = await import("@sharibo/client");
         const adminClient = await connect(NETWORK, admin);
         const circle = await getCircle(adminClient, circleId);
         setPot(circle.pot);
@@ -486,10 +868,36 @@ export default function App() {
     }
   }
 
-  if (screen === "landing") {
+  if (resumePrompt && screen === "landing") {
     return (
       <div className="page">
         <div className="card hero">
+          <h1>Resume Circle #{resumePrompt.circleId.toString()}?</h1>
+          <p className="sub">
+            It looks like you refreshed the page while a circle was active. Do you want to resume?
+          </p>
+          <div className="row" style={{ marginTop: '2rem', justifyContent: 'center', gap: '1rem' }}>
+            <button className="btn btn-primary" onClick={() => loadState(resumePrompt)}>
+              Resume Circle
+            </button>
+            <button className="btn btn-danger" onClick={() => {
+              sessionStorage.removeItem("sharibo_demo_state");
+              setResumePrompt(null);
+            }}>
+              Discard
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === "landing") {
+    return (
+      <div className="page">
+        <NetworkBanner />
+        <div className="card hero">
+          <LanguageSwitcher className="language-switcher-hero" />
           <div className="namewall">
             {NAMES.map((n) => (
               <span key={n} className="namewall-item">
@@ -499,37 +907,59 @@ export default function App() {
           </div>
           <h1>SHARIBO</h1>
           <p className="tagline">
-            A private rotating savings circle — on Stellar, with real zero-knowledge proofs.
+            A private rotating savings circle — on Stellar, with real
+            zero-knowledge proofs.
           </p>
           <p className="sub">
-            Every round, everyone contributes. Every round, one member takes the pot. Sharibo
-            proves <em>who's entitled to claim</em> without ever revealing <em>who</em> claimed.
+            Every round, everyone contributes. Every round, one member takes the
+            pot. Sharibo proves <em>who's entitled to claim</em> without ever
+            revealing <em>who</em> claimed.
           </p>
-          <button className="btn btn-primary" disabled={!!busy} onClick={startCircle}>
+          <button
+            className="btn btn-primary"
+            disabled={!!busy}
+            onClick={startCircle}
+          >
             {busy ?? "Launch a 5-member circle on testnet"}
           </button>
           {error && <p className="error">{error}</p>}
           {previousCircleId !== null && (
             <p className="fineprint">
               Your previous circle lives on at{" "}
-              <a className="link" href={explorerContract()} target="_blank" rel="noreferrer">
+              <a
+                className="link"
+                href={explorerContract()}
+                target="_blank"
+                rel="noreferrer"
+              >
                 circle #{previousCircleId.toString()} ↗
               </a>
             </p>
           )}
           <p className="fineprint">
-            Testnet only. Demo identities are generated fresh in your browser, never reused.
+            Testnet only. Demo identities are generated fresh in your browser,
+            never reused.
           </p>
+          {prevCircle && (
+            <p className="fineprint">
+              Your previous circle #{prevCircle.id} lives on-chain —{" "}
+              <a className="link" href={prevCircle.explorerUrl} target="_blank" rel="noreferrer">
+                view on explorer ↗
+              </a>
+            </p>
+          )}
         </div>
       </div>
     );
   }
 
-  const step: 0 | 1 | 2 | 3 = claimResult ? 3 : fullyFunded ? 2 : 1;
+  const step: 0 | 1 | 2 | 3 = flow.claimResult ? 3 : flow.fullyFunded ? 2 : 1;
 
   return (
     <div className="page">
+      <NetworkBanner />
       <div className="card">
+        <LanguageSwitcher />
         {/*
           Persistent live region — always in the DOM so the browser registers
           it before any text lands inside it (a common AT pitfall).
@@ -538,71 +968,77 @@ export default function App() {
           aria-atomic="true" replaces the whole message on each update rather
           than diffing individual text nodes, which is more reliable across ATs.
         */}
-        <div
-          role="status"
-          aria-live="polite"
-          aria-atomic="true"
-          // Visually hidden but readable by screen readers.
-          style={{
-            position: "absolute",
-            width: "1px",
-            height: "1px",
-            padding: 0,
-            margin: "-1px",
-            overflow: "hidden",
-            clip: "rect(0,0,0,0)",
-            whiteSpace: "nowrap",
-            border: 0,
-          }}
-        >
-          {busy ?? (error ? `Error: ${error}` : "")}
-        </div>
+        <LiveRegion message={liveRegionMessage} />
         <div className="row space-between">
-          <h1 className="small" ref={circleHeadingRef} tabIndex={-1}>SHARIBO</h1>
+          <h1 className="small" ref={circleHeadingRef} tabIndex={-1}>
+            SHARIBO
+          </h1>
           <div className="row">
             <a className="link" href={explorerContract()} target="_blank" rel="noreferrer">
-              circle #{circleId?.toString()} on-chain ↗
+              circle #{flow.circleId?.toString()} on-chain ↗
             </a>
             <button
               className="btn btn-small"
-              disabled={!!busy}
-              onClick={resetToLanding}
-              title={`Start over. Your current circle (#${circleId?.toString()}) keeps living on-chain.`}
+              disabled={!!flow.busy}
+              onClick={flow.resetToLanding}
+              title={`Start over. Your current circle (#${flow.circleId?.toString()}) keeps living on-chain.`}
             >
-              Start a new circle
+              {t("common.startNewCircle")}
             </button>
           </div>
         </div>
 
         <Stepper step={step} />
 
-        <MemberRing members={members} revealed={!!claimResult} />
+        <MemberRing members={flow.members} revealed={!!flow.claimResult} />
 
         <div className="pot-bar-wrap">
-          <div className="pot-bar" style={{ width: `${(fundedCount / CIRCLE_SIZE) * 100}%` }} />
+          <div
+            className="pot-bar"
+            style={{ width: `${(flow.fundedCount / CIRCLE_SIZE) * 100}%` }}
+          />
         </div>
         <p className="pot-label">
-          pot: {(Number(pot) / 1e7).toFixed(1)} / {contributionXlm * CIRCLE_SIZE} XLM · round{" "}
-          {round}
+          pot: {(Number(flow.pot) / 1e7).toFixed(1)} / {flow.contributionXlm * CIRCLE_SIZE} XLM ·
+          round {flow.round}
         </p>
 
         <h2>Fund</h2>
         <div className="members">
           {members.map((m, i) => (
             <div key={i} className={`member ${m.funded ? "funded" : ""}`}>
-              <span className="member-addr">member {i + 1} · {short(m.keypair.publicKey())}</span>
+              <span className="member-addr">
+                member {i + 1} · {short(m.keypair.publicKey())}
+                <CopyButton value={m.keypair.publicKey()} label={`member ${i + 1} address`} />
+              </span>
               {m.funded ? (
-                <a className="link" href={explorerTx(m.fundHash!)} target="_blank" rel="noreferrer">
+                <a
+                  className="link"
+                  href={explorerTx(m.fundHash!)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
                   ✓ funded ↗
                 </a>
               ) : (
-                <button
-                  className="btn btn-small"
-                  disabled={!!busy || round > 0}
-                  onClick={() => fundMember(i)}
-                >
-                  Fund {contributionXlm} XLM
-                </button>
+                <div className="row">
+                  <button
+                    className="btn btn-small"
+                    disabled={!!busy || round > 0}
+                    onClick={() => fundMember(i)}
+                  >
+                    Fund {contributionXlm} XLM (Demo)
+                  </button>
+                  {hasFreighter && (
+                    <button
+                      className="btn btn-small"
+                      disabled={!!busy || round > 0}
+                      onClick={() => fundWithFreighter(i)}
+                    >
+                      Fund with Freighter
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           ))}
@@ -610,10 +1046,13 @@ export default function App() {
 
         {fullyFunded && !claimResult && (
           <>
-            <h2 ref={claimHeadingRef} tabIndex={-1}>Claim</h2>
+            <h2 ref={claimHeadingRef} tabIndex={-1}>
+              Claim
+            </h2>
             <p className="sub">
-              Pick which member is claiming this round — the proof will show the contract that
-              they're a real member <em>without</em> revealing which one.
+              Pick which member is claiming this round — the proof will show the
+              contract that they're a real member <em>without</em> revealing
+              which one.
             </p>
             <div className="row">
               {members.map((_, i) => (
@@ -629,13 +1068,15 @@ export default function App() {
               ))}
             </div>
             <button className="btn btn-primary" disabled={!!busy} onClick={doClaim}>
-              {busy ?? "Generate proof & claim"}
+              {claimStage ? CLAIM_STAGE_LABELS[claimStage] : "Generate proof & claim"}
             </button>
+            <ClaimExplainer />
             {busy && (
               <p className="techline">
                 {/* Constraint count: update this AND circuits/README.md if the circuit changes. */}
                 Groth16 · BLS12-381 · 1,452 constraints · proving locally in your browser, nothing
                 sent anywhere until the proof is done
+                {isProving && provingSeconds !== null ? ` · proving… ${provingSeconds}s` : ""}
               </p>
             )}
           </>
@@ -643,20 +1084,30 @@ export default function App() {
 
         {claimResult && (
           <div className="result">
-            <h2 ref={payoutHeadingRef} tabIndex={-1}>Payout landed</h2>
+            <h2 ref={payoutHeadingRef} tabIndex={-1}>
+              Payout landed
+            </h2>
             <p>
-              Fresh recipient <code>{short(claimResult.recipient)}</code>{" "}
+              Fresh recipient <code>{short(claimResult.recipient)}</code>
+              <CopyButton value={claimResult.recipient} label="recipient address" />{" "}
               <a href={explorerAccount(claimResult.recipient)} target="_blank" rel="noreferrer">
                 ↗
               </a>{" "}
-              received the pot. It has never appeared anywhere else on this circle.
+              received the pot. It has never appeared anywhere else on this
+              circle.
             </p>
-            <a className="link" href={explorerTx(claimResult.hash)} target="_blank" rel="noreferrer">
+            <a
+              className="link"
+              href={explorerTx(claimResult.hash)}
+              target="_blank"
+              rel="noreferrer"
+            >
               view claim transaction ↗
             </a>
+            <CopyButton value={claimResult.hash} label="claim transaction hash" />
             <p className="callout">
-              Compare the 5 funding transactions above to this claim — same contract, no shared
-              address, no visible link.
+              Compare the 5 funding transactions above to this claim — same
+              contract, no shared address, no visible link.
             </p>
             <button
               className="btn btn-danger"
@@ -681,15 +1132,37 @@ export default function App() {
                 <div className="rejected">
                   <strong>Rejected on-chain:</strong> {rejection}
                 </div>
-                <button className="btn btn-primary" disabled={!!busy} onClick={resetToLanding}>
+                <button
+                  className="btn btn-primary"
+                  disabled={!!busy}
+                  onClick={resetToLanding}
+                >
                   Start a new circle
                 </button>
               </>
             )}
+            {rejection && (
+              <div className="new-circle-cta">
+                <button
+                  className="btn btn-primary"
+                  disabled={!!busy}
+                  onClick={resetToLanding}
+                >
+                  ↺ Start a new circle
+                </button>
+                <p className="fineprint">
+                  Circle #{circleId?.toString()} stays on-chain forever —{" "}
+                  <a className="link" href={explorerContract()} target="_blank" rel="noreferrer">
+                    view on explorer ↗
+                  </a>
+                  . Starting a new circle generates fresh identities and a brand-new on-chain record.
+                </p>
+              </div>
+            )}
           </div>
         )}
 
-        {error && <p className="error">{error}</p>}
+        {flow.error && <p className="error">{flow.error}</p>}
       </div>
     </div>
   );
