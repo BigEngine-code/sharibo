@@ -43,6 +43,7 @@ import {
   getCircle,
   TREE_LEVELS,
 } from "@sharibo/client";
+import { checkContractDeployed } from "./testnet-health.js";
 
 // --- CLI flag parsing (node:util parseArgs — no new deps) ---
 
@@ -184,6 +185,12 @@ async function main() {
   if (REUSE_CIRCLE != null) console.log(`  (--reuse-circle: using circle ${REUSE_CIRCLE})`);
   if (VERBOSE) console.log("  (--verbose: echoing all interactions)");
   console.log();
+
+  const health = await checkContractDeployed(RPC_URL, CONTRACT_ID);
+  if (!health.ok) {
+    console.error(`\n${health.message}\n`);
+    process.exit(1);
+  }
 
   const admin = Keypair.fromSecret(ADMIN_SECRET);
 
