@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "e2e": "tsx e2e.ts",
-    "typecheck": "tsc --noEmit"
+    "smoke": "tsx smoke.ts",
+    "test": "node --import tsx --test smoke.test.ts"
   },
   "dependencies": {
     "@sharibo/client": "*",

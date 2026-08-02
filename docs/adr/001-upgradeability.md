@@ -21,12 +21,12 @@ Sharibo holds user funds and runs a Groth16 verifier. An upgrade key is an exist
 
 Immutability flips the failure mode: a critical bug cannot be patched in place. Response is **migrate** — deploy a new contract, move users/circles off the broken one, accept that in-flight pots on the old id stay stuck unless a recovery path was designed in advance.
 
-| | Immutable | Upgradeable |
-|---|---|---|
-| Bug response | Deploy + migrate | Patch WASM |
-| Steal / governance risk | None from upgrade key | Upgrade key can take everything |
-| User trust story | "Code can't change under you" | "Trust the key / multisig / timelock" |
-| Operational cost | Migration playbooks | Key ceremony, timelock, monitoring |
+|                         | Immutable                     | Upgradeable                           |
+| ----------------------- | ----------------------------- | ------------------------------------- |
+| Bug response            | Deploy + migrate              | Patch WASM                            |
+| Steal / governance risk | None from upgrade key         | Upgrade key can take everything       |
+| User trust story        | "Code can't change under you" | "Trust the key / multisig / timelock" |
+| Operational cost        | Migration playbooks           | Key ceremony, timelock, monitoring    |
 
 ### What does `Circle.admin` actually do?
 
@@ -46,7 +46,7 @@ That is worth stating loudly: **admin key rotation is not an urgent safety featu
 ## Decision
 
 1. **Stay immutable on testnet and for the first production deployment** of the verifier contract. Prefer migration over an upgrade key that can steal pots. If a later version needs upgradeability, it should be a new contract with an explicit, time-locked, multi-party upgrade authority — not bolted onto circles that already hold funds under an implicit "we'll add upgrades later."
-2. **Do not add admin rotation yet.** Document that `admin` is currently ceremonial post-creation. If product needs (pause, VK rotate, emergency withdraw) appear, design those entry points and *then* decide whether admin is a single key, a multisig, or a DAO — and add rotation as part of that design, not as a standalone patch.
+2. **Do not add admin rotation yet.** Document that `admin` is currently ceremonial post-creation. If product needs (pause, VK rotate, emergency withdraw) appear, design those entry points and _then_ decide whether admin is a single key, a multisig, or a DAO — and add rotation as part of that design, not as a standalone patch.
 3. **If admin-gated ops are added**, treat admin as load-bearing: require rotation, clear auth checks on every privileged path, and update this ADR.
 
 ## Consequences
