@@ -28,25 +28,42 @@ export interface ShariboNetworkConfig {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ShariboClient = any;
 
-/**
- * Connects to the Sharibo contract on a Stellar network.
- *
- * @param config - Network configuration (contract ID, RPC URL, network passphrase).
- * @param keypair - The Stellar keypair for signing transactions.
- * @returns A ShariboClient instance with dynamically attached contract methods.
- */
+export interface ShariboSigner {
+  publicKey: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  signTransaction: (txXdr: string, opts?: any) => Promise<string>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  signAuthEntry?: (entryXdr: string, opts?: any) => Promise<string>;
+}
+
 export async function connect(
   config: ShariboNetworkConfig,
-  keypair: Keypair,
+  keypairOrSigner: Keypair | ShariboSigner,
 ): Promise<ShariboClient> {
-  const signer = basicNodeSigner(keypair, config.networkPassphrase);
+  let publicKey: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let signTransaction: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let signAuthEntry: any;
+
+  if (keypairOrSigner instanceof Keypair) {
+    const signer = basicNodeSigner(keypairOrSigner, config.networkPassphrase);
+    publicKey = keypairOrSigner.publicKey();
+    signTransaction = signer.signTransaction;
+    signAuthEntry = signer.signAuthEntry;
+  } else {
+    publicKey = keypairOrSigner.publicKey;
+    signTransaction = keypairOrSigner.signTransaction;
+    signAuthEntry = keypairOrSigner.signAuthEntry;
+  }
+
   return ContractClient.from({
     contractId: config.contractId,
     networkPassphrase: config.networkPassphrase,
     rpcUrl: config.rpcUrl,
-    publicKey: keypair.publicKey(),
-    signTransaction: signer.signTransaction,
-    signAuthEntry: signer.signAuthEntry,
+    publicKey,
+    signTransaction,
+    signAuthEntry,
   });
 }
 
@@ -185,14 +202,14 @@ export async function getCircle(client: ShariboClient, circleId: bigint): Promis
   return sent.result as CircleView;
 }
 
-/**
- * Checks whether a nullifier hash has already claimed in a circle.
- *
- * @param client - The Sharibo contract client.
- * @param circleId - The ID of the circle to check.
- * @param nullifierHash - The nullifier hash to check.
- * @returns True if the nullifier hash has already claimed, false otherwise.
- */
+/** Pure read: the current count of circles ever created. 0 if none yet. */
+export async function getCircleCount(client: ShariboClient): Promise<bigint> {
+  const tx = await client.get_circle_count();
+  const sent = await tx.signAndSend({ force: true });
+  return sent.result as bigint;
+}
+
+/** Pure read: whether `nullifierHash` has already claimed in this circle. */
 export async function hasClaimed(
   client: ShariboClient,
   circleId: bigint,

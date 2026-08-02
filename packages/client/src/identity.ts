@@ -18,19 +18,13 @@ export interface Identity {
   commitment: bigint;
 }
 
-/**
- * BLS12-381 scalar field modulus r.
- *
- * Matches Soroban's own Fr and the poseidon-bls12381 package — cross-checked
- * against soroban-sdk's BLS12_381_FR_MODULUS_BE constant.
- */
-export const FR_MODULUS =
-  0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001n;
+// BLS12-381 scalar field modulus r (matches Soroban's own Fr and the
+// poseidon-bls12381 package — cross-checked against soroban-sdk's
+// BLS12_381_FR_MODULUS_BE constant).
+export const FR_MODULUS = 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001n;
 
 function bytesToBigInt(bytes: Uint8Array): bigint {
-  return BigInt(
-    "0x" + Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join(""),
-  );
+  return BigInt("0x" + Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join(""));
 }
 
 /**
@@ -89,34 +83,15 @@ export function generateIdentity(): Identity {
   return { identityNullifier, identitySecret, commitment };
 }
 
-/**
- * Computes the external nullifier for a circle and round.
- *
- * Binds a proof to a specific circle and round using SHA-256, matching the
- * contract's implementation. This is a deliberate deviation from "Poseidon
- * everywhere" — SHA-256 is used here since Soroban has no native Poseidon
- * host function, and SHA-256 is equally sound for binding a proof to a round.
- *
- * @param circleId - The circle identifier (must be a valid u64: 0 <= circleId < 2^64).
- * @param round - The round number (must be a valid u32: 0 <= round < 2^32).
- * @returns The external nullifier as a field element.
- * @throws {RangeError} If circleId is not in the valid u64 range.
- * @throws {RangeError} If round is not in the valid u32 range.
- *
- * @remarks
- * DELIBERATE, PERMANENT DEVIATION from "Poseidon everywhere": external
- * nullifier binding (circle_id, round) happens with SHA-256, matching the
- * contract (see contracts/sharibo/src/lib.rs, compute_external_nullifier).
- * Poseidon is used only where it saves constraints *inside* the circuit
- * (commitment + nullifierHash); Soroban has no native Poseidon host
- * function, so nothing is gained by porting Poseidon into the contract for
- * this check, and SHA-256 is equally sound for binding a proof to a round.
- * See NOTES.md.
- */
-export async function computeExternalNullifier(
-  circleId: bigint,
-  round: bigint,
-): Promise<bigint> {
+// DELIBERATE, PERMANENT DEVIATION from "Poseidon everywhere": external
+// nullifier binding (circle_id, round) happens with SHA-256, matching the
+// contract (see contracts/sharibo/src/lib.rs, compute_external_nullifier).
+// Poseidon is used only where it saves constraints *inside* the circuit
+// (commitment + nullifierHash); Soroban has no native Poseidon host
+// function, so nothing is gained by porting Poseidon into the contract for
+// this check, and SHA-256 is equally sound for binding a proof to a round.
+// See NOTES.md.
+export async function computeExternalNullifier(circleId: bigint, round: bigint): Promise<bigint> {
   // Bounds must match the contract's field types exactly (see
   // contracts/sharibo/src/lib.rs: `circle_id: u64`, `round: u32`).
   // `setBigUint64`/`setUint32` below would otherwise silently truncate (or,
@@ -124,14 +99,10 @@ export async function computeExternalNullifier(
   // producing a valid-looking but wrong hash that the contract rejects with
   // an opaque `WrongRoundTag` — Issue #65.
   if (circleId < 0n || circleId >= 2n ** 64n) {
-    throw new RangeError(
-      `circleId must satisfy 0 <= circleId < 2**64 (u64), got ${circleId}`,
-    );
+    throw new RangeError(`circleId must satisfy 0 <= circleId < 2**64 (u64), got ${circleId}`);
   }
   if (round < 0n || round >= 2n ** 32n) {
-    throw new RangeError(
-      `round must satisfy 0 <= round < 2**32 (u32), got ${round}`,
-    );
+    throw new RangeError(`round must satisfy 0 <= round < 2**32 (u32), got ${round}`);
   }
 
   const buf = new ArrayBuffer(12);
@@ -142,19 +113,6 @@ export async function computeExternalNullifier(
   return bytesToBigInt(new Uint8Array(digest)) % FR_MODULUS;
 }
 
-/**
- * Computes the nullifier hash for an identity.
- *
- * Combines the identityNullifier with the externalNullifier using Poseidon
- * to create the nullifier hash that will be used in the circuit and contract.
- *
- * @param identityNullifier - The nullifier component of the identity.
- * @param externalNullifier - The external nullifier binding to circle and round.
- * @returns The Poseidon hash of the two inputs.
- */
-export function computeNullifierHash(
-  identityNullifier: bigint,
-  externalNullifier: bigint,
-): bigint {
+export function computeNullifierHash(identityNullifier: bigint, externalNullifier: bigint): bigint {
   return poseidon(identityNullifier, externalNullifier);
 }
