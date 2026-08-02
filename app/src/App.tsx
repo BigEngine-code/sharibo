@@ -331,7 +331,7 @@ function MemberRing({
         // this is supplementary information attached to the figure.
         <p id={captionId} role="note" className="ring-caption">
           Payout landed on the address above — cryptographically, it could be tied to <em>any</em>{" "}
-          of the 5 members in the ring. An outside observer cannot tell which.
+          of the {members.length} members in the ring. An outside observer cannot tell which.
         </p>
       )}
     </div>
