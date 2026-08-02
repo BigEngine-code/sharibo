@@ -108,9 +108,7 @@ describe("Sharibo membership circuit (BLS12-381)", function () {
     const witnessNextRound = await circuit.calculateWitness(inputNextRound, true);
 
     expect(witnessA[varIdx].toString()).to.equal(witnessB[varIdx].toString());
-    expect(witnessA[varIdx].toString()).to.not.equal(
-      witnessNextRound[varIdx].toString(),
-    );
+    expect(witnessA[varIdx].toString()).to.not.equal(witnessNextRound[varIdx].toString());
   });
 
   it("rejects a non-boolean pathIndices entry", async () => {
@@ -194,8 +192,7 @@ describe("Sharibo membership circuit (BLS12-381)", function () {
     const witness = await circuit.calculateWitness(input, true);
     await circuit.checkConstraints(witness);
 
-    const mismatchedExternalNullifier =
-      (BigInt(input.externalNullifier) + 1n) % FR_MODULUS;
+    const mismatchedExternalNullifier = (BigInt(input.externalNullifier) + 1n) % FR_MODULUS;
     const actualNullifierHash = computeNullifierHash(
       identities[0].identityNullifier,
       BigInt(input.externalNullifier),
