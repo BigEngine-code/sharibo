@@ -151,6 +151,7 @@ interface Member {
 interface ClaimResult {
   recipient: string;
   hash: string;
+  proofDurationMs: number;
 }
 
 // The visible stages of doClaim, in the order they actually occur. snarkjs's
@@ -390,6 +391,8 @@ export default function App() {
   const [proof, setProof] = useState<ContractProof | null>(null);
   const [nullifierHash, setNullifierHash] = useState<bigint | null>(null);
   const [claimResult, setClaimResult] = useState<ClaimResult | null>(null);
+  const [isProving, setIsProving] = useState(false);
+  const [provingElapsedMs, setProvingElapsedMs] = useState<number | null>(null);
   const [nullifierClaimed, setNullifierClaimed] = useState(false);
   const [rejection, setRejection] = useState<string | null>(null);
   const [claimStage, setClaimStage] = useState<ClaimStage | null>(null);
@@ -470,6 +473,8 @@ export default function App() {
     setProof(null);
     setNullifierHash(null);
     setClaimResult(null);
+    setIsProving(false);
+    setProvingElapsedMs(null);
     setNullifierClaimed(false);
     setRejection(null);
     setClaimStage(null);
@@ -714,7 +719,7 @@ export default function App() {
 
       setProof(generated.proof);
       setNullifierHash(generated.nullifierHash);
-      setClaimResult({ recipient: recipient.publicKey(), hash });
+      setClaimResult({ recipient: recipient.publicKey(), hash, proofDurationMs });
       setNullifierClaimed(await hasClaimed(adminClient, circleId, generated.nullifierHash));
 
       const circle = await getCircle(adminClient, circleId);
@@ -1001,6 +1006,7 @@ export default function App() {
                 {/* Constraint count: update this AND circuits/README.md if the circuit changes. */}
                 Groth16 · BLS12-381 · 1,452 constraints · proving locally in your browser, nothing
                 sent anywhere until the proof is done
+                {isProving && provingSeconds !== null ? ` · proving… ${provingSeconds}s` : ""}
               </p>
             )}
           </>
