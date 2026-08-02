@@ -5,13 +5,33 @@
   --ink: #111111;
   --accent: #ffcf3f;
   --accent2: #7cf5c4;
-  --danger: #ff5c5c;
+  --danger: #d93025;
   --border: 4px solid var(--ink);
   --shadow: 8px 8px 0 var(--ink);
+
+  /* Breakpoints (documented tokens — use literal values in @media) */
+  --bp-xs: 320px;
+  --bp-sm: 375px;
+  --bp-md: 768px;
+
+  /* MemberRing geometry (desktop defaults) */
+  --ring-size: 220px;
+  --ring-radius: 100px;
+  --ring-node-size: 40px;
+  --ring-center-size: 64px;
+  --ring-recipient-offset: -170px;
+  --ring-margin-y: 40px;
+
+  /* Minimum touch target (WCAG / iOS HIG) */
+  --touch-min: 44px;
 }
 
 * {
   box-sizing: border-box;
+}
+
+html {
+  overflow-x: hidden;
 }
 
 body {
@@ -21,6 +41,7 @@ body {
   font-family: "Space Grotesk", system-ui, sans-serif;
   background-image: radial-gradient(circle, #00000014 1px, transparent 1px);
   background-size: 22px 22px;
+  overflow-x: hidden;
 }
 
 .page {
@@ -95,6 +116,19 @@ h2 {
   margin-top: 16px;
 }
 
+.network-banner {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  text-align: center;
+  padding: 6px 12px;
+  background: #f0f0f0;
+  border: 2px solid #ccc;
+  color: #555;
+  margin-bottom: 16px;
+  width: 100%;
+  max-width: 620px;
+}
+
 .btn {
   font-family: "Space Grotesk", sans-serif;
   font-weight: 700;
@@ -118,6 +152,14 @@ h2 {
   opacity: 0.6;
   cursor: wait;
 }
+/* Visible keyboard focus: thick contrasting outline that works on every
+   button variant (yellow, green, red) and on the dark card background.
+   :focus-visible fires only for keyboard nav, not mouse clicks. */
+.btn:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 3px;
+  box-shadow: 5px 5px 0 var(--ink), 0 0 0 6px var(--accent2);
+}
 .btn-primary {
   background: var(--accent2);
   width: 100%;
@@ -133,6 +175,19 @@ h2 {
   color: white;
   width: 100%;
   margin-top: 16px;
+}
+.btn-reset {
+  padding: 6px 12px;
+  font-size: 13px;
+  box-shadow: 3px 3px 0 var(--ink);
+  background: #f0e8ff;
+  border: 2px solid var(--ink);
+}
+
+.new-circle-cta {
+  margin-top: 20px;
+  border-top: var(--border);
+  padding-top: 16px;
 }
 
 .row {
@@ -179,7 +234,7 @@ h2 {
   gap: 6px;
   padding: 6px 8px;
   border: 2px solid #ccc;
-  color: #999;
+  color: #737373;
   background: #fafafa;
 }
 .step.active {
@@ -209,20 +264,23 @@ h2 {
   flex-direction: column;
   align-items: center;
   margin: 24px 0;
+  width: 100%;
+  overflow: hidden;
 }
 .ring {
   position: relative;
-  width: 220px;
-  height: 220px;
-  margin: 40px 0;
+  width: var(--ring-size);
+  height: var(--ring-size);
+  margin: var(--ring-margin-y) 0;
+  flex-shrink: 0;
 }
 .ring-center {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 64px;
-  height: 64px;
-  margin: -32px 0 0 -32px;
+  width: var(--ring-center-size);
+  height: var(--ring-center-size);
+  margin: calc(var(--ring-center-size) / -2) 0 0 calc(var(--ring-center-size) / -2);
   border: var(--border);
   border-radius: 50%;
   background: white;
@@ -237,9 +295,9 @@ h2 {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 40px;
-  height: 40px;
-  margin: -20px 0 0 -20px;
+  width: var(--ring-node-size);
+  height: var(--ring-node-size);
+  margin: calc(var(--ring-node-size) / -2) 0 0 calc(var(--ring-node-size) / -2);
   border: 2px solid var(--ink);
   border-radius: 50%;
   background: #eee;
@@ -256,9 +314,11 @@ h2 {
 .ring-node.ring-recipient {
   background: var(--accent);
   border-style: dashed;
+  transform: translate(0, var(--ring-recipient-offset));
 }
 .ring-caption {
   max-width: 420px;
+  width: 100%;
   text-align: center;
   font-size: 13px;
   color: #333;
@@ -302,11 +362,30 @@ h2 {
   align-items: center;
   gap: 4px;
 }
+/* Native radio inputs are tiny against the dark card; give them a clear
+   focus ring that matches the design's bold border language. */
+.radio input[type="radio"]:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+  accent-color: var(--ink);
+}
 
 .link {
   font-family: "JetBrains Mono", monospace;
   font-size: 13px;
   color: var(--ink);
+}
+/* Links: underline on focus-visible so keyboard users always know where
+   they are, even when the link appears inside coloured result boxes. */
+.link:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+  text-decoration: underline;
+}
+/* Generic <a> outside .link (e.g. explorer links inside .result) */
+a:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
 }
 
 .result {
@@ -339,8 +418,176 @@ h2 {
   font-size: 13px;
 }
 
+.testnet-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 12px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  font-family: "JetBrains Mono", monospace;
+  color: #666;
+  background: #f5f5f5;
+  border: 2px solid #ddd;
+  width: 100%;
+  max-width: 620px;
+}
+
+.banner-link {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  color: #666;
+  text-decoration: underline;
+}
+
 code {
   font-family: "JetBrains Mono", monospace;
   background: #eee;
   padding: 2px 4px;
+}
+
+/* ── Mobile (< --bp-md) ─────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  :root {
+    --ring-size: 180px;
+    --ring-radius: 80px;
+    --ring-node-size: 36px;
+    --ring-center-size: 52px;
+    --ring-recipient-offset: -136px;
+    --ring-margin-y: 24px;
+  }
+
+  .page {
+    padding: 16px 12px;
+    align-items: flex-start;
+  }
+
+  .card {
+    padding: 20px 16px;
+  }
+
+  h1 {
+    font-size: 40px;
+  }
+  h1.small {
+    font-size: 24px;
+  }
+
+  .row.space-between {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .card-header-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .card-header-actions .link {
+    word-break: break-word;
+  }
+
+  .stepper {
+    font-size: 9px;
+    gap: 2px;
+  }
+  .step {
+    padding: 8px 4px;
+    min-height: var(--touch-min);
+    justify-content: center;
+  }
+  .step-dot {
+    display: none;
+  }
+
+  .member {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px;
+  }
+  .member-addr {
+    font-size: 12px;
+    word-break: break-all;
+  }
+  .member .btn-small,
+  .member .link {
+    align-self: stretch;
+    text-align: center;
+    min-height: var(--touch-min);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 16px;
+  }
+
+  .btn-small {
+    min-height: var(--touch-min);
+    padding: 10px 16px;
+  }
+
+  .radio-group {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .radio {
+    min-height: var(--touch-min);
+    padding: 8px 12px;
+    border: 2px solid var(--ink);
+    background: #fafafa;
+    gap: 10px;
+  }
+  .radio input[type="radio"] {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+  }
+
+  .ring-caption {
+    font-size: 12px;
+    padding: 8px;
+  }
+}
+
+/* ── Small phones (< --bp-sm) ───────────────────────────────────────── */
+@media (max-width: 374px) {
+  :root {
+    --ring-size: 160px;
+    --ring-radius: 70px;
+    --ring-node-size: 32px;
+    --ring-center-size: 48px;
+    --ring-recipient-offset: -119px;
+    --ring-margin-y: 20px;
+  }
+
+  .page {
+    padding: 12px 8px;
+  }
+
+  .card {
+    padding: 16px 12px;
+  }
+
+  h1 {
+    font-size: 32px;
+  }
+  h1.small {
+    font-size: 22px;
+  }
+
+  .tagline {
+    font-size: 16px;
+  }
+
+  .stepper {
+    flex-wrap: wrap;
+  }
+  .step {
+    flex: 1 1 calc(50% - 2px);
+    font-size: 8px;
+  }
 }
