@@ -26,6 +26,22 @@ const TOKEN = config.testTokenContractId;
 const LEVELS = 4;
 const CIRCLE_SIZE = 5;
 const STROOPS_PER_XLM = 10_000_000n;
+const README_URL = "https://github.com/crackedstudio/sharibo#honest-limitations";
+
+const isTestnet = NETWORK.networkPassphrase.includes("Test SDF Network");
+const BANNER_TEXT = isTestnet ? "Stellar testnet — no real funds" : "";
+
+function TestnetBanner() {
+  if (!BANNER_TEXT) return null;
+  return (
+    <div className="testnet-banner">
+      <span>{BANNER_TEXT}</span>
+      <a className="banner-link" href={README_URL} target="_blank" rel="noreferrer">
+        honest limitations ↗
+      </a>
+    </div>
+  );
+}
 
 const NAMES = [
   "ajo",
