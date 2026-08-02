@@ -368,6 +368,50 @@ function EnvSetupScreen({ errors }: { errors: string[] }) {
   );
 }
 
+function ClaimExplainer() {
+  return (
+    <details className="claim-explainer">
+      <summary>How this claim proof works</summary>
+      <div className="claim-explainer-body">
+        <section>
+          <h3>What the proof is saying</h3>
+          <p>
+            It proves the claimant knows a secret identity that is in this circle&apos;s Merkle root,
+            and binds that proof to this exact circle and round via the round tag
+            (<code>external_nullifier</code>).
+          </p>
+        </section>
+
+        <section>
+          <h3>What stays secret</h3>
+          <p>
+            Which member generated the proof stays private. The transaction proves valid membership
+            without revealing which one of the 5 members claimed.
+          </p>
+        </section>
+
+        <section>
+          <h3>What the contract checks (in order)</h3>
+          <ol>
+            <li>The round is fully funded: pot equals contribution × size.</li>
+            <li>The round tag matches this exact circle and round.</li>
+            <li>This nullifier has never claimed before in this circle.</li>
+            <li>The Groth16 proof verifies against the circle&apos;s committed root.</li>
+          </ol>
+        </section>
+
+        <section>
+          <h3>What observers can see</h3>
+          <p>
+            On-chain observers see 5 deposits in and 1 payout out, but no visible link from that
+            payout address to a specific member address.
+          </p>
+        </section>
+      </div>
+    </details>
+  );
+}
+
 export default function App() {
   const { t } = useI18n();
 
@@ -1007,6 +1051,7 @@ export default function App() {
             <button className="btn btn-primary" disabled={!!busy} onClick={doClaim}>
               {claimStage ? CLAIM_STAGE_LABELS[claimStage] : "Generate proof & claim"}
             </button>
+            <ClaimExplainer />
             {busy && (
               <p className="techline">
                 {/* Constraint count: update this AND circuits/README.md if the circuit changes. */}
