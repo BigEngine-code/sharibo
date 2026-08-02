@@ -32,6 +32,7 @@ import {
   fund,
   claim,
   getCircle,
+  TREE_LEVELS,
 } from "@sharibo/client";
 
 // --- CLI flag parsing (node:util parseArgs — no new deps) ---
@@ -63,7 +64,7 @@ const TOKEN = process.env.TEST_TOKEN_CONTRACT_ID!;
 const CONTRACT_ID = process.env.SHARIBO_CONTRACT_ID!;
 const ADMIN_SECRET = process.env.ADMIN_SECRET_KEY!;
 
-const LEVELS = 4;
+const LEVELS = TREE_LEVELS;
 const CIRCLE_SIZE = 5;
 const CONTRIBUTION = 100_000_000n; // 10 XLM (7 decimals)
 const CLAIMANT_INDEX = 2;
