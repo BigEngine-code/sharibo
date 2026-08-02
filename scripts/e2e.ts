@@ -22,7 +22,7 @@
 //   footprint conflict. This was measured — not assumed — and the sequential
 //   path is the deliberate choice.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { execFile } from "node:child_process";
@@ -179,6 +179,58 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   ]);
 }
 
+// Everything a run touched, dumped to scratch/ (gitignored) so a failed or
+// interesting run can be re-inspected afterward: get_circle'd, replayed, or
+// have its proof re-derived, without re-running the whole script.
+interface RunArtifactMember {
+  publicKey: string;
+  identityNullifier: string;
+  identitySecret: string;
+  commitment: string;
+  fundTxHashRound0?: string;
+  fundTxHashRound1?: string;
+}
+
+interface RunArtifact {
+  _WARNING: string;
+  timestamp: string;
+  network: { rpcUrl: string; networkPassphrase: string; contractId: string; token: string };
+  circleId?: string;
+  treeRoot?: string;
+  createCircleTxHash?: string;
+  members: RunArtifactMember[];
+  claim?: { recipient: string; txHash: string; nullifierHash: string };
+  replayAttempt?: { rejected: boolean; detail: string };
+}
+
+const runArtifact: RunArtifact = {
+  _WARNING:
+    "TESTNET-ONLY DEBUG ARTIFACT — contains identity secrets (identityNullifier/identitySecret). " +
+    "Never commit this file, never let it leave scratch/, never reuse these keys for anything real.",
+  timestamp: new Date().toISOString(),
+  network: {
+    rpcUrl: RPC_URL,
+    networkPassphrase: NETWORK_PASSPHRASE,
+    contractId: CONTRACT_ID,
+    token: TOKEN,
+  },
+  members: [],
+};
+
+function writeRunArtifact(): string {
+  const scratchDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "scratch");
+  mkdirSync(scratchDir, { recursive: true });
+  const filePath = path.join(
+    scratchDir,
+    `e2e-run-${runArtifact.timestamp.replace(/[:.]/g, "-")}.json`,
+  );
+  writeFileSync(
+    filePath,
+    JSON.stringify(runArtifact, (_key, value) => (typeof value === "bigint" ? value.toString() : value), 2),
+  );
+  return filePath;
+}
+
 async function main() {
   console.log("Sharibo e2e — full private round on Stellar testnet");
   if (SKIP_REPLAY) console.log("  (--skip-replay: stopping after claim)");
@@ -210,6 +262,12 @@ async function main() {
     "   members:",
     members.map((m) => m.keypair.publicKey()),
   );
+  runArtifact.members = members.map((m) => ({
+    publicKey: m.keypair.publicKey(),
+    identityNullifier: m.identity.identityNullifier.toString(),
+    identitySecret: m.identity.identitySecret.toString(),
+    commitment: m.identity.commitment.toString(),
+  }));
 
   const { tree, vk } = await step("build merkle tree + load verification key", async () => {
     const tree = MerkleTree.create(
@@ -343,6 +401,11 @@ async function main() {
     30_000,
     "claim (round 0)",
   );
+  runArtifact.claim = {
+    recipient: recipient.publicKey(),
+    txHash: claimTxHash,
+    nullifierHash: nullifierHash.toString(),
+  };
   const balanceAfter = await nativeBalance(recipient.publicKey());
   assert(
     balanceAfter - balanceBefore === CONTRIBUTION * BigInt(CIRCLE_SIZE),
