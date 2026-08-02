@@ -229,7 +229,7 @@ export async function getCircle(client: ShariboClient, circleId: bigint): Promis
   // refuses signAndSend() without `force` (there's nothing to sign/submit).
   const tx = await withRetry(() => client.get_circle({ circle_id: circleId }));
   const sent = await tx.signAndSend({ force: true });
-  return sent.result as CircleView;
+  return sent.result;
 }
 
 /** Pure read: the current count of circles ever created. 0 if none yet. */
@@ -250,5 +250,5 @@ export async function hasClaimed(
     nullifier_hash: nullifierHash,
   }));
   const sent = await tx.signAndSend({ force: true });
-  return sent.result as boolean;
+  return sent.result;
 }
