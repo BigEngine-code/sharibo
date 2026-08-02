@@ -17,6 +17,23 @@ import {
 } from "@sharibo/client";
 import { config, configError } from "./config";
 
+const BIGINT_MARKER = 'BIGINT::';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function replacer(key: string, value: any) {
+  if (typeof value === 'bigint') {
+    return BIGINT_MARKER + value.toString();
+  }
+  return value;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function reviver(key: string, value: any) {
+  if (typeof value === 'string' && value.startsWith(BIGINT_MARKER)) {
+    return BigInt(value.slice(BIGINT_MARKER.length));
+  }
+  return value;
+}
+
 const NETWORK = {
   contractId: config.contractId,
   rpcUrl: config.rpcUrl,
@@ -424,6 +441,7 @@ export default function App() {
     }
 
     setPreviousCircleId(circleId);
+    sessionStorage.removeItem("sharibo_demo_state");
 
     setBusy(null);
     setError(null);
@@ -445,9 +463,42 @@ export default function App() {
     setScreen("landing");
   }
 
+  function loadState(parsed: any) {
+    setContributionXlm(parsed.contributionXlm);
+    setAdmin(Keypair.fromSecret(parsed.adminSecret));
+    
+    const loadedMembers = parsed.members.map((m: any) => ({
+      keypair: Keypair.fromSecret(m.secret),
+      identity: m.identity,
+      funded: m.funded,
+      fundHash: m.fundHash,
+    }));
+    setMembers(loadedMembers);
+    
+    const newTree = MerkleTree.create(
+      LEVELS,
+      loadedMembers.map((m: any) => m.identity.commitment)
+    );
+    setTree(newTree);
+
+    setCircleId(parsed.circleId);
+    setRound(parsed.round);
+    setPot(parsed.pot);
+    setClaimantIndex(parsed.claimantIndex);
+    setProof(parsed.proof);
+    setNullifierHash(parsed.nullifierHash);
+    setClaimResult(parsed.claimResult);
+    setRejection(parsed.rejection);
+    
+    setScreen("circle");
+    setResumePrompt(null);
+  }
+
   async function startCircle() {
     setError(null);
-    setBusy("Generating a fresh admin + 5 member identities and funding via friendbot…");
+    setBusy(
+      "Generating a fresh admin + 5 member identities and funding via friendbot…",
+    );
     try {
       const adminKp = Keypair.random();
       await friendbotFund(adminKp.publicKey());
@@ -464,7 +515,9 @@ export default function App() {
       );
 
       setBusy("Creating the circle on testnet…");
-      const vkJson = await fetch("/circuits/verification_key.json").then((r) => r.json());
+      const vkJson = await fetch("/circuits/verification_key.json").then((r) =>
+        r.json(),
+      );
       const vk = verificationKeyToContractFormat(vkJson);
       const adminClient = await connect(NETWORK, adminKp);
       const { result: newCircleId } = await createCircle(adminClient, {
@@ -503,7 +556,9 @@ export default function App() {
         from: m.keypair.publicKey(),
       });
       setMembers((prev) =>
-        prev.map((mm, idx) => (idx === i ? { ...mm, funded: true, fundHash: hash } : mm)),
+        prev.map((mm, idx) =>
+          idx === i ? { ...mm, funded: true, fundHash: hash } : mm,
+        ),
       );
       const adminClient = await connect(NETWORK, admin);
       const circle = await getCircle(adminClient, circleId);
@@ -592,7 +647,9 @@ export default function App() {
     if (!admin || circleId === null || !proof || nullifierHash === null) return;
     setError(null);
     setRejection(null);
-    setBusy("Refunding a new round, then replaying the same proof's nullifier…");
+    setBusy(
+      "Refunding a new round, then replaying the same proof's nullifier…",
+    );
     try {
       // Fund round `round` again so this exercises the nullifier-reuse
       // check specifically, not just "the pot is empty" — the same
@@ -602,7 +659,10 @@ export default function App() {
         const memberClient = await connect(NETWORK, m.keypair);
         await fund(memberClient, { circleId, from: m.keypair.publicKey() });
       }
-      const freshExternalNullifier = await computeExternalNullifier(circleId, BigInt(round));
+      const freshExternalNullifier = await computeExternalNullifier(
+        circleId,
+        BigInt(round),
+      );
 
       setBusy("Replaying the used nullifier…");
       await claim(adminClient, {
@@ -612,7 +672,9 @@ export default function App() {
         externalNullifier: freshExternalNullifier,
         proof,
       });
-      setRejection("Unexpected: the replayed claim was accepted (this should never happen).");
+      setRejection(
+        "Unexpected: the replayed claim was accepted (this should never happen).",
+      );
     } catch (e) {
       setRejection((e as Error).message);
     } finally {
@@ -630,6 +692,30 @@ export default function App() {
     }
   }
 
+  if (resumePrompt && screen === "landing") {
+    return (
+      <div className="page">
+        <div className="card hero">
+          <h1>Resume Circle #{resumePrompt.circleId.toString()}?</h1>
+          <p className="sub">
+            It looks like you refreshed the page while a circle was active. Do you want to resume?
+          </p>
+          <div className="row" style={{ marginTop: '2rem', justifyContent: 'center', gap: '1rem' }}>
+            <button className="btn btn-primary" onClick={() => loadState(resumePrompt)}>
+              Resume Circle
+            </button>
+            <button className="btn btn-danger" onClick={() => {
+              sessionStorage.removeItem("sharibo_demo_state");
+              setResumePrompt(null);
+            }}>
+              Discard
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (screen === "landing") {
     return (
       <div className="page">
@@ -644,26 +730,38 @@ export default function App() {
           </div>
           <h1>SHARIBO</h1>
           <p className="tagline">
-            A private rotating savings circle — on Stellar, with real zero-knowledge proofs.
+            A private rotating savings circle — on Stellar, with real
+            zero-knowledge proofs.
           </p>
           <p className="sub">
-            Every round, everyone contributes. Every round, one member takes the pot. Sharibo
-            proves <em>who's entitled to claim</em> without ever revealing <em>who</em> claimed.
+            Every round, everyone contributes. Every round, one member takes the
+            pot. Sharibo proves <em>who's entitled to claim</em> without ever
+            revealing <em>who</em> claimed.
           </p>
-          <button className="btn btn-primary" disabled={!!busy} onClick={startCircle}>
+          <button
+            className="btn btn-primary"
+            disabled={!!busy}
+            onClick={startCircle}
+          >
             {busy ?? "Launch a 5-member circle on testnet"}
           </button>
           {error && <p className="error">{error}</p>}
           {previousCircleId !== null && (
             <p className="fineprint">
               Your previous circle lives on at{" "}
-              <a className="link" href={explorerContract()} target="_blank" rel="noreferrer">
+              <a
+                className="link"
+                href={explorerContract()}
+                target="_blank"
+                rel="noreferrer"
+              >
                 circle #{previousCircleId.toString()} ↗
               </a>
             </p>
           )}
           <p className="fineprint">
-            Testnet only. Demo identities are generated fresh in your browser, never reused.
+            Testnet only. Demo identities are generated fresh in your browser,
+            never reused.
           </p>
           {prevCircle && (
             <p className="fineprint">
@@ -752,7 +850,12 @@ export default function App() {
                 <CopyButton value={m.keypair.publicKey()} label={`member ${i + 1} address`} />
               </span>
               {m.funded ? (
-                <a className="link" href={explorerTx(m.fundHash!)} target="_blank" rel="noreferrer">
+                <a
+                  className="link"
+                  href={explorerTx(m.fundHash!)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
                   ✓ funded ↗
                 </a>
               ) : (
@@ -772,8 +875,9 @@ export default function App() {
           <>
             <h2 ref={claimHeadingRef} tabIndex={-1}>Claim</h2>
             <p className="sub">
-              Pick which member is claiming this round — the proof will show the contract that
-              they're a real member <em>without</em> revealing which one.
+              Pick which member is claiming this round — the proof will show the
+              contract that they're a real member <em>without</em> revealing
+              which one.
             </p>
             <div className="row">
               {members.map((_, i) => (
@@ -810,15 +914,21 @@ export default function App() {
               <a href={explorerAccount(claimResult.recipient)} target="_blank" rel="noreferrer">
                 ↗
               </a>{" "}
-              received the pot. It has never appeared anywhere else on this circle.
+              received the pot. It has never appeared anywhere else on this
+              circle.
             </p>
-            <a className="link" href={explorerTx(claimResult.hash)} target="_blank" rel="noreferrer">
+            <a
+              className="link"
+              href={explorerTx(claimResult.hash)}
+              target="_blank"
+              rel="noreferrer"
+            >
               view claim transaction ↗
             </a>
             <CopyButton value={claimResult.hash} label="claim transaction hash" />
             <p className="callout">
-              Compare the 5 funding transactions above to this claim — same contract, no shared
-              address, no visible link.
+              Compare the 5 funding transactions above to this claim — same
+              contract, no shared address, no visible link.
             </p>
             <button
               className="btn btn-danger"
@@ -843,7 +953,11 @@ export default function App() {
                 <div className="rejected">
                   <strong>Rejected on-chain:</strong> {rejection}
                 </div>
-                <button className="btn btn-primary" disabled={!!busy} onClick={resetToLanding}>
+                <button
+                  className="btn btn-primary"
+                  disabled={!!busy}
+                  onClick={resetToLanding}
+                >
                   Start a new circle
                 </button>
               </>
