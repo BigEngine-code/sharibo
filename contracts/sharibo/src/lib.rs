@@ -255,6 +255,15 @@ impl Contract {
             .unwrap_or_else(|| panic_with_error!(&env, Error::CircleNotFound))
     }
 
+    /// Pure read: the current count of circles ever created (i.e. the next
+    /// circle id that would be assigned). 0 if no circle has been created yet.
+    pub fn get_circle_count(env: Env) -> u64 {
+        env.storage()
+            .instance()
+            .get(&DataKey::NextCircleId)
+            .unwrap_or(0)
+    }
+
     /// Pure read: whether `nullifier_hash` has already been used to claim in
     /// this circle. Mirrors the storage lookup in [`Self::claim`] so wallets
     /// can check eligibility without submitting a failing transaction.
