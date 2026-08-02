@@ -1,7 +1,11 @@
 // Copies the (gitignored, locally-built) circuit artifacts into
 // app/public/circuits so Vite can serve them for browser-side proving.
 // Run circuits/scripts/{compile,setup}.sh first if these are missing.
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+//
+// Usage:
+//   node scripts/sync-circuit.mjs            # one-shot sync
+//   node scripts/sync-circuit.mjs --watch    # watch & auto-sync on change
+import { copyFileSync, existsSync, mkdirSync, watch } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -16,23 +20,49 @@ const files = [
   { from: path.join(repoRoot, "circuits", "verification_key.json"), to: "verification_key.json" },
 ];
 
-mkdirSync(outDir, { recursive: true });
+const isWatch = process.argv.includes("--watch");
 
-let missing = false;
-for (const f of files) {
-  if (!existsSync(f.from)) {
-    console.error(`missing: ${f.from}`);
-    missing = true;
-    continue;
+function sync() {
+  mkdirSync(outDir, { recursive: true });
+
+  let missing = false;
+  for (const f of files) {
+    if (!existsSync(f.from)) {
+      console.error(`missing: ${f.from}`);
+      missing = true;
+      continue;
+    }
+    copyFileSync(f.from, path.join(outDir, f.to));
   }
-  copyFileSync(f.from, path.join(outDir, f.to));
+
+  if (missing) {
+    console.error(
+      "\nRun circuits/scripts/compile.sh and circuits/scripts/setup.sh first (see README).",
+    );
+    if (!isWatch) process.exit(1);
+    return;
+  }
+
+  console.log(`[${new Date().toLocaleTimeString()}] circuit artifacts synced to app/public/circuits/`);
 }
 
-if (missing) {
-  console.error(
-    "\nRun circuits/scripts/compile.sh and circuits/scripts/setup.sh first (see README).",
-  );
-  process.exit(1);
-}
+sync();
 
-console.log("circuit artifacts synced to app/public/circuits/");
+if (isWatch) {
+  // Watch the source directories for changes and re-sync.
+  const watchPaths = [
+    buildDir,
+    path.join(repoRoot, "circuits", "verification_key.json"),
+  ];
+
+  for (const target of watchPaths) {
+    if (!existsSync(target)) continue;
+    watch(target, { recursive: target === buildDir }, (eventType, filename) => {
+      if (!filename) return;
+      console.log(`[${new Date().toLocaleTimeString()}] change detected: ${filename}`);
+      sync();
+    });
+  }
+
+  console.log(`[${new Date().toLocaleTimeString()}] watching for circuit changes ...`);
+}

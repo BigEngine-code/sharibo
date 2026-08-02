@@ -1,0 +1,27 @@
+const es = {
+  "lang.label": "Idioma",
+  "lang.en": "Ingl\u00e9s",
+  "lang.es": "Espa\u00f1ol",
+  "step.create": "Crear",
+  "step.fund": "Aportar",
+  "step.proveClaim": "Probar y reclamar",
+  "step.unlinked": "No vinculada ✓",
+  "env.setupRequired": "Configuraci\u00f3n requerida",
+  "env.setupIntro": "La app no puede iniciar porque faltan una o m\u00e1s variables de entorno o tienen un formato inv\u00e1lido.",
+  "env.setupHowTo": "Copia app/.env.example a app/.env y completa los valores de abajo; luego reinicia el servidor de desarrollo.",
+  "env.setupDetails": "Consulta app/.env.example para ver todas las variables requeridas y su formato esperado.",
+  "landing.tagline": "Una tanda privada y rotativa en Stellar, con pruebas reales de conocimiento cero.",
+  "landing.sub.before": "En cada ronda, todas las personas aportan. En cada ronda, una persona recibe el fondo. Sharibo demuestra",
+  "landing.sub.em1": "qui\u00e9n tiene derecho a reclamar",
+  "landing.sub.middle": "sin revelar jam\u00e1s",
+  "landing.sub.em2": "qui\u00e9n",
+  "landing.sub.after": "reclam\u00f3.",
+  "landing.launch": "Lanzar una tanda de 5 miembros en testnet",
+  "landing.previousCirclePrefix": "Tu tanda anterior sigue activa en",
+  "landing.previousCircleLink": "tanda #{id} ↗",
+  "landing.testnetFineprint": "Solo testnet. Las identidades de demostraci\u00f3n se generan de nuevo en tu navegador y nunca se reutilizan.",
+  "circle.onChainLink": "tanda #{id} en cadena ↗",
+  "common.startNewCircle": "Iniciar una nueva tanda"
+} as const;
+
+export default es;

@@ -125,17 +125,149 @@ fn real_valid_proof(env: &Env) -> Proof {
 
 // Real public signals for the proof above: (nullifier_hash, root, external_nullifier).
 fn real_root(env: &Env) -> Fr {
-    fr_from_dec_str(env, "26209293814355131390889932661322725195394840191932303091376020297848638697892")
+    fr_from_dec_str(
+        env,
+        "26209293814355131390889932661322725195394840191932303091376020297848638697892",
+    )
 }
 fn real_nullifier_hash(env: &Env) -> Fr {
-    fr_from_dec_str(env, "21226719646080371019275358926522886326845061441166218142415794470695116145494")
+    fr_from_dec_str(
+        env,
+        "21226719646080371019275358926522886326845061441166218142415794470695116145494",
+    )
 }
 fn real_external_nullifier_round0(env: &Env) -> Fr {
-    fr_from_dec_str(env, "9916401131788634118796694467337109503795060207059715207260235684299224251787")
+    fr_from_dec_str(
+        env,
+        "9916401131788634118796694467337109503795060207059715207260235684299224251787",
+    )
+}
+// ---- Issue #91: second trusted-setup ceremony, same identity, two rounds ----
+//
+// The fixtures above (real_verification_key/real_valid_proof) came from one
+// Phase 1 ceremony and only ever proved round 0. To answer "can the same
+// identity claim two consecutive rounds today?" we need a *second* proof
+// for the SAME identityNullifier/identitySecret/Merkle path, bound to
+// round 1's externalNullifier — which means a second, self-consistent
+// (vk, proof) pair from a fresh ceremony (a Groth16 proof only verifies
+// against the vk from the ceremony that produced it). Root and round-0
+// externalNullifier/nullifierHash are unchanged (they don't depend on the
+// ceremony), so those still match real_root()/real_external_nullifier_round0()
+// /real_nullifier_hash() above — only the vk and both proofs are new.
+// Regenerated via circuits/scripts/{compile,setup,prove}.sh with
+// circuits/input.example.json, and again with only `externalNullifier`
+// swapped to round 1's value (SHA-256(circle_id=0, round=1) mod r).
+
+fn round_reuse_verification_key(env: &Env) -> VerificationKey {
+    VerificationKey {
+        alpha: g1_from_coords(
+            env,
+            "1143665083818615041767541856901679869941278580726073286804430705884063101000208927402744730602695492653378282624984",
+            "748285674816982858737712297797680518627538282085945152802848359403901518206912094500745837398043271266919577629216",
+        ),
+        beta: g2_from_coords(
+            env,
+            "1113315217763957428180440386032056530560500269908411071856833723086353854194486402770390902151091121945866936100510",
+            "2760998709966299869370994344331715937455759219494562721872794295659218681364448418918962561937079434219314347702218",
+            "1801836595818797083031585320915177599078939049414790742001316069355994020350598448495334995469403868086698650116758",
+            "204186841581643251759671320883531956105595260061994136957779126769894364955590117334464172275793401578886899949590",
+        ),
+        gamma: g2_from_coords(
+            env,
+            "352701069587466618187139116011060144890029952792775240219908644239793785735715026873347600343865175952761926303160",
+            "3059144344244213709971259814753781636986470325476647558659373206291635324768958432433509563104347017837885763365758",
+            "1985150602287291935568054521177171638300868978215655730859378665066344726373823718423869104263333984641494340347905",
+            "927553665492332455747201965776037880757740193453592970025027978793976877002675564980949289727957565575433344219582",
+        ),
+        delta: g2_from_coords(
+            env,
+            "2425516649678713691278554565996641133352628810206908676831692313278065836574915397233395171095775864958097391271409",
+            "2219566770936465039531188467571068557153850032392430610063061701902587926544616603105408598080310710693185348061141",
+            "3353716483940990087809703601265584267158106420409108918030581670419469306301607904612432166606809764814831365178821",
+            "451961511606720924735761855712043158131196429578280427994017344116061467518760085592416200256545825791301061642097",
+        ),
+        ic: Vec::from_array(
+            env,
+            [
+                g1_from_coords(
+                    env,
+                    "2583722955058606480023614618224115544681427397366282963373853411758149422416599123211999205608797472753932752044931",
+                    "2277089169595602900544493160093025446558508622791409540342145781766044828489170857630774429434482637483444825187977",
+                ),
+                g1_from_coords(
+                    env,
+                    "2232186210069681320529344807621203229894328991222993849015747210779378457413466393569635413543283875310263194138563",
+                    "2439132622433380756393523393134242097300086551209684536346934880835099159116837019524272676455477459323244206046064",
+                ),
+                g1_from_coords(
+                    env,
+                    "937633315774964495372536440496988057244193397604656684717039902799418942341264241199515497041857189512372180038882",
+                    "1488644122379748194872562477765862836738933445252458037217457341926854804650810386051689121715472767160265403752323",
+                ),
+                g1_from_coords(
+                    env,
+                    "1857706103438354462367780395025149200939687896845180808195448343134378345262995063491000226821373865657641583931284",
+                    "819606822891256058698220415854708502066183244596733489098083313886280470201827343305141917943558148205715439208552",
+                ),
+            ],
+        ),
+    }
+}
+
+fn round_reuse_proof_round0(env: &Env) -> Proof {
+    Proof {
+        a: g1_from_coords(
+            env,
+            "248180271476573779982052430828815763402654173993477893084487178481653613451696253816826540430909445979272666656753",
+            "1726654572623216170877996725662292766987458234553563499767082430652419134601995876937881006911178672289039156405640",
+        ),
+        b: g2_from_coords(
+            env,
+            "2188557303759461558670750086788610607088329458797547319975922451785630997217687108031508076863755423146264181569495",
+            "3208680174316194780399022828071709631977405194294884678741170412450537800416727396534878298456564486331702476619743",
+            "106575994787976233811598101824350150438875400130834510353686553612575513417421054833345682176286149039822861277053",
+            "660141928006000080613213337320605502696286672571982829073901144481798779240678971908761015150436391973678381909897",
+        ),
+        c: g1_from_coords(
+            env,
+            "230133753952224692336982928899306578075264547639402914207469923973183917846314169624342251445795589245545569532281",
+            "3201842407752881471771749882804291693219859251182875698632663159804616208971873838561878362345966347024799515143571",
+        ),
+    }
+}
+
+fn round_reuse_proof_round1(env: &Env) -> Proof {
+    Proof {
+        a: g1_from_coords(
+            env,
+            "3111751482072092814735178414871434342560457219862833925600714605596967953895020128429002502832378348641952039789681",
+            "394430723763417132192644880686372844435604016284118678726959499693274773011033834459902047246938369957807186381282",
+        ),
+        b: g2_from_coords(
+            env,
+            "2405582312044095606944520131561422053123609681341903698442951637974695972478535160742587776725793684068574554146768",
+            "2227181376293242644657742277059093639640831471802372650863311762849604517388982748154146238344201071568415251625629",
+            "3373427607092519704478862452488697125823253032190100319473524196560092232201889428375217506343935560601697373177163",
+            "1100753122234739331868366508880645270728523162592506778143407955100077865329667072025422162079240378361349704704284",
+        ),
+        c: g1_from_coords(
+            env,
+            "1991031174096115083247725504766772121448891398757251410451787263083003801254277982375284516836167681744524609729351",
+            "405329845292242010215484577921319975969790832483947968143783980672681308684198726932490554526460590033640646828843",
+        ),
+    }
+}
+
+// Poseidon(identityNullifier, externalNullifier_round1) for the SAME
+// identity as real_nullifier_hash() — deliberately a different value
+// because externalNullifier changed, even though identityNullifier didn't.
+fn round_reuse_nullifier_hash_round1(env: &Env) -> Fr {
+    fr_from_dec_str(env, "49427450209661096950044132594013152139023072336714402456973658706693457893626")
 }
 
 fn create_token(env: &Env, admin: &Address) -> Address {
-    env.register_stellar_asset_contract_v2(admin.clone()).address()
+    env.register_stellar_asset_contract_v2(admin.clone())
+        .address()
 }
 
 fn expected_external_nullifier(env: &Env, circle_id: u64, round: u32) -> Fr {
@@ -241,7 +373,8 @@ fn claim_reverts_on_tampered_public_input() {
     // the real proof's actual output is real_nullifier_hash(); claiming
     // with a different nullifier_hash means the pairing check is being
     // asked to verify a statement the proof doesn't attest to.
-    let wrong_nullifier_hash = real_nullifier_hash(&s.env) + Fr::from_u256(U256::from_u32(&s.env, 1));
+    let wrong_nullifier_hash =
+        real_nullifier_hash(&s.env) + Fr::from_u256(U256::from_u32(&s.env, 1));
     let external_nullifier = real_external_nullifier_round0(&s.env);
     let proof = real_valid_proof(&s.env);
 
@@ -256,6 +389,12 @@ fn claim_reverts_on_tampered_public_input() {
 
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")] // RoundNotFunded
+// Ideally we'd pin pot == contribution*size - 1 (the single stroop
+    // short of full) as the tightest possible underfunded case. But `fund`
+    // only ever moves whole `contribution`-sized deposits — there's no way
+    // to land the pot on a non-multiple-of-contribution value through the
+    // public API. The tightest *reachable* underfunded state is one missing
+    // depositor, so that's what this test pins instead.
 fn claim_reverts_when_underfunded() {
     let s = setup(5, 100);
     let client = ContractClient::new(&s.env, &s.client_id);
@@ -273,6 +412,48 @@ fn claim_reverts_when_underfunded() {
     client.claim(
         &s.circle_id,
         &recipient,
+        &nullifier_hash,
+        &external_nullifier,
+        &proof,
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #2)")] // RoundNotFunded
+fn claim_immediately_after_round_advance_reverts() {
+    // Regression guard: after a successful claim, pot must reset to 0 and
+    // round 2 must require its own fresh funding — not silently inherit
+    // round 1's now-stale "fully funded" state.
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+
+    for m in s.members.iter() {
+        client.fund(&s.circle_id, m);
+    }
+
+    let recipient = Address::generate(&s.env);
+    let nullifier_hash = real_nullifier_hash(&s.env);
+    let external_nullifier = real_external_nullifier_round0(&s.env);
+    let proof = real_valid_proof(&s.env);
+
+    client.claim(
+        &s.circle_id,
+        &recipient,
+        &nullifier_hash,
+        &external_nullifier,
+        &proof,
+    );
+
+    let circle = client.get_circle(&s.circle_id);
+    assert_eq!(circle.pot, 0);
+    assert_eq!(circle.round, 1);
+
+    // No one has funded round 1 yet — this must revert with RoundNotFunded,
+    // not pay out against a stale/leftover pot value.
+    let recipient2 = Address::generate(&s.env);
+    client.claim(
+        &s.circle_id,
+        &recipient2,
         &nullifier_hash,
         &external_nullifier,
         &proof,
@@ -321,6 +502,90 @@ fn second_claim_with_same_nullifier_reverts() {
         &external_nullifier_1,
         &proof,
     );
+}
+
+// ---- Issue #91: current multi-round semantics ----
+//
+// This is the definitive answer to "can the same identity claim two
+// consecutive rounds today?" — YES. `nullifierHash = Poseidon(identityNullifier,
+// externalNullifier)` and externalNullifier is derived from `round`, so the
+// same identity produces a *different* nullifierHash each round, and the
+// contract's nullifier map is keyed per (circle_id, nullifier_hash) with no
+// round-independent identity tracking. Nothing here is a bug in the code
+// tested elsewhere in this file (WrongRoundTag/AlreadyClaimed both still work
+// correctly per-round) — it's a real gap: nothing currently stops one member
+// from claiming every single round of a cycle. See docs/ for the proposed fix.
+#[test]
+fn same_identity_can_claim_two_consecutive_rounds() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(Contract, ());
+    let client = ContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = create_token(&env, &token_admin);
+    let token_admin_client = token::StellarAssetClient::new(&env, &token);
+    let token_client = token::Client::new(&env, &token);
+
+    let root = real_root(&env);
+    let vk = round_reuse_verification_key(&env);
+    let contribution: i128 = 100;
+    let circle_id = client.create_circle(&admin, &token, &root, &contribution, &1u32, &vk);
+
+    // ---- round 0: fund and claim with the real identity ----
+    let funder = Address::generate(&env);
+    token_admin_client.mint(&funder, &contribution);
+    client.fund(&circle_id, &funder);
+
+    let nullifier_hash_r0 = real_nullifier_hash(&env);
+    let external_nullifier_r0 = real_external_nullifier_round0(&env);
+    let proof_r0 = round_reuse_proof_round0(&env);
+
+    assert!(!client.has_claimed(&circle_id, &nullifier_hash_r0));
+    let recipient_r0 = Address::generate(&env);
+    client.claim(
+        &circle_id,
+        &recipient_r0,
+        &nullifier_hash_r0,
+        &external_nullifier_r0,
+        &proof_r0,
+    );
+    assert!(client.has_claimed(&circle_id, &nullifier_hash_r0));
+    assert_eq!(token_client.balance(&recipient_r0), contribution);
+
+    let circle = client.get_circle(&circle_id);
+    assert_eq!(circle.round, 1);
+    assert_eq!(circle.pot, 0);
+
+    // ---- round 1: fund again, then claim again — same identity, no error ----
+    token_admin_client.mint(&funder, &contribution);
+    client.fund(&circle_id, &funder);
+
+    let nullifier_hash_r1 = round_reuse_nullifier_hash_round1(&env);
+    let external_nullifier_r1 = expected_external_nullifier(&env, circle_id, 1);
+    let proof_r1 = round_reuse_proof_round1(&env);
+
+    // Different round -> different nullifierHash for the SAME identity, so
+    // it reads as "never claimed" even though this identity already claimed
+    // round 0 above.
+    assert_ne!(nullifier_hash_r0, nullifier_hash_r1);
+    assert!(!client.has_claimed(&circle_id, &nullifier_hash_r1));
+
+    let recipient_r1 = Address::generate(&env);
+    client.claim(
+        &circle_id,
+        &recipient_r1,
+        &nullifier_hash_r1,
+        &external_nullifier_r1,
+        &proof_r1,
+    );
+
+    // The claim succeeded: no RoundNotFunded/WrongRoundTag/AlreadyClaimed/
+    // InvalidProof panic. Same identity, two rounds, two payouts.
+    assert!(client.has_claimed(&circle_id, &nullifier_hash_r1));
+    assert_eq!(token_client.balance(&recipient_r1), contribution);
+    assert_eq!(client.get_circle(&circle_id).round, 2);
 }
 
 #[test]
@@ -383,6 +648,29 @@ fn create_circle_requires_admin_auth() {
     let auths = env.auths();
     assert_eq!(auths.len(), 1);
     assert_eq!(auths[0].0, admin);
+}
+
+#[test]
+fn get_circle_count_tracks_next_circle_id() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(Contract, ());
+    let client = ContractClient::new(&env, &contract_id);
+
+    assert_eq!(client.get_circle_count(), 0);
+
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = create_token(&env, &token_admin);
+    let root = real_root(&env);
+    let vk = real_verification_key(&env);
+
+    client.create_circle(&admin, &token, &root, &100i128, &5u32, &vk);
+    assert_eq!(client.get_circle_count(), 1);
+
+    client.create_circle(&admin, &token, &root, &100i128, &5u32, &vk);
+    assert_eq!(client.get_circle_count(), 2);
 }
 
 #[test]
@@ -456,7 +744,13 @@ fn cpu_instruction_benchmarks() {
     let nullifier_hash = real_nullifier_hash(&env);
     let external_nullifier = real_external_nullifier_round0(&env);
     let proof = real_valid_proof(&env);
-    client.claim(&0u64, &recipient, &nullifier_hash, &external_nullifier, &proof);
+    client.claim(
+        &0u64,
+        &recipient,
+        &nullifier_hash,
+        &external_nullifier,
+        &proof,
+    );
     let claim_cpu = env.cost_estimate().budget().cpu_instruction_cost();
     std::println!("bench claim:         {claim_cpu} CPU instructions");
 
@@ -485,9 +779,7 @@ fn cpu_instruction_benchmarks() {
     ];
     let _ = Contract::verify_groth16(&env, &big_vk, &proof, &big_inputs);
     let large_ic_cpu = env.cost_estimate().budget().cpu_instruction_cost();
-    std::println!(
-        "bench verify_groth16 (5 public inputs / ic=6): {large_ic_cpu} CPU instructions"
-    );
+    std::println!("bench verify_groth16 (5 public inputs / ic=6): {large_ic_cpu} CPU instructions");
 }
 
 #[test]
@@ -619,10 +911,7 @@ fn cancel_refunds_partial_funders_and_closes_circle() {
     assert_eq!(circle_before.contributors.len(), 4);
 
     // Record balances before cancel.
-    let before: StdVec<i128> = funders
-        .iter()
-        .map(|f| token_client.balance(f))
-        .collect();
+    let before: StdVec<i128> = funders.iter().map(|f| token_client.balance(f)).collect();
 
     let _admin = client.get_circle(&s.circle_id).admin;
     client.cancel_circle(&s.circle_id);
