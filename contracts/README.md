@@ -2,11 +2,17 @@
 
 This directory contains the Soroban smart contracts for **Sharibo**, private rotating savings circles on Stellar. The payout of the shared pot is anonymized by a real Groth16 zero-knowledge proof, verified on-chain.
 
-The core implementation is located in [`contracts/sharibo/src/lib.rs`](sharibo/src/lib.rs), and its accompanying test suite is located in [`contracts/sharibo/src/test.rs`](sharibo/src/test.rs).
+| Method          | Kind  | Purpose                                                            |
+| --------------- | ----- | ------------------------------------------------------------------ |
+| `create_circle` | write | Admin creates a circle (Merkle root, contribution, size, vk).      |
+| `fund`          | write | Deposit one `contribution` into the current round's pot.           |
+| `claim`         | write | Pay the pot to `recipient` given a valid Groth16 membership proof. |
+| `get_circle`    | view  | Read circle state.                                                 |
+| `has_claimed`   | view  | Whether a nullifier has already been used in this circle.          |
 
 ---
 
-## 1. Building the Contracts
+`fund(circle_id, from)` requires only `from.require_auth()` — **any address may fund any circle**. The Merkle tree constrains who may _claim_, not who may _fund_.
 
 Before compiling the contracts, ensure you have the proper Rust toolchain installed.
 
@@ -30,17 +36,17 @@ The compiled WASM artifact will be generated at `target/wasm32v1-none/release/sh
 
 ---
 
-## 2. Testing the Contracts
+1. Iterates `circle.contributors` (addresses that funded the _current_ round, stored in insertion order) and transfers `contribution` back to each funder.
+2. Sets `circle.cancelled = true` and clears `circle.pot` and `contributors`.
+3. Permanently closes the circle: subsequent `fund` and `claim` calls revert with `Error::CircleCancelled`.
 
-The contract test suite utilizes Soroban's testing environment and verifies the full ZK-proof verification logic locally using test fixtures.
+**Privacy note**: contributor addresses are already public (funding is unshielded). Storing and iterating them for refunds imposes no additional privacy loss _today_. However it constrains a future shielded-funding design, which would need to avoid recording funder addresses on-chain — see issue #82.
 
 To execute the test suite, run the following command from the `contracts/` directory:
 
-```bash
-cargo test
-```
+`NextCircleId` lives in **instance storage** (`env.storage().instance()`). Soroban instance entries have a TTL measured in ledgers; once a TTL lapses the entry is _archived_ (removed from the live state) and can be restored later via `RestoreFootprintOp`.
 
-This will compile and run all the unit and benchmark tests (21 tests in total), including verification of happy path claims with a real Groth16 proof, authorization checks, and error condition tests.
+**What happens on testnet when instance storage is archived and restored?** After a successful `RestoreFootprintOp` the entry reappears with its last-written value intact — the counter does _not_ reset. The risk is the gap between archival and restoration: any `create_circle` call during that gap would reinitialise the counter to `0` (the `unwrap_or(0)` default), silently overwriting circle 0.
 
 ---
 

@@ -61,9 +61,7 @@ function parseCircomConstants(constantsPath) {
   const roundFlat = parseHexLiterals(extractCircomBranch(src, "CONSTANTS", T));
   const mdsFlat = parseHexLiterals(extractCircomBranch(src, "MATRIX", T));
   if (mdsFlat.length !== T * T) {
-    throw new Error(
-      `circom MATRIX(t=${T}): expected ${T * T} entries, got ${mdsFlat.length}`,
-    );
+    throw new Error(`circom MATRIX(t=${T}): expected ${T * T} entries, got ${mdsFlat.length}`);
   }
   const mds = [];
   for (let i = 0; i < T; i++) {
@@ -96,16 +94,12 @@ function hex(v) {
 
 function diffFlat(label, a, b) {
   if (a.length !== b.length) {
-    console.error(
-      `MISMATCH ${label}: count circom=${a.length} js=${b.length}`,
-    );
+    console.error(`MISMATCH ${label}: count circom=${a.length} js=${b.length}`);
     return false;
   }
   for (let i = 0; i < a.length; i++) {
     if (a[i] !== b[i]) {
-      console.error(
-        `MISMATCH ${label}[${i}]:\n  circom: ${hex(a[i])}\n  js:     ${hex(b[i])}`,
-      );
+      console.error(`MISMATCH ${label}[${i}]:\n  circom: ${hex(a[i])}\n  js:     ${hex(b[i])}`);
       return false;
     }
   }
@@ -119,9 +113,7 @@ function diffMds(a, b) {
   }
   for (let i = 0; i < a.length; i++) {
     if (a[i].length !== b[i].length) {
-      console.error(
-        `MISMATCH MDS[${i}]: cols circom=${a[i].length} js=${b[i].length}`,
-      );
+      console.error(`MISMATCH MDS[${i}]: cols circom=${a[i].length} js=${b[i].length}`);
       return false;
     }
     for (let j = 0; j < a[i].length; j++) {
@@ -138,23 +130,15 @@ function diffMds(a, b) {
 
 function main() {
   // Constants live in the file included by poseidon255.circom.
-  const circomMain = resolvePkgFile(
-    "poseidon-bls12381-circom",
-    "circuits/poseidon255.circom",
-  );
+  const circomMain = resolvePkgFile("poseidon-bls12381-circom", "circuits/poseidon255.circom");
   const circomDir = path.dirname(circomMain);
   const circomSrc = fs.readFileSync(circomMain, "utf8");
-  const includeMatch = /include\s+"(\.\/)?poseidon255_constants\.circom"\s*;/.exec(
-    circomSrc,
-  );
+  const includeMatch = /include\s+"(\.\/)?poseidon255_constants\.circom"\s*;/.exec(circomSrc);
   if (!includeMatch) {
     throw new Error(`${circomMain} does not include poseidon255_constants.circom`);
   }
   const constantsPath = path.join(circomDir, "poseidon255_constants.circom");
-  const jsPath = resolvePkgFile(
-    "poseidon-bls12381",
-    "src/instances/poseidon2.ts",
-  );
+  const jsPath = resolvePkgFile("poseidon-bls12381", "src/instances/poseidon2.ts");
 
   const circom = parseCircomConstants(constantsPath);
   const js = parseJsPoseidon2(jsPath);
