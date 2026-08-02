@@ -1,64 +1,49 @@
 # Contributing to Sharibo
 
-Thank you for your interest in contributing! Sharibo is a project for private rotating savings circles on Stellar, using zero-knowledge proofs to anonymize payouts. This guide covers setup, workflow, and PR expectations.
+Thank you for your interest in contributing to Sharibo! This document provides guidelines and information to help you get started.
 
-## Project orientation
+## Labels
 
-Sharibo is a full-stack application that combines a Circom/Groth16 zero-knowledge circuit, a Soroban smart contract, a TypeScript client SDK, and a browser demo. The project lives in an npm workspace at the repo root. For a high-level overview of the system, see the [README.md](README.md) and the [full product breakdown](full_product_breakdown.md).
+We use a set of topic labels to categorize issues and pull requests. These labels help maintainers and contributors understand the scope and nature of each issue.
 
-## Prerequisites
+### Topic Labels
 
-- **Node.js 20+** — [download](https://nodejs.org/)
-- **Rust** (latest stable) + **wasm32v1-none** target — [rustup](https://rustup.rs/), then `rustup target add wasm32v1-none`
-- **stellar CLI** — [installation guide](https://developers.stellar.org/docs/tools/cli/install-cli)
-- **circom 2.x** — [installation guide](https://docs.circom.io/getting-started/installation/)
+| Label | Description | Maps to |
+|-------|-------------|---------|
+| frontend | React demo app | `app/` |
+| sdk | TypeScript client SDK | `packages/client` |
+| contracts | Soroban smart contract | `contracts/` |
+| circuits | Circom circuit & ZK tooling | `circuits/` |
+| testing | Tests and test infrastructure | Various test directories |
+| dx | Developer experience & tooling | Tooling, scripts, configuration |
+| a11y | Accessibility | UI/UX components |
+| ux | User experience & polish | UI/UX components |
+| security | Security & robustness | Security-related code |
+| e2e | End-to-end script | `scripts/e2e.ts` |
+| refactor | Code structure improvements | Codebase-wide |
+| performance | Speed & resource usage | Performance-critical code |
+| roadmap | Larger feature from the roadmap | Planned features |
 
-## Setup
+### GitHub Default Labels
 
-1. Fork and clone the repo.
-2. Install dependencies at the root (this is an npm workspace):
+| Label | Description | Maps to |
+|-------|-------------|---------|
+| good first issue | Good for newcomers | Any area, suitable for new contributors |
+| documentation | Improvements or additions to documentation | `docs/`, README files, code comments |
+| bug | Something isn't working | Any area with defects |
+| duplicate | This issue or pull request already exists | N/A |
+| enhancement | New feature or request | Any area |
+| help wanted | Extra attention is needed | Any area needing help |
+| invalid | This doesn't seem right | N/A |
+| question | Further information is requested | N/A |
+| wontfix | This will not be worked on | N/A |
 
-```bash
-npm install
-```
+### Special Labels
 
-This installs everything in the workspace: `circuits/`, `packages/client/`, `scripts/`, and `app/`.
+| Label | Description | Maps to |
+|-------|-------------|---------|
+| Stellar Wave | Issues in the Stellar wave program | Stellar Wave program tasks |
 
-## Running tests
+## Picking an Issue
 
-### Circuit tests
-
-```bash
-cd circuits
-npm test
-```
-
-This runs the mocha/circom_tester suite (`circuits/test/membership.test.js`) — valid proof, wrong root, tampered path, nullifier determinism, and boolean checks.
-
-### Contract tests
-
-```bash
-cd contracts
-cargo test
-```
-
-This runs the Soroban contract test suite (`contracts/sharibo/src/test.rs`) — happy path with a real proof, underfunded, replay, stale round tag, forged public input, CPU budget, and auth checks.
-
-### End-to-end tests
-
-```bash
-npm run e2e
-```
-
-Runs the full round against Stellar testnet from the repo root. Requires a populated `.env` and the circuit build artifacts (`circuits/build/`). See the [README.md](README.md) for the full setup steps before running e2e.
-
-## Branch and PR conventions
-
-- Fork the repo and create a branch from `main` for each change.
-- Keep PRs small and focused — one logical change per PR.
-- Include a clear description of what you changed and what you tested.
-- If your PR touches circuits, include the circuit test results. If it touches the contract, include `cargo test` output. If it touches the e2e script, note the testnet run result.
-
-## Where to start
-
-New contributors looking for a first issue should look for issues tagged [good first issue](https://github.com/crackedstudio/sharibo/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22). These are well-scoped tasks suitable for getting familiar with the codebase.
+When looking for issues to work on, start by filtering by the `good first issue` label. These issues are specifically marked as suitable for newcomers and provide a great way to get familiar with the codebase. Before you start working on an issue, leave a comment to claim it and let the maintainers know you're working on it. If you have questions about the issue or need clarification, ask them directly on the issue rather than in a pull request—this helps keep the PR focused on the implementation.
