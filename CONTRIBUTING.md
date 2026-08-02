@@ -1,40 +1,64 @@
 # Contributing to Sharibo
 
-We welcome contributions! Please read and adhere to our [Code of Conduct](CODE_OF_CONDUCT.md).
+Thank you for your interest in contributing! Sharibo is a project for private rotating savings circles on Stellar, using zero-knowledge proofs to anonymize payouts. This guide covers setup, workflow, and PR expectations.
 
-## Quick start with `just`
+## Project orientation
 
-If you have [`just`](https://github.com/casey/just#installation) installed, a full local verification is one command away:
+Sharibo is a full-stack application that combines a Circom/Groth16 zero-knowledge circuit, a Soroban smart contract, a TypeScript client SDK, and a browser demo. The project lives in an npm workspace at the repo root. For a high-level overview of the system, see the [README.md](README.md) and the [full product breakdown](full_product_breakdown.md).
+
+## Prerequisites
+
+- **Node.js 20+** — [download](https://nodejs.org/)
+- **Rust** (latest stable) + **wasm32v1-none** target — [rustup](https://rustup.rs/), then `rustup target add wasm32v1-none`
+- **stellar CLI** — [installation guide](https://developers.stellar.org/docs/tools/cli/install-cli)
+- **circom 2.x** — [installation guide](https://docs.circom.io/getting-started/installation/)
+
+## Setup
+
+1. Fork and clone the repo.
+2. Install dependencies at the root (this is an npm workspace):
 
 ```bash
-just all        # circuits + contract + client typecheck + app build (everything except e2e)
+npm install
 ```
 
-Available recipes:
+This installs everything in the workspace: `circuits/`, `packages/client/`, `scripts/`, and `app/`.
 
-| Recipe       | What it runs                                                                 |
-|--------------|------------------------------------------------------------------------------|
-| `just circuits` | Compile the Circom circuit, run the Groth16 trusted setup, and run circuit tests |
-| `just contract` | Run `cargo test` and `stellar contract build` in `contracts/`                |
-| `just client`   | TypeScript typecheck (`tsc --noEmit`) for `packages/client/`                 |
-| `just e2e`      | Run the full end-to-end test against live Stellar testnet                    |
-| `just app`      | Start the Vite dev server for the browser demo                               |
-| `just all`      | Run all of the above except `e2e` (which consumes testnet friendbot quota)   |
+## Running tests
 
-> **`just` is optional.** Every recipe wraps the raw commands documented in
-> [README.md — Run it](README.md#run-it). You can follow those instructions
-> directly without installing anything extra.
+### Circuit tests
 
-## Running without `just`
+```bash
+cd circuits
+npm test
+```
 
-Follow the step-by-step instructions in [README.md](README.md#run-it). Each
-section (circuits, contract, e2e, app) gives the exact shell commands with no
-abstraction layer.
+This runs the mocha/circom_tester suite (`circuits/test/membership.test.js`) — valid proof, wrong root, tampered path, nullifier determinism, and boolean checks.
 
-## Other ways to help
+### Contract tests
 
-- [Open issues](https://github.com/crackedstudio/sharibo/issues) — bug reports,
-  feature requests, and good-first-issue tags.
-- Pull requests — please open an issue first to discuss the change.
-- Review the [roadmap](README.md#roadmap) and [honest limitations](README.md#honest-limitations)
-  for areas that need work.
+```bash
+cd contracts
+cargo test
+```
+
+This runs the Soroban contract test suite (`contracts/sharibo/src/test.rs`) — happy path with a real proof, underfunded, replay, stale round tag, forged public input, CPU budget, and auth checks.
+
+### End-to-end tests
+
+```bash
+npm run e2e
+```
+
+Runs the full round against Stellar testnet from the repo root. Requires a populated `.env` and the circuit build artifacts (`circuits/build/`). See the [README.md](README.md) for the full setup steps before running e2e.
+
+## Branch and PR conventions
+
+- Fork the repo and create a branch from `main` for each change.
+- Keep PRs small and focused — one logical change per PR.
+- Include a clear description of what you changed and what you tested.
+- If your PR touches circuits, include the circuit test results. If it touches the contract, include `cargo test` output. If it touches the e2e script, note the testnet run result.
+
+## Where to start
+
+New contributors looking for a first issue should look for issues tagged [good first issue](https://github.com/crackedstudio/sharibo/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22). These are well-scoped tasks suitable for getting familiar with the codebase.
