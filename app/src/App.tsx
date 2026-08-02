@@ -20,6 +20,7 @@ import {
   claim,
   getCircle,
   hasClaimed,
+  TREE_LEVELS,
   type Identity,
   type ContractProof,
 } from "@sharibo/client";
@@ -54,7 +55,7 @@ const NETWORK = {
   networkPassphrase: config.networkPassphrase,
 };
 const TOKEN = config.testTokenContractId;
-const LEVELS = 4;
+const LEVELS = TREE_LEVELS;
 const CIRCLE_SIZE = 5;
 const STROOPS_PER_XLM = 10_000_000n;
 const README_URL = "https://github.com/crackedstudio/sharibo#honest-limitations";

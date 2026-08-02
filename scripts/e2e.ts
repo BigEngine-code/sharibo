@@ -72,7 +72,6 @@ const TOKEN = config.testTokenContractId;
 const CONTRACT_ID = config.shariboContractId;
 const ADMIN_SECRET = config.adminSecretKey;
 
-const LEVELS = TREE_LEVELS;
 const CIRCLE_SIZE = 5;
 const CONTRIBUTION = 100_000_000n; // 10 XLM (7 decimals)
 const CLAIMANT_INDEX = 2;
