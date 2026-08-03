@@ -15,8 +15,7 @@
 import { poseidon2 } from "poseidon-bls12381";
 import { webcrypto } from "node:crypto";
 
-const FR_MODULUS =
-  0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001n;
+const FR_MODULUS = 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001n;
 
 function poseidon(a, b) {
   return poseidon2([a, b]);
@@ -94,9 +93,7 @@ function merkleProof(leafIndex) {
 }
 
 function bytesToBigInt(bytes) {
-  return BigInt(
-    "0x" + Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join(""),
-  );
+  return BigInt("0x" + Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join(""));
 }
 
 async function computeExternalNullifier(circleId, round) {

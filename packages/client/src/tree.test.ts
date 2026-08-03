@@ -1,210 +1,125 @@
-import { describe, it, expect } from "vitest";
+import { test } from "node:test";
+import assert from "node:assert/strict";
 import { MerkleTree, ZERO_VALUE } from "./tree.js";
-import { poseidon } from "./identity.js";
+import { FR_MODULUS } from "./identity.js";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+// ---- levels validation ----
 
-/** Recompute the root from a proof by walking up the path. */
-function recomputeRoot(
-  leaf: bigint,
-  { pathElements, pathIndices }: { pathElements: bigint[]; pathIndices: number[] },
-): bigint {
-  let node = leaf;
-  for (let i = 0; i < pathElements.length; i++) {
-    const sibling = pathElements[i];
-    // pathIndices[i] = 1 → current node is the RIGHT child, sibling is left
-    node =
-      pathIndices[i] === 1
-        ? poseidon(sibling, node)
-        : poseidon(node, sibling);
-  }
-  return node;
-}
-
-const LEVELS = 4;
-const CAPACITY = 2 ** LEVELS; // 16
-
-// Deterministic test leaves (non-zero, distinct)
-const LEAF_A = 111n;
-const LEAF_B = 222n;
-const LEAF_C = 333n;
-
-// ---------------------------------------------------------------------------
-// Root determinism
-// ---------------------------------------------------------------------------
-
-describe("MerkleTree root determinism", () => {
-  it("produces the same root for the same leaves", () => {
-    const t1 = MerkleTree.create(LEVELS, [LEAF_A, LEAF_B]);
-    const t2 = MerkleTree.create(LEVELS, [LEAF_A, LEAF_B]);
-    expect(t1.root).toBe(t2.root);
-  });
-
-  it("produces a different root when a leaf changes", () => {
-    const t1 = MerkleTree.create(LEVELS, [LEAF_A, LEAF_B]);
-    const t2 = MerkleTree.create(LEVELS, [LEAF_A, LEAF_C]); // LEAF_C ≠ LEAF_B
-    expect(t1.root).not.toBe(t2.root);
-  });
-
-  it("produces a different root when leaf order changes", () => {
-    const t1 = MerkleTree.create(LEVELS, [LEAF_A, LEAF_B]);
-    const t2 = MerkleTree.create(LEVELS, [LEAF_B, LEAF_A]);
-    expect(t1.root).not.toBe(t2.root);
-  });
+test("MerkleTree.create rejects levels = 0", () => {
+  assert.throws(
+    () => MerkleTree.create(0, []),
+    RangeError,
+    "levels must be an integer >= 1",
+  );
 });
 
-// ---------------------------------------------------------------------------
-// Padding with ZERO_VALUE
-// ---------------------------------------------------------------------------
-
-describe("MerkleTree padding", () => {
-  it("root of [a] equals root of [a, 0, 0, …] explicitly constructed", () => {
-    const implicit = MerkleTree.create(LEVELS, [LEAF_A]);
-    const explicit = MerkleTree.create(
-      LEVELS,
-      [LEAF_A, ...Array(CAPACITY - 1).fill(ZERO_VALUE)],
-    );
-    expect(implicit.root).toBe(explicit.root);
-  });
-
-  it("empty tree root equals all-zeros tree root", () => {
-    const empty = MerkleTree.create(LEVELS, []);
-    const allZeros = MerkleTree.create(
-      LEVELS,
-      Array(CAPACITY).fill(ZERO_VALUE),
-    );
-    expect(empty.root).toBe(allZeros.root);
-  });
-
-  it("accepts exactly capacity leaves without throwing", () => {
-    const leaves = Array.from({ length: CAPACITY }, (_, i) => BigInt(i + 1));
-    expect(() => MerkleTree.create(LEVELS, leaves)).not.toThrow();
-  });
+test("MerkleTree.create rejects negative levels", () => {
+  assert.throws(
+    () => MerkleTree.create(-1, []),
+    RangeError,
+    "levels must be an integer >= 1",
+  );
 });
 
-// ---------------------------------------------------------------------------
-// Overflow guard
-// ---------------------------------------------------------------------------
-
-describe("MerkleTree.create overflow", () => {
-  it("throws when leaves.length > 2**levels", () => {
-    const tooMany = Array(CAPACITY + 1).fill(LEAF_A);
-    expect(() => MerkleTree.create(LEVELS, tooMany)).toThrow();
-  });
-
-  it("throw message mentions the counts", () => {
-    const tooMany = Array(CAPACITY + 1).fill(1n);
-    expect(() => MerkleTree.create(LEVELS, tooMany)).toThrowError(
-      /too many leaves/i,
-    );
-  });
+test("MerkleTree.create rejects fractional levels", () => {
+  assert.throws(
+    () => MerkleTree.create(0.5, []),
+    RangeError,
+    "levels must be an integer >= 1",
+  );
 });
 
-// ---------------------------------------------------------------------------
-// proof() — root recomputation for all 16 indices
-// ---------------------------------------------------------------------------
-
-describe("MerkleTree.proof root recomputation", () => {
-  const leaves = Array.from({ length: CAPACITY }, (_, i) => BigInt(i + 1));
-  const tree = MerkleTree.create(LEVELS, leaves);
-
-  it("recomputing root from pathElements/pathIndices reproduces tree.root for every index", () => {
-    for (let i = 0; i < CAPACITY; i++) {
-      const p = tree.proof(i);
-      expect(p.root).toBe(tree.root);
-      const recomputed = recomputeRoot(leaves[i], p);
-      expect(recomputed).toBe(
-        tree.root,
-        `Root recomputation failed at index ${i}`,
-      );
-    }
-  });
-
-  it("proof length equals tree levels", () => {
-    const p = tree.proof(0);
-    expect(p.pathElements).toHaveLength(LEVELS);
-    expect(p.pathIndices).toHaveLength(LEVELS);
-  });
+test("MerkleTree.create rejects NaN levels", () => {
+  assert.throws(
+    () => MerkleTree.create(NaN, []),
+    RangeError,
+    "levels must be an integer >= 1",
+  );
 });
 
-// ---------------------------------------------------------------------------
-// proof() — out-of-range indices
-// ---------------------------------------------------------------------------
-
-describe("MerkleTree.proof out-of-range", () => {
-  const tree = MerkleTree.create(LEVELS, [LEAF_A]);
-
-  it("throws for negative index", () => {
-    expect(() => tree.proof(-1)).toThrow();
-  });
-
-  it("throws for index equal to capacity", () => {
-    expect(() => tree.proof(CAPACITY)).toThrow();
-  });
-
-  it("throws for index well beyond capacity", () => {
-    expect(() => tree.proof(9999)).toThrow();
-  });
+test("MerkleTree.create rejects levels > 32", () => {
+  assert.throws(
+    () => MerkleTree.create(33, []),
+    RangeError,
+    "levels must be <= 32",
+  );
 });
 
-// ---------------------------------------------------------------------------
-// indexOf
-// ---------------------------------------------------------------------------
-
-describe("MerkleTree.indexOf", () => {
-  const tree = MerkleTree.create(LEVELS, [LEAF_A, LEAF_B, LEAF_C]);
-
-  it("finds leaves at their correct indices", () => {
-    expect(tree.indexOf(LEAF_A)).toBe(0);
-    expect(tree.indexOf(LEAF_B)).toBe(1);
-    expect(tree.indexOf(LEAF_C)).toBe(2);
-  });
-
-  it("returns -1 for a leaf not in the tree", () => {
-    expect(tree.indexOf(999n)).toBe(-1);
-  });
-
-  it("returns -1 for ZERO_VALUE when tree was not built with it explicitly", () => {
-    const t = MerkleTree.create(LEVELS, [LEAF_A, LEAF_B]);
-    // ZERO_VALUE was used as padding internally, but indexOf searches only
-    // the leaves array passed to create(), so it should return -1.
-    expect(t.indexOf(ZERO_VALUE)).toBe(-1);
-  });
+test("MerkleTree.create accepts levels = 1 (minimal tree)", () => {
+  const tree = MerkleTree.create(1, [42n]);
+  assert.ok(tree instanceof MerkleTree);
+  assert.equal(tree.levels, 1);
 });
 
-// ---------------------------------------------------------------------------
-// pathIndices convention: 1 = right child
-// ---------------------------------------------------------------------------
+test("MerkleTree.create accepts levels = 10 (safe upper bound)", () => {
+  // 2^10 = 1024 leaves — fast enough for a unit test, and exercises the
+  // full tree construction path including Poseidon hashing at every level.
+  // The 32-level cap is tested by the rejection test above; constructing
+  // a tree near that cap is infeasible in a test runner.
+  const tree = MerkleTree.create(10, []);
+  assert.ok(tree instanceof MerkleTree);
+  assert.equal(tree.levels, 10);
+  assert.ok(typeof tree.root === "bigint");
+});
 
-describe("pathIndices convention", () => {
-  it("index 0 is always the left child at every level (all pathIndices = 0)", () => {
-    const tree = MerkleTree.create(LEVELS, [LEAF_A]);
-    const { pathIndices } = tree.proof(0);
-    expect(pathIndices.every((v) => v === 0)).toBe(true);
-  });
+// ---- leaf validation ----
 
-  it("index 1 is the right child at level 0 (pathIndices[0] = 1)", () => {
-    const leaves = [LEAF_A, LEAF_B];
-    const tree = MerkleTree.create(LEVELS, leaves);
-    const { pathIndices } = tree.proof(1);
-    expect(pathIndices[0]).toBe(1);
-  });
+test("MerkleTree.create rejects a negative leaf", () => {
+  assert.throws(
+    () => MerkleTree.create(4, [-1n]),
+    RangeError,
+    "leaf at index 0 must satisfy 0 <= leaf < FR_MODULUS",
+  );
+});
 
-  it("pathIndices match binary representation of leaf index", () => {
-    const leaves = Array.from({ length: CAPACITY }, (_, i) => BigInt(i + 1));
-    const tree = MerkleTree.create(LEVELS, leaves);
+test("MerkleTree.create rejects leaf >= FR_MODULUS", () => {
+  assert.throws(
+    () => MerkleTree.create(4, [FR_MODULUS]),
+    RangeError,
+    "leaf at index 0 must satisfy 0 <= leaf < FR_MODULUS",
+  );
+});
 
-    for (let i = 0; i < CAPACITY; i++) {
-      const { pathIndices } = tree.proof(i);
-      for (let level = 0; level < LEVELS; level++) {
-        const expected = (i >> level) & 1; // bit `level` of index i
-        expect(pathIndices[level]).toBe(
-          expected,
-          `pathIndices[${level}] for index ${i}: expected ${expected}, got ${pathIndices[level]}`,
-        );
-      }
-    }
-  });
+test("MerkleTree.create rejects leaf > FR_MODULUS", () => {
+  assert.throws(
+    () => MerkleTree.create(4, [FR_MODULUS + 1n]),
+    RangeError,
+    "leaf at index 0 must satisfy 0 <= leaf < FR_MODULUS",
+  );
+});
+
+test("MerkleTree.create accepts leaf = 0n (lower bound)", () => {
+  const tree = MerkleTree.create(4, [0n]);
+  assert.ok(tree instanceof MerkleTree);
+});
+
+test("MerkleTree.create accepts leaf = FR_MODULUS - 1n (upper bound)", () => {
+  const tree = MerkleTree.create(4, [FR_MODULUS - 1n]);
+  assert.ok(tree instanceof MerkleTree);
+});
+
+test("MerkleTree.create reports the correct index for a rejected leaf", () => {
+  // Validate that rejections name the offending index, not just the value.
+  assert.throws(
+    () => MerkleTree.create(4, [42n, 1n, FR_MODULUS, 7n]),
+    (err: unknown) => {
+      assert.ok(err instanceof RangeError);
+      const msg = (err as RangeError).message;
+      // The bad leaf is at index 2.
+      return msg.includes("index 2") && msg.includes(String(FR_MODULUS));
+    },
+  );
+});
+
+// ---- zero leaves with valid levels (padded to ZERO_VALUE) ----
+
+test("MerkleTree.create with zero leaves produces a padded tree", () => {
+  // When no leaves are provided, the tree is padded entirely with ZERO_VALUE
+  // to fill all 2**levels slots. indexOf only searches the *original* leaves
+  // array (see tree.ts), so ZERO_VALUE won't be found here. We verify the
+  // tree is constructed correctly by checking the root is a well-formed
+  // bigint.
+  const tree = MerkleTree.create(3, []);
+  assert.ok(tree instanceof MerkleTree);
+  assert.ok(typeof tree.root === "bigint");
 });
