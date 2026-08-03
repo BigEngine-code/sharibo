@@ -8,34 +8,77 @@ use soroban_sdk::{
     panic_with_error, token, vec, Address, Bytes, Env, Vec,
 };
 
+/// Groth16 verification key over BLS12-381.
+///
+/// Committed at circle creation time; every [`Self::claim`] proof is checked
+/// against this key. Encodes the trusted-setup output of the Semaphore-style
+/// circuit used by the off-chain prover.
 #[contracttype]
 #[derive(Clone)]
 pub struct VerificationKey {
+    /// `G1` element from the toxic-waste combination `[α]·G1`.
     pub alpha: G1Affine,
+    /// `G2` element `[β]·G2`.
     pub beta: G2Affine,
+    /// `G2` element `[γ]·G2` — the public-input gate.
     pub gamma: G2Affine,
+    /// `G2` element `[δ]·G2` — the private-witness gate.
     pub delta: G2Affine,
+    /// `vk_x` basis: `ic[0] + Σ pub_input_i · ic[i+1]`.
+    /// Length must be exactly `number_of_public_inputs + 1`.
     pub ic: Vec<G1Affine>,
 }
 
+/// A Groth16 proof over BLS12-381 produced by the off-chain prover.
+///
+/// The three group elements satisfy the standard pairing equation checked by
+/// [`Contract::verify_groth16`].
 #[contracttype]
 #[derive(Clone)]
 pub struct Proof {
+    /// `A` commitment (the `π_a` G1 element).
     pub a: G1Affine,
+    /// `B` commitment (the `π_b` G2 element).
     pub b: G2Affine,
+    /// `C` commitment (the `π_c` G1 element).
     pub c: G1Affine,
 }
 
+/// On-chain state for a single Semaphore-style contribution circle.
+///
+/// A circle is a fixed-size ring of members (commitment [`Self::root`]) who
+/// each contribute [`Self::contribution`] tokens per round. Once the pot is
+/// full, one member can claim the entire pot per round using a ZK proof that
+/// they are in the ring, with their nullifier preventing double-claims
+/// across rounds.
 #[contracttype]
 #[derive(Clone)]
 pub struct Circle {
+    /// Owner of the circle. Required to call [`Contract::cancel_circle`];
+    /// does **not** gate funding or claiming — those are permissionless
+    /// (fund) / zero-knowledge (claim).
     pub admin: Address,
+    /// SAC token contract used for contributions and payouts.
     pub token: Address,
+    /// Merkle root of the member-commitment tree. Committed at creation
+    /// and used as a public input to every [`Self::claim`] proof; binds
+    /// the set of members who are eligible to claim.
     pub root: Fr,
+    /// Amount each [`Contract::fund`] call deposits into [`Self::pot`].
+    /// All contributors pay the same fixed amount per round.
     pub contribution: i128,
+    /// Number of funders required to fill a round. `pot_target =
+    /// contribution * size`; [`Contract::claim`] requires exact equality.
     pub size: u32,
+    /// Current round number. Increments by 1 after each successful
+    /// [`Contract::claim`]. Binds the proof's external_nullifier so a
+    /// proof from round N cannot be replayed in round N+1.
     pub round: u32,
+    /// Tokens deposited for the **current** round. Zeroed out after a
+    /// successful claim or cancel (after refunds are issued).
     pub pot: i128,
+    /// Verification key for the ZK circuit — all claims in this circle
+    /// must prove against this key.
     pub vk: VerificationKey,
     /// Addresses that have funded the **current** round in order.
     /// Reset to empty after a successful `claim` or `cancel_circle`.
@@ -48,22 +91,40 @@ pub struct Circle {
     pub cancelled: bool,
 }
 
+/// Storage keys for the contract's persistent and instance storage.
+///
+/// Exposed publicly because callers that read storage directly (e.g. SDK
+/// indexers) need to know the exact `#[contracttype]` discriminants.
 #[contracttype]
 #[derive(Clone)]
 pub enum DataKey {
+    /// Instance-stored `u64` counter assigning the next free circle id.
     NextCircleId,
+    /// Persistent-stored [`Circle`] keyed by its assigned id.
     Circle(u64),
+    /// Persistent-stored `bool` marker: has `(circle_id, nullifier_hash)`
+    /// already been used in a successful [`Contract::claim`]? Prevents
+    /// double-claims across rounds.
     Nullifier(u64, Fr),
 }
 
+/// Revertable error codes for every public entrypoint.
+///
+/// All panics use `panic_with_error!` so the discriminant is surfaced to
+/// on-chain callers and off-chain simulations.
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum Error {
+    /// No [`Circle`] is stored at the requested `circle_id`.
     CircleNotFound = 1,
+    /// [`Contract::claim`] called before the pot reached `contribution * size`.
     RoundNotFunded = 2,
+    /// Proof's external_nullifier did not match `hash(circle_id, round)`.
     WrongRoundTag = 3,
+    /// Nullifier has already been used in a prior claim for this circle.
     AlreadyClaimed = 4,
+    /// Groth16 pairing check returned false.
     InvalidProof = 5,
     /// The round pot is already at `contribution * size`; further funds
     /// would permanently brick `claim`'s exact-equality check.
@@ -77,11 +138,59 @@ pub enum Error {
 const LEDGER_THRESHOLD: u32 = 100;
 const LEDGER_EXTEND_TO: u32 = 500_000;
 
+/// Sharibo contract: permissionless Semaphore-style contribution circles on
+/// Soroban.
+///
+/// # Lifecycle
+///
+/// 1. [`Self::create_circle`] — deployer commits a member root, fixed
+///    contribution/size, and Groth16 VK. Returns the new circle id.
+/// 2. [`Self::fund`] — any address deposits `contribution` tokens until the
+///    pot reaches `contribution * size`.
+/// 3. [`Self::claim`] — one eligible member (proves membership in the
+///    Merkle root via ZK) takes the entire pot; round advances.
+/// 4. (Escape hatch) [`Self::cancel_circle`] — admin refunds the current
+///    round's contributors and permanently closes the circle.
 #[contract]
 pub struct Contract;
 
 #[contractimpl]
 impl Contract {
+    /// Create a new contribution circle and return its assigned `circle_id`.
+    ///
+    /// # Authentication
+    ///
+    /// Requires `admin.require_auth()`. The admin is the only address that
+    /// may later [`Self::cancel_circle`]; they have no special power over
+    /// funding or claiming.
+    ///
+    /// # Arguments
+    ///
+    /// * `admin` — circle owner; can cancel. Stored in [`Circle::admin`].
+    /// * `token` — SAC token address for contributions/payouts. Stored in
+    ///   [`Circle::token`].
+    /// * `root` — Merkle root of the Semaphore commitment tree; binds who
+    ///   is eligible to claim. Stored in [`Circle::root`].
+    /// * `contribution` — fixed amount each [`Self::fund`] deposits.
+    ///   Stored in [`Circle::contribution`].
+    /// * `size` — number of funders needed to fill a round. `pot_target =
+    ///   contribution * size`. Stored in [`Circle::size`].
+    /// * `vk` — Groth16 verification key for the membership circuit.
+    ///   Stored in [`Circle::vk`].
+    ///
+    /// # State effects
+    ///
+    /// * Writes a fresh [`Circle`] at [`DataKey::Circle`]`(id)` with
+    ///   `round = 0`, `pot = 0`, empty contributors, `cancelled = false`.
+    /// * Increments [`DataKey::NextCircleId`] in instance storage.
+    /// * Extends both instance and persistent TTLs.
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint does not panic with any [`Error`] variant — it
+    /// performs no arithmetic on user-provided `contribution`/`size`.
+    /// Overflow is first possible in [`Self::fund`]/[`Self::claim`] where
+    /// `pot_target` is computed.
     pub fn create_circle(
         env: Env,
         admin: Address,
@@ -134,12 +243,35 @@ impl Contract {
 
     /// Deposit one `contribution` into the circle's pot for the current round.
     ///
-    /// **Open funding:** any address may call `fund` (only `from.require_auth()`
-    /// is required). The Merkle root constrains who may *claim*, not who may
-    /// *fund*. That lets a benefactor top up a community pot without being a
-    /// member. Once the pot reaches `contribution * size`, further deposits
-    /// are rejected with [`Error::RoundFull`] so over-funding cannot brick
-    /// `claim`'s exact-equality check. See `contracts/README.md`.
+    /// # Authentication
+    ///
+    /// Requires `from.require_auth()`. **Open funding:** the Merkle root
+    /// constrains who may *claim*, not who may *fund*. That lets a
+    /// benefactor top up a community pot without being a member.
+    ///
+    /// # Arguments
+    ///
+    /// * `circle_id` — which circle to contribute to.
+    /// * `from` — SAC token spender. Transfers [`Circle::contribution`]
+    ///   tokens to the contract and is appended to
+    ///   [`Circle::contributors`] for potential cancel-time refunds.
+    ///
+    /// # State effects
+    ///
+    /// * Transfers `contribution` tokens from `from` → contract via SAC.
+    /// * Adds `contribution` to [`Circle::pot`] using checked arithmetic.
+    /// * Pushes `from` onto [`Circle::contributors`].
+    /// * Writes the updated circle and extends TTLs.
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::CircleNotFound`] — `circle_id` does not exist.
+    /// * [`Error::CircleCancelled`] — circle was already cancelled.
+    /// * [`Error::RoundFull`] — pot already at `contribution * size`;
+    ///   over-funding would permanently brick [`Self::claim`]'s
+    ///   exact-equality check. See `contracts/README.md`.
+    /// * [`Error::Overflow`] — `contribution * size` (computed via
+    ///   `pot_target`) or `pot + contribution` overflows `i128`.
     pub fn fund(env: Env, circle_id: u64, from: Address) {
         from.require_auth();
 
@@ -160,7 +292,7 @@ impl Contract {
         }
 
         let token_client = token::Client::new(&env, &circle.token);
-        token_client.transfer(&from, &env.current_contract_address(), &circle.contribution);
+        token_client.transfer(&from, env.current_contract_address(), &circle.contribution);
 
         // Defensive: with RoundFull above, pot + contribution cannot exceed
         // target when target itself fits in i128. Still use checked_add so an
@@ -180,6 +312,73 @@ impl Contract {
             .extend_ttl(LEDGER_THRESHOLD, LEDGER_EXTEND_TO);
     }
 
+    /// Zero-knowledge payout: transfer the full round pot to `recipient`
+    /// after verifying membership in the circle's Merkle root.
+    ///
+    /// # Authentication
+    ///
+    /// No address-based auth — eligibility is proved in zero knowledge.
+    /// The recipient is unauthenticated: the prover chooses where funds
+    /// land. (The ZK circuit proves the caller knows the secret for a
+    /// commitment in the tree, which is the actual authorization check.)
+    ///
+    /// # Arguments
+    ///
+    /// * `circle_id` — which circle to claim from.
+    /// * `recipient` — SAC token payout address. Receives the full pot.
+    /// * `nullifier_hash` — unique per-claim marker computed from the
+    ///   prover's identity nullifier. Stored to prevent the same identity
+    ///   from claiming twice across any round.
+    /// * `external_nullifier` — public input binding the proof to this
+    ///   specific (circle, round) tuple. Must equal
+    ///   `compute_external_nullifier(circle_id, round)`; prevents replay
+    ///   of a valid proof from a different round or circle.
+    /// * `proof` — Groth16 `(A, B, C)` triple over BLS12-381.
+    ///
+    /// # Verification steps (in order)
+    ///
+    /// 1. **Round fully funded.** `pot == contribution * size` exactly —
+    ///    not ≥. Partial pots cannot be partially claimed; the round must
+    ///    be complete, or else the admin must `cancel_circle` and refund.
+    ///    Reverts with [`Error::RoundNotFunded`].
+    ///
+    /// 2. **External nullifier matches current round.** Computed
+    ///    off-chain by calling [`Self::compute_external_nullifier`] on
+    ///    `(circle_id, round)`; a mismatch means the proof was created
+    ///    for a different round/circle and cannot be replayed here.
+    ///    Reverts with [`Error::WrongRoundTag`].
+    ///
+    /// 3. **Nullifier unused.** A per-circle set stores every
+    ///    `nullifier_hash` from a successful claim. Hitting an existing
+    ///    entry means this identity already claimed (in any prior round)
+    ///    and is trying to double-spend. Reverts with
+    ///    [`Error::AlreadyClaimed`].
+    ///
+    /// 4. **Groth16 proof verifies.** Standard pairing check against the
+    ///    circle's [`VerificationKey`] with public inputs
+    ///    `(nullifier_hash, root, external_nullifier)`. Reverts with
+    ///    [`Error::InvalidProof`].
+    ///
+    /// # State effects
+    ///
+    /// * Sets [`DataKey::Nullifier`]`(circle_id, nullifier_hash) = true`
+    ///   and extends TTL — idempotent double-claim fence.
+    /// * Transfers the entire [`Circle::pot`] to `recipient` via the
+    ///   token client.
+    /// * Zeros [`Circle::pot`], increments [`Circle::round`], clears
+    ///   [`Circle::contributors`], and writes the updated circle back.
+    /// * Extends both instance and persistent TTLs.
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::CircleNotFound`] — `circle_id` does not exist.
+    /// * [`Error::CircleCancelled`] — circle was already cancelled.
+    /// * [`Error::RoundNotFunded`] — check 1 failed.
+    /// * [`Error::WrongRoundTag`] — check 2 failed.
+    /// * [`Error::AlreadyClaimed`] — check 3 failed.
+    /// * [`Error::InvalidProof`] — check 4 failed.
+    /// * [`Error::Overflow`] — computing `contribution * size` overflows
+    ///   `i128` (absurd parameters set at circle creation).
     pub fn claim(
         env: Env,
         circle_id: u64,
@@ -205,7 +404,8 @@ impl Contract {
         }
 
         // 2. the proof's external_nullifier must be bound to this exact circle+round
-        let expected_external_nullifier = Self::compute_external_nullifier(&env, circle_id, circle.round);
+        let expected_external_nullifier =
+            Self::compute_external_nullifier(&env, circle_id, circle.round);
         if external_nullifier != expected_external_nullifier {
             panic_with_error!(&env, Error::WrongRoundTag);
         }
@@ -248,6 +448,24 @@ impl Contract {
             .extend_ttl(LEDGER_THRESHOLD, LEDGER_EXTEND_TO);
     }
 
+    /// Look up a [`Circle`] by its assigned id.
+    ///
+    /// # Authentication
+    ///
+    /// None — pure read, available to any caller.
+    ///
+    /// # Arguments
+    ///
+    /// * `circle_id` — id returned from [`Self::create_circle`].
+    ///
+    /// # Returns
+    ///
+    /// A full [`Circle`] struct (including the embedded [`VerificationKey`]
+    /// and current-round [`Circle::contributors`]).
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::CircleNotFound`] — no circle stored at `circle_id`.
     pub fn get_circle(env: Env, circle_id: u64) -> Circle {
         env.storage()
             .persistent()
@@ -255,9 +473,32 @@ impl Contract {
             .unwrap_or_else(|| panic_with_error!(&env, Error::CircleNotFound))
     }
 
+    /// Pure read: the current count of circles ever created (i.e. the next
+    /// circle id that would be assigned). 0 if no circle has been created yet.
+    pub fn get_circle_count(env: Env) -> u64 {
+        env.storage()
+            .instance()
+            .get(&DataKey::NextCircleId)
+            .unwrap_or(0)
+    }
+
     /// Pure read: whether `nullifier_hash` has already been used to claim in
     /// this circle. Mirrors the storage lookup in [`Self::claim`] so wallets
     /// can check eligibility without submitting a failing transaction.
+    ///
+    /// # Authentication
+    ///
+    /// None — pure read.
+    ///
+    /// # Arguments
+    ///
+    /// * `circle_id` — circle the caller wants to claim from.
+    /// * `nullifier_hash` — identity nullifier to probe.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the nullifier has ever been used in a successful claim for
+    /// this circle (any round); the associated identity cannot claim again.
     pub fn has_claimed(env: Env, circle_id: u64, nullifier_hash: Fr) -> bool {
         env.storage()
             .persistent()
@@ -266,6 +507,11 @@ impl Contract {
 
     /// Admin-only: cancel a stuck circle and refund all current-round
     /// contributors in FIFO order.
+    ///
+    /// # Authentication
+    ///
+    /// Requires [`Circle::admin`]`.require_auth()`. Only the admin set at
+    /// circle creation can cancel.
     ///
     /// **When to use**: a circle where a member disappears and the pot will
     /// never reach the full target. Without this, contributed tokens are
@@ -276,8 +522,24 @@ impl Contract {
     /// However, per-contributor storage constrains any future shielded-funding
     /// design — see issue #82.
     ///
-    /// After cancellation the circle is permanently closed:
-    /// further `fund` and `claim` calls revert with `Error::CircleCancelled`.
+    /// # Arguments
+    ///
+    /// * `circle_id` — the circle to cancel.
+    ///
+    /// # State effects
+    ///
+    /// * Transfers `contribution` tokens back to each address in
+    ///   [`Circle::contributors`] in order.
+    /// * Zeros [`Circle::pot`], sets [`Circle::cancelled`] = `true`, clears
+    ///   [`Circle::contributors`].
+    /// * Writes the updated circle and extends TTL. After this the circle
+    ///   is permanently closed: further [`Self::fund`] and [`Self::claim`]
+    ///   calls revert with [`Error::CircleCancelled`].
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::CircleNotFound`] — `circle_id` does not exist.
+    /// * [`Error::CircleCancelled`] — circle was already cancelled.
     pub fn cancel_circle(env: Env, circle_id: u64) {
         let key = DataKey::Circle(circle_id);
         let mut circle: Circle = env
@@ -355,14 +617,14 @@ impl Contract {
         }
 
         let neg_a = -proof.a.clone();
-        let vp1 = vec![
+        let vp1 = vec![env, neg_a, vk.alpha.clone(), vk_x, proof.c.clone()];
+        let vp2 = vec![
             env,
-            neg_a,
-            vk.alpha.clone(),
-            vk_x,
-            proof.c.clone(),
+            proof.b.clone(),
+            vk.beta.clone(),
+            vk.gamma.clone(),
+            vk.delta.clone(),
         ];
-        let vp2 = vec![env, proof.b.clone(), vk.beta.clone(), vk.gamma.clone(), vk.delta.clone()];
 
         bls.pairing_check(vp1, vp2)
     }
