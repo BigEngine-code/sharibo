@@ -10,6 +10,7 @@ curl -s https://horizon-testnet.stellar.org/transactions/2258397474e3ad420d6dd83
 ```
 
 **Expected output:**
+
 ```
   "successful": true,
   "ledger": 3379702,
@@ -26,6 +27,7 @@ stellar contract invoke \
 ```
 
 **Expected output (abbreviated):**
+
 ```
 {"admin":"G...","contribution":"50000000","pot":"50000000","round":1,"size":1,"token":"CDLZ...","vk":{...}}
 ```
@@ -38,13 +40,13 @@ stellar contract invoke \
 npm run e2e
 ```
 
-This script funds a fresh 5-member circle, submits a real proof, claims to a brand-new address, then deliberately replays the *same* proof's nullifier against a newly funded round and asserts that the contract rejects it with `Error(Contract, #4)` (`AlreadyClaimed`). If any of this were faked, this script would fail loudly — it asserts on live testnet responses, not local state.
+This script funds a fresh 5-member circle, submits a real proof, claims to a brand-new address, then deliberately replays the _same_ proof's nullifier against a newly funded round and asserts that the contract rejects it with `Error(Contract, #4)` (`AlreadyClaimed`). If any of this were faked, this script would fail loudly — it asserts on live testnet responses, not local state.
 
 ## 4. Or just look
 
 - Contract: https://stellar.expert/explorer/testnet/contract/CB64IZIBBSPUY63UMIVACKWDKRFNH6WJ2EPAOLM7QR4ZI6IJOT4N2LCF — five deposits in, one payout out, no visible link between them.
 - Live app (click through the whole flow yourself, generating your own proof in your own browser): see the README's "live app" link.
 
-## What this does *not* prove
+## What this does _not_ prove
 
 Verifying these transactions confirms the contract genuinely checked a real Groth16/BLS12-381 pairing on-chain — it doesn't independently re-audit the circuit's constraint logic or the Poseidon parameter provenance. For that depth, see `full_product_breakdown.md` §6 and §18, and the full circuit/contract test suites (`circuits/test/`, `contracts/sharibo/src/test.rs`), both runnable from source per the main README.

@@ -2,6 +2,21 @@
   "name": "@sharibo/circuits",
   "version": "0.0.0",
   "private": true,
+  "description": "Zero-knowledge circuits for Sharibo ROSCA platform",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/crackedstudio/sharibo.git",
+    "directory": "circuits"
+  },
+  "keywords": [
+    "stellar",
+    "soroban",
+    "zk",
+    "groth16",
+    "circom",
+    "circuits"
+  ],
   "scripts": {
     "check-constants": "node scripts/check-poseidon-constants.mjs",
     "compile": "npm run check-constants && bash scripts/compile.sh",

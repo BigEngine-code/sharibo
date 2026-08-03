@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Powers-of-Tau (bn128) + Groth16 trusted setup for the Sharibo circuit.
+# Powers-of-Tau (bls12381) + Groth16 trusted setup for the Sharibo circuit.
 #
 # This is a hackathon-demo trusted setup: single contributor, random entropy
 # from /dev/urandom. Real deployments would run a multi-party ceremony. See
