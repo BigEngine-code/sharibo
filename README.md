@@ -20,7 +20,7 @@ Built for the **Stellar Hacks: Real-World ZK** hackathon. Testnet only, no real 
   "fps=12,scale=960:-1" demo.gif`, keep it under ~8 MB.
 ─────────────────────────────────────────────────────────────── -->
 
-**[▶ demo video](YOUR_VIDEO_URL)** · **[🚀 live app (testnet)](https://dist-flax-three-43.vercel.app)** · **[📖 full product breakdown](full_product_breakdown.md)** · **[🛠 build log](NOTES.md)** · **[🤝 contributing](CONTRIBUTING.md)**
+**[▶ demo video](YOUR_VIDEO_URL)** · **[🚀 live app (testnet)](https://dist-flax-three-43.vercel.app)** · **[📖 full product breakdown](full_product_breakdown.md)** · **[🛠 build log](NOTES.md)** · **[🧭 troubleshooting](docs/troubleshooting.md)** · **[🤝 contributing](CONTRIBUTING.md)**
 
 ---
 
@@ -178,6 +178,8 @@ Circuit: `circuits/membership.circom`. Contract: `contracts/sharibo/src/lib.rs`.
 ## Run it
 
 Fresh-machine steps, in order. Everything below targets **Stellar testnet only**.
+
+> Setup a problem? See [docs/troubleshooting.md](docs/troubleshooting.md).
 
 ### 0. Prerequisites
 
