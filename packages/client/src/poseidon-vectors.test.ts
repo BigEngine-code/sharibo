@@ -22,10 +22,7 @@ test("poseidon2 pair vectors match the committed fixture", () => {
 
 test("commitment example matches the committed fixture", () => {
   const { identityNullifier, identitySecret, commitment } = vectors.commitmentExample;
-  assert.equal(
-    poseidon(BigInt(identityNullifier), BigInt(identitySecret)).toString(),
-    commitment,
-  );
+  assert.equal(poseidon(BigInt(identityNullifier), BigInt(identitySecret)).toString(), commitment);
 });
 
 test("nullifierHash example matches the committed fixture", () => {

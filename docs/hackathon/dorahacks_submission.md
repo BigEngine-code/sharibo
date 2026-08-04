@@ -18,15 +18,16 @@ Sharibo — a private rotating savings circle (ajo / tanda / susu / tontine) on 
 
 ## Evidence (testnet, verifiable without installing anything)
 
-| What | Where |
-|---|---|
-| Sharibo contract | `CB64IZIBBSPUY63UMIVACKWDKRFNH6WJ2EPAOLM7QR4ZI6IJOT4N2LCF` |
+| What                         | Where                                                                 |
+| ---------------------------- | --------------------------------------------------------------------- |
+| Sharibo contract             | `CB64IZIBBSPUY63UMIVACKWDKRFNH6WJ2EPAOLM7QR4ZI6IJOT4N2LCF`            |
 | Real proof accepted on-chain | tx `2258397474e3ad420d6dd8310cb0976d270c29ec4a4ec2b60a9ae58408088087` |
-| Tampered proof rejected | `Error(Contract, #5)` `InvalidProof` |
-| Nullifier replay rejected | `Error(Contract, #4)` `AlreadyClaimed` |
-| Test suite | 5/5 circuit, 8/8 contract, full e2e passing on live testnet |
+| Tampered proof rejected      | `Error(Contract, #5)` `InvalidProof`                                  |
+| Nullifier replay rejected    | `Error(Contract, #4)` `AlreadyClaimed`                                |
+| Test suite                   | 5/5 circuit, 8/8 contract, full e2e passing on live testnet           |
 
 Verify the accepted transaction yourself in one command:
+
 ```bash
 curl -s https://horizon-testnet.stellar.org/transactions/2258397474e3ad420d6dd8310cb0976d270c29ec4a4ec2b60a9ae58408088087 | grep -E '"successful"|"ledger"'
 ```
