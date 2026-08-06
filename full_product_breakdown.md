@@ -352,7 +352,7 @@ sharibo/
 ├── app/                 React + Vite browser demo
 ├── README.md            the pitch: what it does, architecture, run steps, honest limitations
 ├── NOTES.md             the raw build/decision log — what was discovered, when, and why
-├── hackathon_demo_script.md   60-second demo video script (motion + voiceover)
+├── docs/hackathon/hackathon_demo_script.md   60-second demo video script (motion + voiceover)
 └── full_product_breakdown.md  this file
 ```
 

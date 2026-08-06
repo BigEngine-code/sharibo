@@ -334,10 +334,10 @@ sharibo/
 ├── README.md            this file
 ├── NOTES.md             the raw build/decision log — what was discovered, when, and why
 ├── full_product_breakdown.md  every facet of the system, in detail
-└── hackathon_demo_script.md   demo video script (motion + voiceover)
+└── docs/hackathon/hackathon_demo_script.md   demo video script (motion + voiceover)
 ```
 
-Full annotated version (what each file does and why): [breakdown §16](full_product_breakdown.md#16-repository-structure).
+Full annotated version (what each file does and why): [breakdown §16](full_product_breakdown.md#16-repository-structure). See also [docs/index.md](docs/index.md) for a complete documentation index.
 
 ## Contributing
 
