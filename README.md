@@ -208,6 +208,8 @@ Circuit: `circuits/membership.circom`. Contract: `contracts/sharibo/src/lib.rs`.
 
 Fresh-machine steps, in order. Everything below targets **Stellar testnet only**.
 
+> Setup a problem? See [docs/troubleshooting.md](docs/troubleshooting.md).
+
 ### 0. Prerequisites
 
 | Tool | Minimum | Tested |
