@@ -1110,3 +1110,36 @@ fn instance_ttl_extended_after_create_fund_claim() {
     let circle = client.get_circle(&0u64);
     assert_eq!(circle.round, 1, "claim should have advanced round to 1");
 }
+
+// ---- Proptest: apply_fee rounding invariant ----
+//
+// For every (amount, fee_bps) pair in the valid domain, the split must be
+// lossless: fee + net == amount exactly.  Integer truncation in
+// `fee = fee_bps * amount / 10_000` means `fee` rounds *down*, but the
+// remainder always lands entirely in `net` — no tokens are created or lost.
+//
+// Domain:
+//   amount  : 0 ..= i128::MAX / 2   (avoids intermediate multiplication
+//              overflow in fee_bps * amount, since fee_bps ≤ 10_000 and
+//              10_000 * (i128::MAX / 2) < i128::MAX)
+//   fee_bps : 0 ..= 10_000          (0% – 100%, the full valid range)
+mod proptest_apply_fee {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn fee_plus_net_equals_amount(
+            amount  in 0_i128..=(i128::MAX / 2),
+            fee_bps in 0_u32..=10_000_u32,
+        ) {
+            let (fee, net) = apply_fee(fee_bps, amount);
+            prop_assert_eq!(
+                fee + net,
+                amount,
+                "apply_fee({}, {}) = ({}, {}); fee + net = {}",
+                fee_bps, amount, fee, net, fee + net
+            );
+        }
+    }
+}
