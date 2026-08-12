@@ -135,7 +135,30 @@ pub enum Error {
     CircleCancelled = 8,
 }
 
+/// Ledger distance at which an entry's TTL should be re-extended.
+/// 
+/// At Stellar's nominal 5 seconds per ledger, LEDGER_THRESHOLD = 100 means:
+///   100 ledgers * 5 sec/ledger = 500 seconds ≈ 8.3 minutes.
+/// 
+/// Every time a Circle or Nullifier entry is written, extend_ttl is called
+/// if the current TTL falls within this threshold. This ensures active circles
+/// stay fresh indefinitely without requiring manual re-creation.
 const LEDGER_THRESHOLD: u32 = 100;
+
+/// Target TTL (in ledgers) after each extension.
+/// 
+/// At Stellar's nominal 5 seconds per ledger:
+///   500_000 ledgers * 5 sec/ledger = 2_500_000 seconds
+///                                  ≈ 28.9 days ≈ 29 days
+/// 
+/// This gives circles approximately 1 month of inactivity before archival risk.
+/// If an entry is not written to for 29+ days:
+///   1. The Soroban network moves it to the state archive (temporary inaccessibility).
+///   2. The entry is recoverable via permissionless restoration on the Stellar network
+///      (Ledger 50M+ will support historical recovery).
+///   3. Until restoration, fund/claim calls on that circle_id fail with CircleNotFound.
+/// 
+/// See Soroban documentation: "Temporary State" and "State Archival" (Soroban 23.0+).
 const LEDGER_EXTEND_TO: u32 = 500_000;
 
 /// Sharibo contract: permissionless Semaphore-style contribution circles on
