@@ -98,6 +98,52 @@ export function explorerTxUrl(hash: string, networkPassphrase: string): string {
   return `https://${subdomain}stellar.expert/explorer/tx/${hash}`;
 }
 
+/**
+ * Retries a transient-failure-prone RPC operation with exponential backoff.
+ *
+ * Only retries on transient HTTP errors (429, 500, 502, 503, 504, timeout,
+ * fetch failures). Non-transient errors are surfaced immediately.
+ *
+ * @param fn - The async factory function to retry (must be idempotent for the
+ *   simulate phase — retrying signAndSend is never safe and is not attempted).
+ * @param opts.retries - Maximum number of retry attempts (default: 3).
+ * @param opts.baseMs - Base delay in milliseconds for exponential backoff (default: 500).
+ */
+export async function withRetry<T = any>(
+  fn: () => Promise<T>,
+  opts: { retries?: number; baseMs?: number } = {},
+): Promise<T> {
+  const retries = opts.retries ?? 3;
+  const baseMs = opts.baseMs ?? 500;
+
+  let attempt = 0;
+  while (true) {
+    try {
+      return await fn();
+    } catch (error: unknown) {
+      if (attempt >= retries) throw error;
+
+      const msg = ((error as { message?: string })?.message ?? String(error)).toLowerCase();
+      const isTransient =
+        msg.includes("429") ||
+        msg.includes("500") ||
+        msg.includes("502") ||
+        msg.includes("503") ||
+        msg.includes("504") ||
+        msg.includes("timeout") ||
+        msg.includes("connection reset") ||
+        msg.includes("fetch failed");
+
+      if (!isTransient) throw error;
+
+      attempt++;
+      const jitter = 0.5 + Math.random() * 0.5;
+      const delay = baseMs * Math.pow(2, attempt - 1) * jitter;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
 function populateTxResult<T>(
   result: T,
   sent: { sendTransactionResponse: { hash: string }; getTransactionResponse?: { ledger?: number; feeCharged?: string } },

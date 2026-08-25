@@ -214,5 +214,10 @@ function installIndicator(): void {
   else document.addEventListener("DOMContentLoaded", add, { once: true });
 }
 
-installIndicator();
-prefetchMembershipArtifacts();
+// Auto-install and auto-prefetch only in a browser environment. In Node,
+// callers will either supply explicit paths or call prefetch manually with an absolute URL.
+if (typeof window !== "undefined" && typeof document !== "undefined") {
+  installIndicator();
+  prefetchMembershipArtifacts().catch(() => {});
+}
+
