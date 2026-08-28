@@ -27,6 +27,7 @@ import {
   RpcError,
   ProvingError,
   InvalidInputError,
+  describeError,
 } from "@sharibo/client";
 import { config, configError } from "./config";
 import { useI18n } from "./i18n";
@@ -104,6 +105,19 @@ function toUiError(error: unknown): string {
   }
 
   return "Something went wrong. Please retry.";
+}
+
+// Same shape as toUiError, but additionally recognizes Sharibo contract
+// rejections — the raw `Error(Contract, #4)` Soroban surfaces gets rendered
+// as "AlreadyClaimed: this proof's nullifier was already used; ..." via
+// describeError() (packages/client/src/errors.ts) instead of the bare error
+// code. Falls back to the same Friendbot special-case and raw-message
+// behavior as toUiError for anything that isn't a recognized contract error.
+function getErrorMessage(error: unknown): string {
+  if (error instanceof FriendbotRetryableError) {
+    return FRIEND_BOT_RATE_LIMIT_MESSAGE;
+  }
+  return describeError(error);
 }
 
 function explorerAccount(address: string): string {
