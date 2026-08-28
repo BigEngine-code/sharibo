@@ -215,4 +215,3 @@ function installIndicator(): void {
 }
 
 installIndicator();
-prefetchMembershipArtifacts();
