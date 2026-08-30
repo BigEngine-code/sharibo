@@ -42,6 +42,7 @@ import {
   claim,
   getCircle,
   TREE_LEVELS,
+  xlmToStroops,
   ContractError,
 } from "@sharibo/client";
 import { checkContractDeployed } from "./testnet-health.js";
@@ -74,7 +75,7 @@ const CONTRACT_ID = config.shariboContractId;
 const ADMIN_SECRET = config.adminSecretKey;
 
 const CIRCLE_SIZE = 5;
-const CONTRIBUTION = 100_000_000n; // 10 XLM (7 decimals)
+const CONTRIBUTION = xlmToStroops(10);
 const CLAIMANT_INDEX = 2;
 
 // --- Timing utility ---

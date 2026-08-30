@@ -36,6 +36,30 @@ import type {
 export const FR_MODULUS =
   0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001n;
 
+export function xlmToStroops(xlm: number | bigint | string): bigint {
+  if (typeof xlm === "bigint") return xlm * STROOPS_PER_XLM;
+  const value = typeof xlm === "number" ? xlm.toString() : xlm.trim();
+  const negative = value.startsWith("-");
+  const [wholePart, fractionalPart = ""] = value.replace(/^[+-]/, "").split(".");
+  const whole = BigInt(wholePart || "0");
+  const fraction = fractionalPart.padEnd(7, "0").slice(0, 7);
+  let result = whole * STROOPS_PER_XLM + BigInt(fraction || "0");
+  if (fractionalPart.length > 7 && fractionalPart[7] >= "5") result += 1n;
+  return negative ? -result : result;
+}
+
+export function stroopsToXlm(stroops: bigint): bigint {
+  return stroops / STROOPS_PER_XLM;
+}
+
+export function formatXlm(stroops: bigint): string {
+  const negative = stroops < 0n;
+  const absolute = negative ? -stroops : stroops;
+  const whole = absolute / STROOPS_PER_XLM;
+  const fraction = (absolute % STROOPS_PER_XLM).toString().padStart(7, "0");
+  return `${negative ? "-" : ""}${whole}.${fraction}`;
+}
+
 export const randomFieldElement = vi.fn((): bigint => 42n);
 
 export const poseidon = vi.fn((a: bigint, b: bigint): bigint => a ^ b);

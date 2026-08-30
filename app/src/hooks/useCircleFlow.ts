@@ -11,9 +11,10 @@ import {
   fund,
   claim,
   getCircle,
+  xlmToStroops,
   type ContractProof,
 } from "@sharibo/client";
-import { NETWORK, TOKEN, LEVELS, CIRCLE_SIZE, STROOPS_PER_XLM } from "../config.js";
+import { NETWORK, TOKEN, LEVELS, CIRCLE_SIZE } from "../config.js";
 import { friendbotFund } from "../lib/friendbot.js";
 import type { Member, ClaimResult } from "../types.js";
 
@@ -44,7 +45,7 @@ export function useCircleFlow() {
   // just left — it keeps living on-chain even though the UI has moved on.
   const [previousCircleId, setPreviousCircleId] = useState<bigint | null>(null);
 
-  const contribution = BigInt(contributionXlm) * STROOPS_PER_XLM;
+  const contribution = xlmToStroops(contributionXlm);
   const fundedCount = members.filter((m) => m.funded).length;
   const fullyFunded = pot === contribution * BigInt(CIRCLE_SIZE);
 

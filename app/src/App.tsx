@@ -21,6 +21,8 @@ import {
   getCircle,
   hasClaimed,
   TREE_LEVELS,
+  xlmToStroops,
+  formatXlm,
   type Identity,
   type ContractProof,
   ContractError,
@@ -61,7 +63,6 @@ const NETWORK = {
 const TOKEN = config.testTokenContractId;
 const LEVELS = TREE_LEVELS;
 const CIRCLE_SIZE = 5;
-const STROOPS_PER_XLM = 10_000_000n;
 const README_URL = "https://github.com/crackedstudio/sharibo#honest-limitations";
 
 const isTestnet = NETWORK.networkPassphrase.includes("Test SDF Network");
@@ -459,7 +460,7 @@ export default function App() {
   // after a reset. Stored as { id, explorerUrl } so the fineprint is self-contained.
   const [prevCircle, setPrevCircle] = useState<{ id: string; explorerUrl: string } | null>(null);
 
-  const contribution = BigInt(contributionXlm) * STROOPS_PER_XLM;
+  const contribution = xlmToStroops(contributionXlm);
   const fundedCount = members.filter((m) => m.funded).length;
   const fullyFunded = pot === contribution * BigInt(CIRCLE_SIZE);
   const { announce, message: liveRegionMessage } = usePoliteLiveRegion(120);
@@ -1003,8 +1004,7 @@ export default function App() {
           />
         </div>
         <p className="pot-label">
-          pot: {(Number(flow.pot) / 1e7).toFixed(1)} / {flow.contributionXlm * CIRCLE_SIZE} XLM ·
-          round {flow.round}
+          pot: {formatXlm(flow.pot)} / {formatXlm(xlmToStroops(flow.contributionXlm) * BigInt(CIRCLE_SIZE))} XLM · round {flow.round}
         </p>
 
         <h2>Fund</h2>

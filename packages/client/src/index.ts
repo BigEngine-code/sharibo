@@ -1,3 +1,4 @@
+export * from "./amount.js";
 export * from "./identity.js";
 export * from "./tree.js";
 export * from "./prove.js";
