@@ -613,6 +613,47 @@ fn claim_reverts_on_stale_round_tag() {
     );
 }
 
+// Regression test skeleton for issue #246: ensure a proof bound to a given
+// recipient cannot be replayed to pay a different recipient. This test is
+// intentionally `#[ignore]` until the circuit's trusted setup and the
+// committed `verification_key.json` are regenerated to include the new
+// `recipientHash` public input; running it before that step will fail due
+// to vk/public-input-size mismatch.
+#[test]
+#[ignore]
+#[should_panic(expected = "Error(Contract, #5)")] // InvalidProof
+fn replayed_proof_with_different_recipient_rejected() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+
+    for m in s.members.iter() {
+        client.fund(&s.circle_id, m);
+    }
+
+    // The real proof fixture was generated for a specific recipient
+    // commitment. Attempting to replay the same proof but with a
+    // different `recipient` must fail the verifier with InvalidProof.
+    let recipient_a = Address::generate(&s.env);
+    let recipient_b = Address::generate(&s.env);
+
+    let nullifier_hash = real_nullifier_hash(&s.env);
+    let external_nullifier = real_external_nullifier_round0(&s.env);
+    let proof = real_valid_proof(&s.env);
+
+    // First: claim to the intended recipient (would succeed once the
+    // vk/zkey are regenerated to include recipientHash).
+    // client.claim(&s.circle_id, &recipient_a, &nullifier_hash, &external_nullifier, &proof);
+
+    // Now: attacker replays the same proof but sets a different recipient.
+    client.claim(
+        &s.circle_id,
+        &recipient_b,
+        &nullifier_hash,
+        &external_nullifier,
+        &proof,
+    );
+}
+
 #[test]
 fn fund_requires_member_auth() {
     // env.auths() reports the authorization tree seen during the *last*
