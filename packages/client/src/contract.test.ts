@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert";
-import { fund } from "./contract.js";
+import { fund } from "./writes.js";
 
 test("transient simulate-phase failure recovers", async () => {
   let simulateCalls = 0;
