@@ -417,11 +417,16 @@ impl Contract {
         }
 
         // 4. the ZK proof itself must verify against the circle's committed root
+        // Bind the recipient into the public inputs so the proof commits to
+        // where the payout will land. Compute the same SHA-256-based
+        // reduction used for external nullifier binding.
+        let recipient_hash = Self::compute_recipient_hash(&env, &recipient);
         let public_inputs = vec![
             &env,
             nullifier_hash.clone(),
             circle.root.clone(),
             external_nullifier,
+            recipient_hash,
         ];
         if !Self::verify_groth16(&env, &circle.vk, &proof, &public_inputs) {
             panic_with_error!(&env, Error::InvalidProof);
@@ -588,6 +593,20 @@ impl Contract {
         let mut bytes = Bytes::new(env);
         bytes.extend_from_array(&circle_id.to_be_bytes());
         bytes.extend_from_array(&round.to_be_bytes());
+        let digest = env.crypto().sha256(&bytes).to_bytes();
+        Fr::from_bytes(digest)
+    }
+
+    // Compute a SHA-256-based hash of the recipient address serialized to
+    // XDR, reduced into the scalar field (Fr). Mirrors the client's
+    // `computeRecipientHash` so both sides bind the proof to the same
+    // recipient representation.
+    fn compute_recipient_hash(env: &Env, recipient: &Address) -> Fr {
+        // Serialize the recipient address into bytes in a deterministic
+        // XDR-like form. Soroban's `Env` provides a host-level serializer
+        // that we can use via `env.serialize`.
+        let mut bytes = Bytes::new(env);
+        env.serialize(recipient, &mut bytes);
         let digest = env.crypto().sha256(&bytes).to_bytes();
         Fr::from_bytes(digest)
     }

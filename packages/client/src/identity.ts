@@ -1,4 +1,5 @@
 import { poseidon2 } from "poseidon-bls12381";
+import { StrKey } from "@stellar/stellar-sdk";
 import { InvalidInputError } from "./errors.js";
 
 // Web Crypto (`globalThis.crypto`) rather than `node:crypto`, so this module
@@ -111,6 +112,13 @@ export async function computeExternalNullifier(circleId: bigint, round: bigint):
   view.setBigUint64(0, circleId, false);
   view.setUint32(8, Number(round), false);
   const digest = await webCrypto.subtle.digest("SHA-256", buf);
+  return bytesToBigInt(new Uint8Array(digest)) % FR_MODULUS;
+}
+
+export async function computeRecipientHash(recipient: string): Promise<bigint> {
+  // Decode Stellar ed25519 public key (StrKey) to raw 32 bytes and sha256.
+  const raw = StrKey.decodeEd25519PublicKey(recipient);
+  const digest = await webCrypto.subtle.digest("SHA-256", raw);
   return bytesToBigInt(new Uint8Array(digest)) % FR_MODULUS;
 }
 
