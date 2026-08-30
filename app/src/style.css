@@ -243,6 +243,34 @@ h2 {
   margin-top: 6px;
 }
 
+/* ── Artifact prefetch progress ─────────────────────────────────────── */
+.artifact-progress {
+  margin-bottom: 16px;
+  font-family: "JetBrains Mono", monospace;
+}
+.artifact-progress-label {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 6px;
+  color: var(--ink);
+}
+.artifact-progress-track {
+  height: 14px;
+  border: var(--border);
+  background: #eee;
+  overflow: hidden;
+}
+.artifact-progress-fill {
+  height: 100%;
+  background: var(--accent2);
+  transition: width 0.3s ease;
+}
+.artifact-progress-fill-error {
+  background: var(--danger);
+}
+
 .stepper {
   display: flex;
   gap: 4px;
@@ -570,7 +598,6 @@ code {
   padding: 2px 4px;
 }
 
-<<<<<<< HEAD
 /* ── Mobile (< --bp-md) ─────────────────────────────────────────────── */
 @media (max-width: 767px) {
   :root {
@@ -713,12 +740,14 @@ code {
   .step {
     flex: 1 1 calc(50% - 2px);
     font-size: 8px;
-=======
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .btn,
   .pot-bar,
-  .ring-node {
+  .ring-node,
+  .artifact-progress-fill {
     transition: none !important;
->>>>>>> 2e9a849 (Add prefers-reduced-motion media query to disable animations)
   }
 }

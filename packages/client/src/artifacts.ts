@@ -30,14 +30,12 @@ let currentProgress: ArtifactPrefetchProgress = {
   fraction: null,
 };
 const listeners = new Set<Listener>();
-let indicatorInstalled = false;
 
 function publish(progress: ArtifactPrefetchProgress): void {
   currentProgress = progress;
   for (const listener of listeners) {
     listener(progress);
   }
-  updateIndicator(progress);
 }
 
 async function readResponse(
@@ -176,43 +174,3 @@ export function subscribeToArtifactPrefetch(
   listener(currentProgress);
   return () => listeners.delete(listener);
 }
-
-function updateIndicator(progress: ArtifactPrefetchProgress): void {
-  if (typeof document === "undefined") return;
-  const element = document.getElementById("sharibo-prover-preparation");
-  if (!element) return;
-
-  if (progress.status === "ready") {
-    element.remove();
-    return;
-  }
-
-  element.textContent =
-    progress.status === "error"
-      ? "Prover preparation failed"
-      : progress.fraction === null
-        ? "Preparing prover…"
-        : `Preparing prover… ${Math.round(progress.fraction * 100)}%`;
-}
-
-function installIndicator(): void {
-  if (indicatorInstalled || typeof document === "undefined") return;
-  indicatorInstalled = true;
-
-  const add = () => {
-    if (document.getElementById("sharibo-prover-preparation")) return;
-    const element = document.createElement("div");
-    element.id = "sharibo-prover-preparation";
-    element.setAttribute("aria-live", "polite");
-    element.style.cssText =
-      "position:fixed;right:16px;bottom:16px;z-index:1000;padding:6px 10px;border-radius:6px;background:rgba(20,25,35,.78);color:#b9c2d0;font:12px system-ui,sans-serif;pointer-events:none";
-    document.body.appendChild(element);
-    updateIndicator(currentProgress);
-  };
-
-  if (document.body) add();
-  else document.addEventListener("DOMContentLoaded", add, { once: true });
-}
-
-installIndicator();
-prefetchMembershipArtifacts();

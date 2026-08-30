@@ -54,4 +54,10 @@ export async function prove(
 }
 
 export { prefetchMembershipArtifacts } from "./artifacts";
+export {
+  subscribeToArtifactPrefetch,
+  getArtifactPrefetchProgress,
+  type ArtifactPrefetchProgress,
+  type ArtifactPrefetchStatus,
+} from "./artifacts";
 export type { ProverArtifacts } from "./artifacts";
