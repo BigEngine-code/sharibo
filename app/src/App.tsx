@@ -1,3 +1,4 @@
+import { networkOf } from "@sharibo/client/networks";
 import { useState, useRef, useEffect } from "react";
 import { Keypair } from "@stellar/stellar-sdk";
 import {
@@ -64,7 +65,7 @@ const CIRCLE_SIZE = 5;
 const STROOPS_PER_XLM = 10_000_000n;
 const README_URL = "https://github.com/crackedstudio/sharibo#honest-limitations";
 
-const isTestnet = NETWORK.networkPassphrase.includes("Test SDF Network");
+const isTestnet = networkOf(NETWORK.networkPassphrase) === "testnet";
 const BANNER_TEXT = isTestnet ? "Stellar testnet — no real funds" : "";
 
 function TestnetBanner() {
@@ -245,7 +246,7 @@ function Stepper({ step }: { step: 0 | 1 | 2 | 3 }) {
 }
 
 function NetworkBanner() {
-  const isTestnet = NETWORK.networkPassphrase.toLowerCase().includes("test");
+  const isTestnet = networkOf(NETWORK.networkPassphrase) !== "mainnet";
   if (!isTestnet) return null;
   return (
     <div className="network-banner">
