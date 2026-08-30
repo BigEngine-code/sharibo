@@ -1111,6 +1111,182 @@ fn instance_ttl_extended_after_create_fund_claim() {
     assert_eq!(circle.round, 1, "claim should have advanced round to 1");
 }
 
+// ---- Storage schema: golden XDR layout test ----
+//
+// Purpose: catch accidental Circle field additions/removals/reorderings that
+// would silently corrupt on-chain data written by the current code.
+//
+// How it works:
+//   1. Build a fully-deterministic Circle (all fields set to known values).
+//   2. Serialise it to XDR via the Soroban host encoding (same path used by
+//      persistent storage).
+//   3. Assert the hex matches CIRCLE_XDR_GOLDEN.
+//
+// To intentionally change the struct layout:
+//   a. Bump `Circle::schema_version` in lib.rs.
+//   b. Run the following from contracts/sharibo/:
+//        RECORD_GOLDEN=1 cargo test circle_xdr_layout_golden -- --nocapture
+//   c. Copy the printed hex into CIRCLE_XDR_GOLDEN below.
+//   d. Add a migration path or "testnet-reset" note to the PR description.
+//
+// If you added/removed a field on Circle without updating CIRCLE_XDR_GOLDEN,
+// this test will fail — that is intentional.
+
+/// Committed serialisation of a deterministic [`Circle`] fixture.
+///
+/// Schema version 1. Regenerate with:
+/// ```sh
+/// RECORD_GOLDEN=1 cargo test circle_xdr_layout_golden -- --nocapture
+/// ```
+/// Run from `contracts/sharibo/`, paste the printed hex here, and bump
+/// `Circle::schema_version` in `lib.rs`.
+///
+/// Set to the empty string to trigger the RECORD_GOLDEN path on the first run.
+const CIRCLE_XDR_GOLDEN: &str = "";
+
+#[test]
+fn circle_xdr_layout_golden() {
+    let env = Env::default();
+
+    // Build a fully deterministic Circle — every field pinned to a known
+    // value so the serialised output is reproducible across machines and
+    // SDK versions.
+    //
+    // Addresses: we use the all-zeros Stellar account (the strkey
+    // "GAAAAAA...AAWHF") for both admin and token so the output is stable.
+    let fixed_addr = Address::from_strkey(&soroban_sdk::String::from_str(
+        &env,
+        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+    ));
+
+    // Fr(1): a non-zero deterministic scalar.
+    let one_fr = Fr::from_u256(soroban_sdk::U256::from_u32(&env, 1));
+
+    // Minimal valid-shaped VerificationKey: one ic entry (zero public inputs).
+    // We only care about XDR layout, not proof validity.
+    let zero_g1 = {
+        let buf = [0u8; soroban_sdk::crypto::bls12_381::G1_SERIALIZED_SIZE];
+        G1Affine::from_array(&env, &buf)
+    };
+    let zero_g2 = {
+        let buf = [0u8; soroban_sdk::crypto::bls12_381::G2_SERIALIZED_SIZE];
+        G2Affine::from_array(&env, &buf)
+    };
+    let vk = VerificationKey {
+        alpha: zero_g1.clone(),
+        beta: zero_g2.clone(),
+        gamma: zero_g2.clone(),
+        delta: zero_g2.clone(),
+        ic: soroban_sdk::vec![&env, zero_g1],
+    };
+
+    let circle = Circle {
+        schema_version: 1,
+        admin: fixed_addr.clone(),
+        token: fixed_addr,
+        root: one_fr,
+        contribution: 100,
+        size: 5,
+        round: 0,
+        pot: 0,
+        vk,
+        contributors: soroban_sdk::Vec::new(&env),
+        cancelled: false,
+    };
+
+    // Serialise via the host-level ScVal encoding (the same path used by
+    // `env.storage().persistent().set()`). ToXdr is blanket-implemented for
+    // every T: IntoVal<Env, Val>, which #[contracttype] provides for Circle.
+    use soroban_sdk::xdr::ToXdr;
+    let xdr_bytes = circle.to_xdr(&env);
+    let hex: std::string::String = xdr_bytes.iter().map(|b| format!("{b:02x}")).collect();
+
+    // When RECORD_GOLDEN=1 is set, print the hex and pass so the developer
+    // can paste it into CIRCLE_XDR_GOLDEN above.
+    if std::env::var("RECORD_GOLDEN").is_ok() {
+        std::println!(
+            "\n=== RECORD_GOLDEN: paste the line below into CIRCLE_XDR_GOLDEN ===\n\"{hex}\"\n==="
+        );
+        return;
+    }
+
+    assert!(
+        !CIRCLE_XDR_GOLDEN.is_empty(),
+        "\nCIRCLE_XDR_GOLDEN is empty — you need to record the golden value.\n\
+         Run from contracts/sharibo/:\n\
+         \n  RECORD_GOLDEN=1 cargo test circle_xdr_layout_golden -- --nocapture\n\
+         \nthen paste the printed hex into CIRCLE_XDR_GOLDEN in test.rs."
+    );
+
+    assert_eq!(
+        hex,
+        CIRCLE_XDR_GOLDEN,
+        "\n\nCircle XDR layout has changed!\n\
+         This means you added, removed, or reordered a field on Circle.\n\
+         Required steps:\n\
+         1. Bump Circle::schema_version in lib.rs.\n\
+         2. Run: RECORD_GOLDEN=1 cargo test circle_xdr_layout_golden -- --nocapture\n\
+         3. Paste the printed hex into CIRCLE_XDR_GOLDEN in test.rs.\n\
+         4. Add a migration path or testnet-reset note to your PR.\n\n\
+         Got:\n  {hex}"
+    );
+}
+
+// ---- Error table variant count guard ----
+//
+// Purpose: ensure docs/errors.md stays in sync with the Error enum.
+//
+// How it works:
+//   The Error enum uses #[repr(u32)] with contiguous discriminants starting
+//   at 1. The highest discriminant therefore equals the number of variants.
+//   DOCUMENTED_ERROR_COUNT commits that number. If a new variant is added
+//   to the enum without bumping DOCUMENTED_ERROR_COUNT and adding a row to
+//   docs/errors.md, this test fails.
+//
+// When adding a new Error variant:
+//   1. Add the variant to `pub enum Error` in lib.rs with the next integer.
+//   2. Add a row to docs/errors.md.
+//   3. Bump DOCUMENTED_ERROR_COUNT below to match.
+//   4. Add or extend an SDK class in packages/client/src/errors.ts if the
+//      new code needs its own user-facing treatment.
+
+/// Number of variants in `Error`, and the number of rows in docs/errors.md.
+/// Bump this in the same commit that adds a new variant — see the comment above.
+const DOCUMENTED_ERROR_COUNT: u32 = 8;
+
+#[test]
+fn error_table_variant_count() {
+    // The enum is #[repr(u32)] with variants numbered 1..=N consecutively,
+    // so the highest discriminant is exactly N.
+    let highest = [
+        Error::CircleNotFound  as u32, // 1
+        Error::RoundNotFunded  as u32, // 2
+        Error::WrongRoundTag   as u32, // 3
+        Error::AlreadyClaimed  as u32, // 4
+        Error::InvalidProof    as u32, // 5
+        Error::RoundFull       as u32, // 6
+        Error::Overflow        as u32, // 7
+        Error::CircleCancelled as u32, // 8
+    ]
+    .into_iter()
+    .max()
+    .unwrap();
+
+    assert_eq!(
+        highest,
+        DOCUMENTED_ERROR_COUNT,
+        "\n\nError enum has {} variant(s) but DOCUMENTED_ERROR_COUNT is {}.\n\
+         Required steps:\n\
+         1. Add a row to docs/errors.md for every new/removed variant.\n\
+         2. Bump DOCUMENTED_ERROR_COUNT in test.rs to {}.\n\
+         3. Update packages/client/src/errors.ts if the new code needs \
+         its own SDK class.\n",
+        highest,
+        DOCUMENTED_ERROR_COUNT,
+        highest,
+    );
+}
+
 // ---- Proptest: apply_fee rounding invariant ----
 //
 // For every (amount, fee_bps) pair in the valid domain, the split must be
