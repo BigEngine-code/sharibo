@@ -21,7 +21,14 @@ const es = {
   "landing.previousCircleLink": "tanda #{id} ↗",
   "landing.testnetFineprint": "Solo testnet. Las identidades de demostraci\u00f3n se generan de nuevo en tu navegador y nunca se reutilizan.",
   "circle.onChainLink": "tanda #{id} en cadena ↗",
-  "common.startNewCircle": "Iniciar una nueva tanda"
+  "common.startNewCircle": "Iniciar una nueva tanda",
+  "cancel.title": "Cancelar Tanda",
+  "cancel.confirmation": "¿Cancelar esta tanda?\n\nEsto reembolsará {count} contribuidor(es) un total de {total} XLM.\n\nEsta acción es irreversible. La tanda se cerrará permanentemente.",
+  "cancel.busy": "Cancelando tanda y reembolsando contribuidores…",
+  "cancel.cancelled": "Tanda Cancelada",
+  "cancel.cancelledMessage": "Esta tanda ha sido cancelada y todos los contribuidores han sido reembolsados.",
+  "cancel.refundInfo": "Los siguientes contribuidores serán reembolsados si la tanda es cancelada:",
+  "cancel.willBeRefunded": "→ será reembolsado"
 } as const;
 
 export default es;

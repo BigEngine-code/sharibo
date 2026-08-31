@@ -207,6 +207,8 @@ export async function claim(
  * @property size - The maximum number of participants.
  * @property round - The current round number.
  * @property pot - The total amount in the prize pot.
+ * @property contributors - Addresses that have funded the current round in order.
+ * @property cancelled - Whether the circle has been cancelled.
  */
 export interface CircleView {
   admin: string;
@@ -216,6 +218,8 @@ export interface CircleView {
   size: number;
   round: number;
   pot: bigint;
+  contributors: string[];
+  cancelled: boolean;
 }
 
 /**
@@ -252,4 +256,54 @@ export async function hasClaimed(
   }));
   const sent = await tx.signAndSend({ force: true });
   return sent.result;
+}
+
+/**
+ * A lightweight view of a circle's funding status.
+ *
+ * @property pot - The total amount in the prize pot.
+ * @property contributors - Addresses that have funded the current round in order.
+ */
+export interface CircleStatus {
+  pot: bigint;
+  contributors: string[];
+}
+
+/**
+ * Lightweight read: retrieves only the pot and contributors for a circle.
+ * Used for polling funding status without fetching the full circle state.
+ *
+ * @param client - The Sharibo contract client.
+ * @param circleId - The ID of the circle to query.
+ * @returns The circle's current funding status.
+ */
+export async function getCircleStatus(
+  client: ShariboClient,
+  circleId: bigint,
+): Promise<CircleStatus> {
+  const circle = await getCircle(client, circleId);
+  return {
+    pot: circle.pot,
+    contributors: circle.contributors,
+  };
+}
+
+/**
+ * Cancels a circle, refunding all contributors and permanently closing it.
+ *
+ * Only the circle admin can call this. It refunds all contributors for the
+ * current round, sets the circle as cancelled, and clears the pot and contributors.
+ *
+ * @param client - The Sharibo contract client.
+ * @param args - Cancel parameters.
+ * @param args.circleId - The ID of the circle to cancel.
+ * @returns The transaction hash.
+ */
+export async function cancelCircle(
+  client: ShariboClient,
+  args: { circleId: bigint },
+): Promise<TxResult<void>> {
+  const tx = await withRetry(() => client.cancel_circle({ circle_id: args.circleId }));
+  const sent = await tx.signAndSend();
+  return populateTxResult(undefined, sent);
 }

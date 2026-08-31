@@ -21,7 +21,14 @@ const en = {
   "landing.previousCircleLink": "circle #{id} ↗",
   "landing.testnetFineprint": "Testnet only. Demo identities are generated fresh in your browser, never reused.",
   "circle.onChainLink": "circle #{id} on-chain ↗",
-  "common.startNewCircle": "Start a new circle"
+  "common.startNewCircle": "Start a new circle",
+  "cancel.title": "Cancel Circle",
+  "cancel.confirmation": "Cancel this circle?\n\nThis will refund {count} contributor(s) a total of {total} XLM.\n\nThis action is irreversible. The circle will be permanently closed.",
+  "cancel.busy": "Cancelling circle and refunding contributors…",
+  "cancel.cancelled": "Circle Cancelled",
+  "cancel.cancelledMessage": "This circle has been cancelled and all contributors have been refunded.",
+  "cancel.refundInfo": "The following contributors will be refunded if the circle is cancelled:",
+  "cancel.willBeRefunded": "→ will be refunded"
 } as const;
 
 export default en;
