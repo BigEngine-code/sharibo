@@ -212,6 +212,15 @@ Fresh-machine steps, in order. Everything below targets **Stellar testnet only**
 
 ### 0. Prerequisites
 
+Start here if you're on a fresh machine:
+
+```bash
+just doctor
+```
+
+This runs an automated checklist that verifies every tool below and prints exact install
+commands for anything that is missing or out of date.
+
 | Tool | Minimum | Tested |
 |---|---|---|
 | [Rust](https://rustup.rs/) + `wasm32v1-none` target | rustc **1.56.0** (edition 2021) | `rustc 1.92.0` |

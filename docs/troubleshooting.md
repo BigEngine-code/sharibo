@@ -8,6 +8,9 @@ where possible), the **cause**, and the **fix**.
 If you hit a problem while setting up and it isn't covered here, please open an issue
 and share the exact error text — you're the most qualified person to document it.
 
+Start with `just doctor` for an automated checklist that prints the exact install command
+for anything missing or out of date.
+
 ---
 
 ## `circom: command not found`, or an ancient `1.x` circom
@@ -33,6 +36,8 @@ invoked as `circom --version` → `2.x.x`. It also needs the `--prime bls12381` 
 that only the Rust build provides.
 
 **Fix**
+
+Quick check: `just doctor` will flag a missing or outdated `circom` and print the exact install command.
 
 Install the Rust circom 2.x and put it on your `PATH`, then confirm the version:
 
@@ -78,6 +83,8 @@ Rust supports many targets; the `wasm32v1-none` target used by Stellar contracts
 
 **Fix**
 
+Quick check: `just doctor` verifies the target is installed and prints the install command if it is missing.
+
 ```bash
 rustup target add wasm32v1-none
 rustc +stable target list --installed | grep wasm32v1-none   # verify
@@ -110,6 +117,8 @@ into the `stellar` CLI, and its ordering/flags differ. The repo targets the curr
 Groth16 verifier uses, see [README §0](../README.md#0-prerequisites)).
 
 **Fix**
+
+Quick check: `just doctor` verifies the `stellar` CLI version and prints the install URL if it is missing.
 
 Use the `stellar` CLI exclusively. Walk with the docs:
 
