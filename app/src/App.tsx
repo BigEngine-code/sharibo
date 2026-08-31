@@ -23,6 +23,8 @@ import {
   TREE_LEVELS,
   type Identity,
   type ContractProof,
+  type CircleId,
+  makeCircleId,
   ContractError,
   RpcError,
   ProvingError,
@@ -433,7 +435,7 @@ export default function App() {
   const [admin, setAdmin] = useState<Keypair | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [tree, setTree] = useState<MerkleTree | null>(null);
-  const [circleId, setCircleId] = useState<bigint | null>(null);
+  const [circleId, setCircleId] = useState<CircleId | null>(null);
   const [hasFreighter, setHasFreighter] = useState(false);
 
   useEffect(() => {
@@ -453,7 +455,7 @@ export default function App() {
   const [proveElapsedSeconds, setProveElapsedSeconds] = useState(0);
   // Survives a reset so the landing screen can point back at the circle you
   // just left — it keeps living on-chain even though the UI has moved on.
-  const [previousCircleId, setPreviousCircleId] = useState<bigint | null>(null);
+  const [previousCircleId, setPreviousCircleId] = useState<CircleId | null>(null);
 
   // Track the most recently completed circle so we can show a "lives on-chain" link
   // after a reset. Stored as { id, explorerUrl } so the fineprint is self-contained.
@@ -643,7 +645,7 @@ export default function App() {
       setAdmin(adminKp);
       setMembers(newMembers);
       setTree(newTree);
-      setCircleId(newCircleId);
+      setCircleId(makeCircleId(newCircleId));
       setRound(0);
       setPot(0n);
       setScreen("circle");

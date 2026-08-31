@@ -43,6 +43,8 @@ import {
   getCircle,
   TREE_LEVELS,
   ContractError,
+  type CircleId,
+  makeCircleId,
 } from "@sharibo/client";
 import { checkContractDeployed } from "./testnet-health.js";
 
@@ -293,9 +295,9 @@ async function main() {
     "connect(admin)",
   );
 
-  let circleId: bigint;
+  let circleId: CircleId;
   if (REUSE_CIRCLE != null) {
-    circleId = REUSE_CIRCLE;
+    circleId = makeCircleId(REUSE_CIRCLE);
     console.log(`\n2. Reusing existing circle ${circleId} (--reuse-circle)...`);
     const existing = await getCircle(adminClient, circleId);
     console.log(`   circle ${circleId}: round=${existing.round}, pot=${existing.pot}, size=${existing.size}`);

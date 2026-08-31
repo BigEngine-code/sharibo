@@ -2,6 +2,7 @@ import { Client as ContractClient, basicNodeSigner } from "@stellar/stellar-sdk/
 import { Keypair, StrKey } from "@stellar/stellar-sdk";
 import type { ContractProof, ContractVerificationKey } from "./prove.js";
 import { ContractError, RpcError } from "./errors.js";
+import type { CircleId } from "./brand.js";
 
 /**
  * Network configuration for connecting to the Sharibo contract.
@@ -133,7 +134,7 @@ export async function createCircle(
     size: number;
     vk: ContractVerificationKey;
   },
-): Promise<TxResult<bigint>> {
+): Promise<TxResult<CircleId>> {
   const tx = await withRetry(() => client.create_circle({
     admin: args.admin,
     token: args.token,
@@ -143,7 +144,7 @@ export async function createCircle(
     vk: args.vk,
   }));
   const sent = await tx.signAndSend();
-  return populateTxResult(sent.result as bigint, sent);
+  return populateTxResult(sent.result as CircleId, sent);
 }
 
 /**
@@ -157,7 +158,7 @@ export async function createCircle(
  */
 export async function fund(
   client: ShariboClient,
-  args: { circleId: bigint; from: string },
+  args: { circleId: CircleId; from: string },
 ): Promise<TxResult<void>> {
   const tx = await withRetry(() => client.fund({ circle_id: args.circleId, from: args.from }));
   const sent = await tx.signAndSend();
@@ -179,7 +180,7 @@ export async function fund(
 export async function claim(
   client: ShariboClient,
   args: {
-    circleId: bigint;
+    circleId: CircleId;
     recipient: string;
     nullifierHash: bigint;
     externalNullifier: bigint;
@@ -225,7 +226,7 @@ export interface CircleView {
  * @param circleId - The ID of the circle to query.
  * @returns The circle's current state.
  */
-export async function getCircle(client: ShariboClient, circleId: bigint): Promise<CircleView> {
+export async function getCircle(client: ShariboClient, circleId: CircleId): Promise<CircleView> {
   // get_circle is a pure read: the SDK detects no signature is needed and
   // refuses signAndSend() without `force` (there's nothing to sign/submit).
   const tx = await withRetry(() => client.get_circle({ circle_id: circleId }));
@@ -243,7 +244,7 @@ export async function getCircleCount(client: ShariboClient): Promise<bigint> {
 /** Pure read: whether `nullifierHash` has already claimed in this circle. */
 export async function hasClaimed(
   client: ShariboClient,
-  circleId: bigint,
+  circleId: CircleId,
   nullifierHash: bigint,
 ): Promise<boolean> {
   const tx = await withRetry(() => client.has_claimed({
