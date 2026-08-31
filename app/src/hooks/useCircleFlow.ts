@@ -11,10 +11,12 @@ import {
   fund,
   claim,
   getCircle,
+  hasClaimed,
   type ContractProof,
 } from "@sharibo/client";
 import { NETWORK, TOKEN, LEVELS, CIRCLE_SIZE, STROOPS_PER_XLM } from "../config.js";
 import { friendbotFund } from "../lib/friendbot.js";
+import { isRetryableError, type Failure } from "../state/circleMachine.js";
 import type { Member, ClaimResult } from "../types.js";
 
 // All the state and on-chain calls behind a single demo run: create a
@@ -40,6 +42,7 @@ export function useCircleFlow() {
   const [nullifierHash, setNullifierHash] = useState<bigint | null>(null);
   const [claimResult, setClaimResult] = useState<ClaimResult | null>(null);
   const [rejection, setRejection] = useState<string | null>(null);
+  const [failure, setFailure] = useState<Failure | null>(null);
   // Survives a reset so the landing screen can point back at the circle you
   // just left — it keeps living on-chain even though the UI has moved on.
   const [previousCircleId, setPreviousCircleId] = useState<bigint | null>(null);
@@ -80,6 +83,7 @@ export function useCircleFlow() {
     setNullifierHash(null);
     setClaimResult(null);
     setRejection(null);
+    setFailure(null);
     setScreen("landing");
   }
 
@@ -122,7 +126,14 @@ export function useCircleFlow() {
       setPot(0n);
       setScreen("circle");
     } catch (e) {
-      setError((e as Error).message);
+      const message = (e as Error).message;
+      setError(message);
+      setFailure({
+        step: "start",
+        message,
+        retryable: isRetryableError(e),
+        retry: () => startCircle(),
+      });
     } finally {
       setBusy(null);
     }
@@ -148,7 +159,14 @@ export function useCircleFlow() {
       setPot(circle.pot);
       setRound(circle.round);
     } catch (e) {
-      setError((e as Error).message);
+      const message = (e as Error).message;
+      setError(message);
+      setFailure({
+        step: "fund",
+        message,
+        retryable: isRetryableError(e),
+        retry: () => fundMember(i),
+      });
     } finally {
       setBusy(null);
     }
@@ -159,12 +177,14 @@ export function useCircleFlow() {
     setError(null);
     setClaimResult(null);
     setRejection(null);
+    setFailure(null);
     setBusy("Proving… (a real Groth16 proof is being generated in your browser)");
+    let generated: Awaited<ReturnType<typeof generateProof>> | null = null;
     try {
       const claimant = members[claimantIndex];
       const merkleProof = tree.proof(claimantIndex);
       const externalNullifier = await computeExternalNullifier(circleId, BigInt(round));
-      const generated = await generateProof(
+      generated = await generateProof(
         {
           identityNullifier: claimant.identity.identityNullifier,
           identitySecret: claimant.identity.identitySecret,
@@ -198,7 +218,69 @@ export function useCircleFlow() {
       setPot(circle.pot);
       setRound(circle.round);
     } catch (e) {
-      setError((e as Error).message);
+      const message = (e as Error).message;
+      setError(message);
+      setFailure({
+        step: "claim",
+        message,
+        retryable: isRetryableError(e),
+        // Reuse the already-generated proof instead of re-proving; verify it
+        // actually landed before blindly re-submitting.
+        retry: generated
+          ? () => retryClaimWithProof(generated)
+          : () => doClaim(),
+      });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Re-run a failed claim without re-proving: the proof is still valid for
+  // this round. Re-read chain state first so we never blindly re-submit a
+  // transaction that actually landed.
+  async function retryClaimWithProof(g: Awaited<ReturnType<typeof generateProof>>) {
+    if (!admin || circleId === null) return;
+    setFailure(null);
+    setClaimResult(null);
+    setRejection(null);
+    setBusy("Re-submitting the claim (reusing the existing proof)…");
+    try {
+      const adminClient = await connect(NETWORK, admin);
+      const alreadyClaimed = await hasClaimed(adminClient, circleId, g.nullifierHash);
+      if (alreadyClaimed) {
+        const circle = await getCircle(adminClient, circleId);
+        setProof(g.proof);
+        setNullifierHash(g.nullifierHash);
+        setClaimResult({ recipient: "—", hash: "" });
+        setPot(circle.pot);
+        setRound(circle.round);
+        return;
+      }
+      setBusy("Generating a fresh recipient and re-submitting…");
+      const recipient = Keypair.random();
+      await friendbotFund(recipient.publicKey());
+      const { hash } = await claim(adminClient, {
+        circleId,
+        recipient: recipient.publicKey(),
+        nullifierHash: g.nullifierHash,
+        externalNullifier: g.externalNullifier,
+        proof: g.proof,
+      });
+      setProof(g.proof);
+      setNullifierHash(g.nullifierHash);
+      setClaimResult({ recipient: recipient.publicKey(), hash });
+      const circle = await getCircle(adminClient, circleId);
+      setPot(circle.pot);
+      setRound(circle.round);
+    } catch (e) {
+      const message = (e as Error).message;
+      setError(message);
+      setFailure({
+        step: "claim",
+        message,
+        retryable: isRetryableError(e),
+        retry: () => retryClaimWithProof(g),
+      });
     } finally {
       setBusy(null);
     }
@@ -250,6 +332,7 @@ export function useCircleFlow() {
     screen,
     busy,
     error,
+    failure,
     contributionXlm,
     members,
     circleId,

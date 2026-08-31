@@ -541,6 +541,32 @@ a:focus-visible {
   font-size: 13px;
 }
 
+.toaster {
+  margin-top: 12px;
+  background: var(--danger);
+  color: white;
+  border: var(--border);
+  padding: 12px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+}
+
+.toaster-msg {
+  margin: 0 0 8px;
+  white-space: pre-wrap;
+}
+
+.toaster-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.toaster .btn-small {
+  color: var(--danger);
+  background: white;
+}
+
+
 .testnet-banner {
   display: flex;
   align-items: center;
