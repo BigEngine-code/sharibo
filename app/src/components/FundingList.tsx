@@ -1,4 +1,5 @@
 import { explorerTx, short } from "../lib/explorer.js";
+import { useI18n } from "../i18n.js";
 import type { Member } from "../types.js";
 
 export function FundingList({
@@ -14,18 +15,19 @@ export function FundingList({
   contributionXlm: number;
   onFund: (i: number) => void;
 }) {
+  const { t } = useI18n();
   return (
     <>
-      <h2>Fund</h2>
+      <h2>{t("fund.heading")}</h2>
       <div className="members">
         {members.map((m, i) => (
           <div key={i} className={`member ${m.funded ? "funded" : ""}`}>
             <span className="member-addr">
-              member {i + 1} · {short(m.keypair.publicKey())}
+              {t("fund.memberLabel", { index: i + 1 })} · {short(m.keypair.publicKey())}
             </span>
             {m.funded ? (
               <a className="link" href={explorerTx(m.fundHash!)} target="_blank" rel="noreferrer">
-                ✓ funded ↗
+                {t("fund.fundedLink")}
               </a>
             ) : (
               <button
@@ -33,7 +35,7 @@ export function FundingList({
                 disabled={!!busy || round > 0}
                 onClick={() => onFund(i)}
               >
-                Fund {contributionXlm} XLM
+                {t("fund.demoButton", { amount: contributionXlm })}
               </button>
             )}
           </div>

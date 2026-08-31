@@ -1,4 +1,5 @@
 import type { Member } from "../types.js";
+import { useI18n } from "../i18n.js";
 
 export function ClaimSection({
   members,
@@ -13,13 +14,11 @@ export function ClaimSection({
   busy: string | null;
   onClaim: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <>
-      <h2>Claim</h2>
-      <p className="sub">
-        Pick which member is claiming this round — the proof will show the contract that they're a
-        real member <em>without</em> revealing which one.
-      </p>
+      <h2>{t("claim.heading")}</h2>
+      <p className="sub">{t("claim.subtitle")}</p>
       <div className="row">
         {members.map((_, i) => (
           <label key={i} className="radio">
@@ -29,19 +28,14 @@ export function ClaimSection({
               onChange={() => onSelectClaimant(i)}
               disabled={!!busy}
             />
-            member {i + 1}
+            {t("claim.radioMember", { index: i + 1 })}
           </label>
         ))}
       </div>
       <button className="btn btn-primary" disabled={!!busy} onClick={onClaim}>
-        {busy ?? "Generate proof & claim"}
+        {busy ?? t("claim.generateButton")}
       </button>
-      {busy && (
-        <p className="techline">
-          Groth16 · BLS12-381 · 1,452 constraints · proving locally in your browser, nothing sent
-          anywhere until the proof is done
-        </p>
-      )}
+      {busy && <p className="techline">{t("claim.techline")}</p>}
     </>
   );
 }

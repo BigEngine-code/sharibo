@@ -30,6 +30,8 @@ import {
 } from "@sharibo/client";
 import { config, configError } from "./config";
 import { useI18n } from "./i18n";
+import { usePoliteLiveRegion, LiveRegion } from "./usePoliteLiveRegion";
+import { explorerTx } from "./lib/explorer";
 import {
   friendbotFund as fundWithFriendbot,
   FriendbotRetryableError,
@@ -65,16 +67,35 @@ const STROOPS_PER_XLM = 10_000_000n;
 const README_URL = "https://github.com/crackedstudio/sharibo#honest-limitations";
 
 const isTestnet = NETWORK.networkPassphrase.includes("Test SDF Network");
-const BANNER_TEXT = isTestnet ? "Stellar testnet — no real funds" : "";
 
 function TestnetBanner() {
-  if (!BANNER_TEXT) return null;
+  const { t } = useI18n();
+  if (!isTestnet) return null;
   return (
     <div className="testnet-banner">
-      <span>{BANNER_TEXT}</span>
+      <span>{t("banner.testnet")}</span>
       <a className="banner-link" href={README_URL} target="_blank" rel="noreferrer">
-        honest limitations ↗
+        {t("banner.limitations")}
       </a>
+    </div>
+  );
+}
+
+function LanguageSwitcher({ className = "" }: { className?: string }) {
+  const { locale, locales, setLocale, t } = useI18n();
+  return (
+    <div className={`language-switcher ${className}`}>
+      <select
+        value={locale}
+        onChange={(e) => setLocale(e.target.value)}
+        aria-label={t("lang.label")}
+      >
+        {locales.map((code) => (
+          <option key={code} value={code}>
+            {t(`lang.${code}`)}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
@@ -94,7 +115,7 @@ const NAMES = [
   "chit fund",
 ];
 
-function toUiError(error: unknown): string {
+function toUiError(error: unknown, t: (key: string, vars?: Record<string, string | number>) => string): string {
   if (error instanceof FriendbotRetryableError) {
     return FRIEND_BOT_RATE_LIMIT_MESSAGE;
   }
@@ -103,7 +124,7 @@ function toUiError(error: unknown): string {
     return error.message;
   }
 
-  return "Something went wrong. Please retry.";
+  return t("error.generic");
 }
 
 function explorerAccount(address: string): string {
@@ -122,12 +143,13 @@ function short(address: string): string {
 // itself is trivially copyable) when the async Clipboard API isn't
 // available, e.g. non-secure contexts.
 function CopyButton({ value, label }: { value: string; label: string }) {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!copied) return;
-    const t = setTimeout(() => setCopied(false), 1500);
-    return () => clearTimeout(t);
+    const tmr = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(tmr);
   }, [copied]);
 
   async function handleCopy() {
@@ -145,8 +167,8 @@ function CopyButton({ value, label }: { value: string; label: string }) {
       type="button"
       className="copy-btn"
       onClick={handleCopy}
-      aria-label={`Copy ${label}`}
-      title={`Copy ${label}`}
+      aria-label={t("copy.aria", { label })}
+      title={t("copy.title", { label })}
     >
       {copied ? "✓" : "📋"}
     </button>
@@ -173,13 +195,6 @@ interface ClaimResult {
 // substage breakdown, since we can't observe a finer boundary inside it.
 type ClaimStage = "artifacts" | "proving" | "funding" | "submitting";
 
-const CLAIM_STAGE_LABELS: Record<ClaimStage, string> = {
-  artifacts: "Fetching proving artifacts (wasm + zkey)…",
-  proving: "Proving…",
-  funding: "Funding a fresh, unlinked recipient…",
-  submitting: "Submitting the claim…",
-};
-
 const CLAIM_STAGES: ClaimStage[] = ["artifacts", "proving", "funding", "submitting"];
 
 // So a claim never reads as a hung tab: each real substage of doClaim gets
@@ -187,7 +202,14 @@ const CLAIM_STAGES: ClaimStage[] = ["artifacts", "proving", "funding", "submitti
 // snarkjs, but that step gets a live elapsed-seconds counter + spinner so a
 // slow prove still visibly ticks rather than sitting static).
 function ClaimProgress({ stage, elapsedSeconds }: { stage: ClaimStage; elapsedSeconds: number }) {
+  const { t } = useI18n();
   const activeIndex = CLAIM_STAGES.indexOf(stage);
+  const stageLabels: Record<ClaimStage, string> = {
+    artifacts: t("claim.stage.artifacts"),
+    proving: t("claim.stage.proving"),
+    funding: t("claim.stage.funding"),
+    submitting: t("claim.stage.submitting"),
+  };
   return (
     <div className="claim-progress">
       <div className="stepper">
@@ -197,15 +219,14 @@ function ClaimProgress({ stage, elapsedSeconds }: { stage: ClaimStage; elapsedSe
             className={`step ${i < activeIndex ? "done" : i === activeIndex ? "active" : ""}`}
           >
             <span className="step-dot">{i < activeIndex ? "✓" : i + 1}</span>
-            {CLAIM_STAGE_LABELS[s]}
+            {stageLabels[s]}
           </div>
         ))}
       </div>
       {stage === "proving" && (
         <p className="techline">
-          <span className="spinner" aria-hidden="true" /> Groth16 · BLS12-381 · 1,452 constraints ·
-          proving locally in your browser, nothing sent anywhere until the proof is done ·{" "}
-          {elapsedSeconds}s elapsed
+          <span className="spinner" aria-hidden="true" /> {t("claim.techline")} · {elapsedSeconds}s
+          elapsed
         </p>
       )}
     </div>
@@ -218,7 +239,7 @@ function Stepper({ step }: { step: 0 | 1 | 2 | 3 }) {
   return (
     // nav + ol give screen readers "step N of 4" list semantics without
     // changing any visual output — CSS targets .stepper and .step as before.
-    <nav aria-label="Circle progress">
+    <nav aria-label={t("circle.stepperAria")}>
       <ol className="stepper" style={{ listStyle: "none", margin: 0, padding: 0 }}>
         {labels.map((label, i) => {
           const state = i < step ? "done" : i === step ? "active" : "";
@@ -245,17 +266,18 @@ function Stepper({ step }: { step: 0 | 1 | 2 | 3 }) {
 }
 
 function NetworkBanner() {
+  const { t } = useI18n();
   const isTestnet = NETWORK.networkPassphrase.toLowerCase().includes("test");
   if (!isTestnet) return null;
   return (
     <div className="network-banner">
-      Stellar testnet — no real funds ·{" "}
+      {t("banner.testnet")} ·{" "}
       <a
         href="https://github.com/glorious21-coder/sharibo#honest-limitations"
         target="_blank"
         rel="noreferrer"
       >
-        limitations ↗
+        {t("banner.limitationsShort")}
       </a>
     </div>
   );
@@ -282,13 +304,14 @@ function useRingRadius(): number {
 }
 
 function MemberRing({ members, revealed }: { members: { funded: boolean }[]; revealed: boolean }) {
+  const { t } = useI18n();
   const radius = useRingRadius();
   const fundedCount = members.filter((m) => m.funded).length;
 
   // Build a concise, dynamic summary for assistive technology.
   const ringLabel = revealed
-    ? `${members.length}-member circle — pot claimed. Payout recipient is unlinkable to any member.`
-    : `${members.length}-member circle, ${fundedCount} of ${members.length} funded, pot not yet claimed.`;
+    ? t("ring.label.revealed", { count: members.length })
+    : t("ring.label.loading", { count: members.length, funded: fundedCount });
 
   // id used to associate the post-claim caption with the figure via
   // aria-describedby so VoiceOver reads it as supplementary description.
@@ -308,7 +331,7 @@ function MemberRing({ members, revealed }: { members: { funded: boolean }[]; rev
         {...(revealed ? { "aria-describedby": captionId } : {})}
       >
         <div className="ring-center" aria-hidden="true">
-          {revealed ? "✓" : "pot"}
+          {revealed ? t("ring.check") : t("ring.pot")}
         </div>
         {members.map((m, i) => {
           const angle = (i / members.length) * 2 * Math.PI - Math.PI / 2;
@@ -339,8 +362,7 @@ function MemberRing({ members, revealed }: { members: { funded: boolean }[]; rev
         // id matches aria-describedby above; role="note" hints to AT that
         // this is supplementary information attached to the figure.
         <p id={captionId} role="note" className="ring-caption">
-          Payout landed on the address above — cryptographically, it could be tied to <em>any</em>{" "}
-          of the {members.length} members in the ring. An outside observer cannot tell which.
+          {t("ring.caption", { count: members.length })}
         </p>
       )}
     </div>
@@ -375,43 +397,36 @@ function EnvSetupScreen({ errors }: { errors: string[] }) {
 }
 
 function ClaimExplainer() {
+  const { t } = useI18n();
   return (
     <details className="claim-explainer">
-      <summary>How this claim proof works</summary>
+      <summary>{t("explainer.summary")}</summary>
       <div className="claim-explainer-body">
         <section>
-          <h3>What the proof is saying</h3>
+          <h3>{t("explainer.sayingTitle")}</h3>
           <p>
-            It proves the claimant knows a secret identity that is in this circle&apos;s Merkle root,
-            and binds that proof to this exact circle and round via the round tag
-            (<code>external_nullifier</code>).
+            {t("explainer.sayingBody")}
           </p>
         </section>
 
         <section>
-          <h3>What stays secret</h3>
-          <p>
-            Which member generated the proof stays private. The transaction proves valid membership
-            without revealing which one of the 5 members claimed.
-          </p>
+          <h3>{t("explainer.secretTitle")}</h3>
+          <p>{t("explainer.secretBody")}</p>
         </section>
 
         <section>
-          <h3>What the contract checks (in order)</h3>
+          <h3>{t("explainer.checksTitle")}</h3>
           <ol>
-            <li>The round is fully funded: pot equals contribution × size.</li>
-            <li>The round tag matches this exact circle and round.</li>
-            <li>This nullifier has never claimed before in this circle.</li>
-            <li>The Groth16 proof verifies against the circle&apos;s committed root.</li>
+            <li>{t("explainer.check1")}</li>
+            <li>{t("explainer.check2")}</li>
+            <li>{t("explainer.check3")}</li>
+            <li>{t("explainer.check4")}</li>
           </ol>
         </section>
 
         <section>
-          <h3>What observers can see</h3>
-          <p>
-            On-chain observers see 5 deposits in and 1 payout out, but no visible link from that
-            payout address to a specific member address.
-          </p>
+          <h3>{t("explainer.observersTitle")}</h3>
+          <p>{t("explainer.observersBody")}</p>
         </section>
       </div>
     </details>
@@ -428,6 +443,7 @@ export default function App() {
   const [screen, setScreen] = useState<"landing" | "circle">("landing");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [resumePrompt, setResumePrompt] = useState<any>(null);
 
   const [contributionXlm, setContributionXlm] = useState(10);
   const [admin, setAdmin] = useState<Keypair | null>(null);
@@ -466,24 +482,24 @@ export default function App() {
 
   useEffect(() => {
     if (busy) {
-      announce(`Help: ${busy}`);
+      announce(t("liveRegion.help", { message: busy }));
       return;
     }
 
     if (claimResult) {
-      announce("Price update complete. The claim result is ready.");
+      announce(t("liveRegion.claimResultReady"));
       return;
     }
 
     if (error) {
-      announce(`Error: ${error}`);
+      announce(t("liveRegion.error", { message: error }));
       return;
     }
 
     if (fullyFunded) {
-      announce("Price update complete. The claim step is ready.");
+      announce(t("liveRegion.claimStepReady"));
     }
-  }, [announce, busy, claimResult, error, fullyFunded]);
+  }, [announce, busy, claimResult, error, fullyFunded, t]);
 
   // ── Focus management ────────────────────────────────────────────────────
   // When a screen or major section appears, move keyboard focus to its
@@ -535,10 +551,7 @@ export default function App() {
   function resetToLanding() {
     const midFlow = fundedCount > 0 && !claimResult;
     if (midFlow) {
-      const ok = window.confirm(
-        "This circle is funded but hasn't claimed yet. Start over anyway?\n\n" +
-          "Your current circle stays on-chain — you just won't see it here.",
-      );
+      const ok = window.confirm(t("reset.confirm"));
       if (!ok) return;
     }
 
@@ -600,9 +613,7 @@ export default function App() {
 
   async function startCircle() {
     setError(null);
-    setBusy(
-      "Generating a fresh admin + 5 member identities and funding via friendbot…",
-    );
+    setBusy(t("busy.generating"));
     try {
       const [{ Keypair }, client] = await Promise.all([
         import("@stellar/stellar-sdk"),
@@ -610,7 +621,7 @@ export default function App() {
       ]);
       const { generateIdentity, MerkleTree, verificationKeyToContractFormat, connect, createCircle } = client;
 
-      setBusy("Generating a fresh admin + 5 member identities and funding via friendbot…");
+      setBusy(t("busy.generating"));
       const adminKp = Keypair.random();
       await fundWithFriendbot(adminKp.publicKey());
 
@@ -625,7 +636,7 @@ export default function App() {
         newMembers.map((m) => m.identity.commitment),
       );
 
-      setBusy("Creating the circle on testnet…");
+      setBusy(t("busy.creating"));
       const vkJson = await fetch("/circuits/verification_key.json").then((r) =>
         r.json(),
       );
@@ -648,7 +659,7 @@ export default function App() {
       setPot(0n);
       setScreen("circle");
     } catch (e) {
-      setError(toUiError(e));
+      setError(toUiError(e, t));
     } finally {
       setBusy(null);
     }
@@ -657,7 +668,7 @@ export default function App() {
   async function fundMember(i: number) {
     if (!admin || circleId === null) return;
     setError(null);
-    setBusy(`Funding from member ${i + 1}…`);
+    setBusy(t("fund.busy", { index: i + 1 }));
     try {
       const [{ Keypair }, { connect, fund, getCircle }] = await Promise.all([
         import("@stellar/stellar-sdk"),
@@ -680,7 +691,7 @@ export default function App() {
       setPot(circle.pot);
       setRound(circle.round);
     } catch (e) {
-      setError(toUiError(e));
+      setError(toUiError(e, t));
     } finally {
       setBusy(null);
     }
@@ -689,7 +700,7 @@ export default function App() {
   async function fundWithFreighter(i: number) {
     if (!admin || circleId === null) return;
     setError(null);
-    setBusy(`Funding from member ${i + 1} via Freighter…`);
+    setBusy(t("fund.busyFreighter", { index: i + 1 }));
     try {
       const allowedRes = await isAllowed();
       if (!allowedRes.isAllowed) {
@@ -698,13 +709,13 @@ export default function App() {
 
       const networkRes = await getNetworkDetails();
       if (networkRes.network !== "TESTNET") {
-        throw new Error("Freighter is not set to Testnet. Please switch your network in Freighter.");
+        throw new Error(t("error.freighterNotTestnet"));
       }
 
       const addressRes = await getAddress();
       const pubKey = addressRes.address;
       if (!pubKey) {
-        throw new Error("Could not get address from Freighter.");
+        throw new Error(t("error.getAddress"));
       }
       
       const freighterSigner = {
@@ -736,7 +747,7 @@ export default function App() {
       setPot(circle.pot);
       setRound(circle.round);
     } catch (e) {
-      setError(getErrorMessage(e));
+      setError(toUiError(e, t));
     } finally {
       setBusy(null);
     }
@@ -747,7 +758,7 @@ export default function App() {
     setError(null);
     setClaimResult(null);
     setRejection(null);
-    setBusy("Claiming…");
+    setBusy(t("busy.claiming"));
     try {
       const [{ Keypair }, { computeExternalNullifier, generateProof, connect, claim, getCircle }] = await Promise.all([
         import("@stellar/stellar-sdk"),
@@ -804,14 +815,14 @@ export default function App() {
 
       setProof(generated.proof);
       setNullifierHash(generated.nullifierHash);
-      setClaimResult({ recipient: recipient.publicKey(), hash, proofDurationMs });
+      setClaimResult({ recipient: recipient.publicKey(), hash, proofDurationMs: 0 });
       setNullifierClaimed(await hasClaimed(adminClient, circleId, generated.nullifierHash));
 
       const circle = await getCircle(adminClient, circleId);
       setPot(circle.pot);
       setRound(circle.round);
     } catch (e) {
-      setError(toUiError(e));
+      setError(toUiError(e, t));
     } finally {
       setBusy(null);
       setClaimStage(null);
@@ -822,9 +833,7 @@ export default function App() {
     if (!admin || circleId === null || !proof || nullifierHash === null) return;
     setError(null);
     setRejection(null);
-    setBusy(
-      "Refunding a new round, then replaying the same proof's nullifier…",
-    );
+    setBusy(t("busy.refunding"));
     try {
       const [{ Keypair }, { connect, fund, computeExternalNullifier, claim, getCircle }] = await Promise.all([
         import("@stellar/stellar-sdk"),
@@ -843,7 +852,7 @@ export default function App() {
         BigInt(round),
       );
 
-      setBusy("Replaying the used nullifier…");
+      setBusy(t("busy.replaying"));
       await claim(adminClient, {
         circleId,
         recipient: Keypair.random().publicKey(),
@@ -851,11 +860,9 @@ export default function App() {
         externalNullifier: freshExternalNullifier,
         proof,
       });
-      setRejection(
-        "Unexpected: the replayed claim was accepted (this should never happen).",
-      );
+      setRejection(t("rejection.unexpected"));
     } catch (e) {
-      setRejection(getErrorMessage(e));
+      setRejection(toUiError(e, t));
     } finally {
       // Reflect the on-chain state either way: the re-funding above happened
       // for real even though the replayed claim itself was rejected.
@@ -876,19 +883,17 @@ export default function App() {
     return (
       <div className="page">
         <div className="card hero">
-          <h1>Resume Circle #{resumePrompt.circleId.toString()}?</h1>
-          <p className="sub">
-            It looks like you refreshed the page while a circle was active. Do you want to resume?
-          </p>
+          <h1>{t("resume.heading", { id: resumePrompt.circleId.toString() })}</h1>
+          <p className="sub">{t("resume.subtitle")}</p>
           <div className="row" style={{ marginTop: '2rem', justifyContent: 'center', gap: '1rem' }}>
             <button className="btn btn-primary" onClick={() => loadState(resumePrompt)}>
-              Resume Circle
+              {t("resume.resumeButton")}
             </button>
             <button className="btn btn-danger" onClick={() => {
               sessionStorage.removeItem("sharibo_demo_state");
               setResumePrompt(null);
             }}>
-              Discard
+              {t("resume.discardButton")}
             </button>
           </div>
         </div>
@@ -910,45 +915,38 @@ export default function App() {
             ))}
           </div>
           <h1>SHARIBO</h1>
-          <p className="tagline">
-            A private rotating savings circle — on Stellar, with real
-            zero-knowledge proofs.
-          </p>
+          <p className="tagline">{t("landing.tagline")}</p>
           <p className="sub">
-            Every round, everyone contributes. Every round, one member takes the
-            pot. Sharibo proves <em>who's entitled to claim</em> without ever
-            revealing <em>who</em> claimed.
+            {t("landing.sub.before")} <em>{t("landing.sub.em1")}</em> {t("landing.sub.middle")}{" "}
+            <em>{t("landing.sub.em2")}</em> {t("landing.sub.after")}
           </p>
           <button
             className="btn btn-primary"
             disabled={!!busy}
             onClick={startCircle}
           >
-            {busy ?? "Launch a 5-member circle on testnet"}
+            {busy ?? t("landing.launch")}
           </button>
           {error && <p className="error">{error}</p>}
           {previousCircleId !== null && (
             <p className="fineprint">
-              Your previous circle lives on at{" "}
+              {t("landing.previousCirclePrefix")}{" "}
               <a
                 className="link"
                 href={explorerContract()}
                 target="_blank"
                 rel="noreferrer"
               >
-                circle #{previousCircleId.toString()} ↗
+                {t("landing.previousCircleLink", { id: previousCircleId.toString() })}
               </a>
             </p>
           )}
-          <p className="fineprint">
-            Testnet only. Demo identities are generated fresh in your browser,
-            never reused.
-          </p>
+          <p className="fineprint">{t("landing.testnetFineprint")}</p>
           {prevCircle && (
             <p className="fineprint">
-              Your previous circle #{prevCircle.id} lives on-chain —{" "}
+              {t("landing.previousCircleLivesOn", { id: prevCircle.id })}{" "}
               <a className="link" href={prevCircle.explorerUrl} target="_blank" rel="noreferrer">
-                view on explorer ↗
+                {t("landing.viewExplorer")}
               </a>
             </p>
           )}
@@ -957,7 +955,7 @@ export default function App() {
     );
   }
 
-  const step: 0 | 1 | 2 | 3 = flow.claimResult ? 3 : flow.fullyFunded ? 2 : 1;
+  const step: 0 | 1 | 2 | 3 = claimResult ? 3 : fullyFunded ? 2 : 1;
 
   return (
     <div className="page">
@@ -979,13 +977,13 @@ export default function App() {
           </h1>
           <div className="row">
             <a className="link" href={explorerContract()} target="_blank" rel="noreferrer">
-              circle #{flow.circleId?.toString()} on-chain ↗
+              {t("circle.onChainLink", { id: circleId?.toString() ?? "" })}
             </a>
             <button
               className="btn btn-small"
-              disabled={!!flow.busy}
-              onClick={flow.resetToLanding}
-              title={`Start over. Your current circle (#${flow.circleId?.toString()}) keeps living on-chain.`}
+              disabled={!!busy}
+              onClick={resetToLanding}
+              title={t("common.startNewCircle")}
             >
               {t("common.startNewCircle")}
             </button>
@@ -994,26 +992,32 @@ export default function App() {
 
         <Stepper step={step} />
 
-        <MemberRing members={flow.members} revealed={!!flow.claimResult} />
+        <MemberRing members={members} revealed={!!claimResult} />
 
         <div className="pot-bar-wrap">
           <div
             className="pot-bar"
-            style={{ width: `${(flow.fundedCount / CIRCLE_SIZE) * 100}%` }}
+            style={{ width: `${(fundedCount / CIRCLE_SIZE) * 100}%` }}
           />
         </div>
         <p className="pot-label">
-          pot: {(Number(flow.pot) / 1e7).toFixed(1)} / {flow.contributionXlm * CIRCLE_SIZE} XLM ·
-          round {flow.round}
+          {t("pot.label", {
+            pot: (Number(pot) / 1e7).toFixed(1),
+            total: contributionXlm * CIRCLE_SIZE,
+            round,
+          })}
         </p>
 
-        <h2>Fund</h2>
+        <h2>{t("fund.heading")}</h2>
         <div className="members">
           {members.map((m, i) => (
             <div key={i} className={`member ${m.funded ? "funded" : ""}`}>
               <span className="member-addr">
-                member {i + 1} · {short(m.keypair.publicKey())}
-                <CopyButton value={m.keypair.publicKey()} label={`member ${i + 1} address`} />
+                {t("fund.memberLabel", { index: i + 1 })} · {short(m.keypair.publicKey())}
+                <CopyButton
+                  value={m.keypair.publicKey()}
+                  label={t("fund.memberAddressLabel", { index: i + 1 })}
+                />
               </span>
               {m.funded ? (
                 <a
@@ -1022,7 +1026,7 @@ export default function App() {
                   target="_blank"
                   rel="noreferrer"
                 >
-                  ✓ funded ↗
+                  {t("fund.fundedLink")}
                 </a>
               ) : (
                 <div className="row">
@@ -1031,7 +1035,7 @@ export default function App() {
                     disabled={!!busy || round > 0}
                     onClick={() => fundMember(i)}
                   >
-                    Fund {contributionXlm} XLM (Demo)
+                    {t("fund.demoButton", { amount: contributionXlm })}
                   </button>
                   {hasFreighter && (
                     <button
@@ -1039,7 +1043,7 @@ export default function App() {
                       disabled={!!busy || round > 0}
                       onClick={() => fundWithFreighter(i)}
                     >
-                      Fund with Freighter
+                      {t("fund.freighterButton")}
                     </button>
                   )}
                 </div>
@@ -1051,12 +1055,10 @@ export default function App() {
         {fullyFunded && !claimResult && (
           <>
             <h2 ref={claimHeadingRef} tabIndex={-1}>
-              Claim
+              {t("claim.heading")}
             </h2>
             <p className="sub">
-              Pick which member is claiming this round — the proof will show the
-              contract that they're a real member <em>without</em> revealing
-              which one.
+              {t("claim.subtitle")}
             </p>
             <div className="row">
               {members.map((_, i) => (
@@ -1067,20 +1069,21 @@ export default function App() {
                     onChange={() => setClaimantIndex(i)}
                     disabled={!!busy}
                   />
-                  member {i + 1}
+                  {t("claim.radioMember", { index: i + 1 })}
                 </label>
               ))}
             </div>
             <button className="btn btn-primary" disabled={!!busy} onClick={doClaim}>
-              {claimStage ? CLAIM_STAGE_LABELS[claimStage] : "Generate proof & claim"}
+              {claimStage ? t(`claim.stage.${claimStage}`) : t("claim.generateButton")}
             </button>
             <ClaimExplainer />
             {busy && (
               <p className="techline">
                 {/* Constraint count: update this AND circuits/README.md if the circuit changes. */}
-                Groth16 · BLS12-381 · 1,452 constraints · proving locally in your browser, nothing
-                sent anywhere until the proof is done
-                {isProving && provingSeconds !== null ? ` · proving… ${provingSeconds}s` : ""}
+                {t("claim.techline")}
+                {isProving && proveElapsedSeconds !== null
+                  ? t("claim.techlineProving", { seconds: proveElapsedSeconds })
+                  : ""}
               </p>
             )}
           </>
@@ -1089,16 +1092,18 @@ export default function App() {
         {claimResult && (
           <div className="result">
             <h2 ref={payoutHeadingRef} tabIndex={-1}>
-              Payout landed
+              {t("result.heading")}
             </h2>
             <p>
-              Fresh recipient <code>{short(claimResult.recipient)}</code>
-              <CopyButton value={claimResult.recipient} label="recipient address" />{" "}
+              {t("result.recipientIntro")} <code>{short(claimResult.recipient)}</code>
+              <CopyButton
+                value={claimResult.recipient}
+                label={t("result.recipientLabel")}
+              />{" "}
               <a href={explorerAccount(claimResult.recipient)} target="_blank" rel="noreferrer">
                 ↗
               </a>{" "}
-              received the pot. It has never appeared anywhere else on this
-              circle.
+              {t("result.recipientOutro")}
             </p>
             <a
               className="link"
@@ -1106,42 +1111,34 @@ export default function App() {
               target="_blank"
               rel="noreferrer"
             >
-              view claim transaction ↗
+              {t("result.viewClaimTx")}
             </a>
-            <CopyButton value={claimResult.hash} label="claim transaction hash" />
-            <p className="callout">
-              Compare the 5 funding transactions above to this claim — same
-              contract, no shared address, no visible link.
-            </p>
+            <CopyButton value={claimResult.hash} label={t("result.hashLabel")} />
+            <p className="callout">{t("result.callout")}</p>
             <button
               className="btn btn-danger"
               disabled={!!busy || (!!rejection && nullifierClaimed)}
               onClick={claimAgain}
               title={
-                rejection && nullifierClaimed
-                  ? "Nullifier already claimed (has_claimed)"
-                  : undefined
+                rejection && nullifierClaimed ? t("result.claimAgainTitle") : undefined
               }
             >
-              {busy ?? "Try to claim again with the same proof"}
+              {busy ?? t("result.claimAgainButton")}
             </button>
             {nullifierClaimed && !rejection && (
-              <p className="callout">
-                <code>has_claimed</code> is true for this nullifier — a replay will be rejected
-                on-chain.
-              </p>
+              <p className="callout">{t("result.nullifierClaimed")}</p>
             )}
             {rejection && (
               <>
                 <div className="rejected">
-                  <strong>Rejected on-chain:</strong> {rejection}
+                  <strong>{t("result.rejectedLabel")}</strong> {rejection}
                 </div>
                 <button
                   className="btn btn-primary"
                   disabled={!!busy}
                   onClick={resetToLanding}
                 >
-                  Start a new circle
+                  {t("result.startNewCircle")}
                 </button>
               </>
             )}
@@ -1152,21 +1149,21 @@ export default function App() {
                   disabled={!!busy}
                   onClick={resetToLanding}
                 >
-                  ↺ Start a new circle
+                  {t("result.startNewCircleAlt")}
                 </button>
                 <p className="fineprint">
-                  Circle #{circleId?.toString()} stays on-chain forever —{" "}
+                  {t("result.livesOnChain", { id: circleId?.toString() ?? "" })}{" "}
                   <a className="link" href={explorerContract()} target="_blank" rel="noreferrer">
-                    view on explorer ↗
+                    {t("result.viewExplorer")}
                   </a>
-                  . Starting a new circle generates fresh identities and a brand-new on-chain record.
+                  {t("result.newCircleOutro")}
                 </p>
               </div>
             )}
           </div>
         )}
 
-        {flow.error && <p className="error">{flow.error}</p>}
+        {error && <p className="error">{error}</p>}
       </div>
     </div>
   );

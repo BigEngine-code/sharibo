@@ -2,6 +2,8 @@
 // as "the one that claimed" — that's the point. From outside the ring, all
 // five remain equally plausible; only the demo operator (via the radio
 // picker below) ever knows which one actually did.
+import { useI18n } from "../i18n.js";
+
 export function MemberRing({
   members,
   revealed,
@@ -9,11 +11,16 @@ export function MemberRing({
   members: { funded: boolean }[];
   revealed: boolean;
 }) {
+  const { t } = useI18n();
   const radius = 100;
+  const fundedCount = members.filter((m) => m.funded).length;
+  const ringLabel = revealed
+    ? t("ring.label.revealed", { count: members.length })
+    : t("ring.label.loading", { count: members.length, funded: fundedCount });
   return (
     <div className="ring-wrap">
-      <div className="ring">
-        <div className="ring-center">{revealed ? "✓" : "pot"}</div>
+      <div className="ring" role="img" aria-label={ringLabel}>
+        <div className="ring-center">{revealed ? t("ring.check") : t("ring.pot")}</div>
         {members.map((m, i) => {
           const angle = (i / members.length) * 2 * Math.PI - Math.PI / 2;
           const x = Math.round(Math.cos(angle) * radius);
@@ -35,10 +42,7 @@ export function MemberRing({
         )}
       </div>
       {revealed && (
-        <p className="ring-caption">
-          Payout landed on the address above — cryptographically, it could be tied to <em>any</em>{" "}
-          of the 5 members in the ring. An outside observer cannot tell which.
-        </p>
+        <p className="ring-caption">{t("ring.caption", { count: members.length })}</p>
       )}
     </div>
   );
