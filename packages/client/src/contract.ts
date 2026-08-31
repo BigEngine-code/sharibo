@@ -216,6 +216,11 @@ export interface CircleView {
   size: number;
   round: number;
   pot: bigint;
+  // Newly added fields in the on-chain `Circle` struct — keep in sync
+  // with the contract to surface them to the application layer.
+  vk: ContractVerificationKey;
+  contributors: string[];
+  cancelled: boolean;
 }
 
 /**
