@@ -958,12 +958,77 @@ fn has_claimed_false_before_true_after() {
 }
 
 #[test]
+#[should_panic(expected = "Error(Contract, #9)")] // InvalidCircleParams
+fn create_circle_rejects_zero_size() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(Contract, ());
+    let client = ContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = create_token(&env, &token_admin);
+    let vk = real_verification_key(&env);
+
+    client.create_circle(&admin, &token, &real_root(&env), &100i128, &0u32, &vk);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")] // InvalidCircleParams
+fn create_circle_rejects_non_positive_contribution() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(Contract, ());
+    let client = ContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = create_token(&env, &token_admin);
+    let vk = real_verification_key(&env);
+
+    client.create_circle(&admin, &token, &real_root(&env), &0i128, &5u32, &vk);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")] // InvalidCircleParams
+fn create_circle_rejects_wrong_vk_length() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(Contract, ());
+    let client = ContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = create_token(&env, &token_admin);
+    let mut vk = real_verification_key(&env);
+    vk.ic.pop_back();
+
+    client.create_circle(&admin, &token, &real_root(&env), &100i128, &5u32, &vk);
+}
+
+#[test]
 #[should_panic(expected = "Error(Contract, #7)")] // Overflow
 fn fund_reverts_on_pot_target_overflow() {
     // contribution * size overflows i128 → typed Overflow before any transfer.
     let s = setup(2, i128::MAX);
     let client = ContractClient::new(&s.env, &s.client_id);
     client.fund(&s.circle_id, &s.members[0]);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")] // InvalidCircleParams
+fn create_circle_rejects_creation_time_overflow() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(Contract, ());
+    let client = ContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = create_token(&env, &token_admin);
+    let vk = real_verification_key(&env);
+
+    client.create_circle(&admin, &token, &real_root(&env), &i128::MAX, &2u32, &vk);
 }
 
 #[test]

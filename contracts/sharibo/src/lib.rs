@@ -133,6 +133,9 @@ pub enum Error {
     Overflow = 7,
     /// `cancel_circle` or `fund`/`claim` called on a cancelled circle.
     CircleCancelled = 8,
+    /// `create_circle` rejected invalid setup parameters: zero size,
+    /// non-positive contribution, or a verification key length mismatch.
+    InvalidCircleParams = 9,
 }
 
 const LEDGER_THRESHOLD: u32 = 100;
@@ -201,6 +204,15 @@ impl Contract {
         vk: VerificationKey,
     ) -> u64 {
         admin.require_auth();
+
+        if size == 0 || contribution <= 0 || vk.ic.len() != 4 {
+            panic_with_error!(&env, Error::InvalidCircleParams);
+        }
+
+        let target = contribution
+            .checked_mul(size as i128)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::InvalidCircleParams));
+        let _ = target;
 
         let circle_id: u64 = env
             .storage()

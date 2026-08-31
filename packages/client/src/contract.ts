@@ -134,6 +134,10 @@ export async function createCircle(
     vk: ContractVerificationKey;
   },
 ): Promise<TxResult<bigint>> {
+  if (args.size === 0 || args.contribution <= 0n || args.vk.ic.length !== 4) {
+    throw new Error("InvalidCircleParams: size must be > 0, contribution must be > 0, and vk.ic must have length 4");
+  }
+
   const tx = await withRetry(() => client.create_circle({
     admin: args.admin,
     token: args.token,

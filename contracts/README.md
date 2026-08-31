@@ -183,6 +183,7 @@ When a transaction reverts, Soroban returns a typed contract error of the form `
 | **6** | `RoundFull` | `fund` was called on a circle whose pot is already fully funded. | Wait for the current round to be claimed and advanced before attempting to fund the next round. |
 | **7** | `Overflow` | Checked arithmetic failed during contribution calculation or pot addition. | Avoid using absurdly large contribution amounts or circle sizes that overflow integer capacities. |
 | **8** | `CircleCancelled` | `fund`, `claim`, or `cancel_circle` was called on a circle that has already been cancelled. | Do not interact with a cancelled circle. Any funds were already refunded to the contributors. |
+| **9** | `InvalidCircleParams` | `create_circle` was given a zero size, a non-positive contribution, an invalid verification key length, or a creation-time overflow in `contribution * size`. | Correct the circle configuration before submitting the transaction. |
 
 ---
 
