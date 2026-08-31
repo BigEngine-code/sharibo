@@ -70,7 +70,16 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     const fallback = dictionaries[fallbackLocale];
 
     const t = (key: string, vars?: Record<string, string | number>): string => {
-      const template = current[key] ?? fallback[key] ?? key;
+      const template = current[key] ?? fallback[key];
+      
+      if (template === undefined) {
+        // Warn in development when a key is not found in any locale
+        if (import.meta.env.DEV) {
+          console.warn(`[i18n] Unknown translation key: "${key}"`);
+        }
+        return key;
+      }
+      
       return interpolate(template, vars);
     };
 
