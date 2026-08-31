@@ -44,6 +44,30 @@ The compiled WASM artifact will be generated at `target/wasm32v1-none/release/sh
 
 To execute the test suite, run the following command from the `contracts/` directory:
 
+## Storage lifetime
+
+Every write entrypoint (`create_circle`, `fund`, `claim`, `cancel_circle`) calls `extend_ttl` on all touched persistent and instance entries. The two constants governing this behaviour are defined and justified in [`contracts/sharibo/src/lib.rs`](sharibo/src/lib.rs):
+
+| Constant | Value | Wall-clock equivalent |
+| --- | --- | --- |
+| `LEDGER_THRESHOLD` | 100 ledgers | ≈ 8 minutes |
+| `LEDGER_EXTEND_TO` | 500,000 ledgers | ≈ 29 days |
+
+The Soroban network maximum for persistent entry TTL is **535,679 ledgers (≈ 30 days)** ([Stellar CLI docs](https://developers.stellar.org/docs/tools/cli/cookbook/extend-contract-wasm)). `LEDGER_EXTEND_TO` is set below that ceiling intentionally, giving a small safety margin while keeping circles live for as long as the network allows.
+
+**What this means in practice**: as long as any participant calls `fund`, `claim`, or `cancel_circle` at least once every 29 days, the circle's storage entry is refreshed and the circle stays accessible indefinitely.
+
+**What to do if a circle goes dormant**: if no write has occurred for longer than the TTL window, the persistent entry will be archived. Before interacting with the circle again, an operator must restore it:
+
+```bash
+stellar contract restore \
+  --source <admin-or-any-account> \
+  --network mainnet \
+  --id <contract-id>
+```
+
+After a successful `RestoreFootprintOp` the circle's full state (including `round`, `pot`, and `contributors`) is restored with the values it had when it was archived. No data is lost; the circle can then be used normally and the next write will re-extend the TTL to another 29-day window.
+
 `NextCircleId` lives in **instance storage** (`env.storage().instance()`). Soroban instance entries have a TTL measured in ledgers; once a TTL lapses the entry is _archived_ (removed from the live state) and can be restored later via `RestoreFootprintOp`.
 
 **What happens on testnet when instance storage is archived and restored?** After a successful `RestoreFootprintOp` the entry reappears with its last-written value intact — the counter does _not_ reset. The risk is the gap between archival and restoration: any `create_circle` call during that gap would reinitialise the counter to `0` (the `unwrap_or(0)` default), silently overwriting circle 0.
