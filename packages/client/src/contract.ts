@@ -4,6 +4,33 @@ import type { ContractProof, ContractVerificationKey } from "./prove.js";
 import { ContractError, RpcError } from "./errors.js";
 
 /**
+ * Retry a simulation-phase call (the `await client.method(args)` call) up to
+ * `maxAttempts` times when it fails with a retryable RPC error (429, 503,
+ * etc.).  The *send* phase (`signAndSend`) is never retried — a mid-flight
+ * failure there surfaces immediately so the caller can decide whether to
+ * re-query the ledger or simply surface the error.
+ *
+ * @internal
+ */
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxAttempts = 5,
+  delayMs = 500,
+): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err: unknown) {
+      const isRetryable =
+        err instanceof Error &&
+        /429|503|Too Many|rate.?limit/i.test(err.message);
+      if (!isRetryable || attempt >= maxAttempts) throw err;
+      await new Promise((r) => setTimeout(r, delayMs * attempt));
+    }
+  }
+}
+
+/**
  * Network configuration for connecting to the Sharibo contract.
  *
  * @property contractId - The Stellar contract ID.
@@ -65,6 +92,26 @@ export async function connect(
     publicKey,
     signTransaction,
     signAuthEntry,
+  });
+}
+
+/**
+ * Build a read-only contract client that can simulate view calls without a
+ * signer, a funded account, or any fee payment.
+ *
+ * Use this for {@link getCircle}, {@link getCircleCount}, and
+ * {@link hasClaimed}.  The returned client must **not** be passed to
+ * write-path functions (`fund`, `claim`, `createCircle`) — those require a
+ * signed client from {@link connect}.
+ */
+export async function connectReadOnly(
+  config: ShariboNetworkConfig,
+): Promise<ShariboClient> {
+  return ContractClient.from({
+    contractId: config.contractId,
+    networkPassphrase: config.networkPassphrase,
+    rpcUrl: config.rpcUrl,
+    // publicKey omitted — the SDK accepts undefined for simulation-only calls
   });
 }
 
@@ -221,26 +268,36 @@ export interface CircleView {
 /**
  * Retrieves the current state of a circle.
  *
+ * Uses simulation only — no transaction is submitted, no fee is charged, and
+ * no funded keypair is required.  Pass a client from {@link connectReadOnly}
+ * (or any signed client; signing is simply ignored for view calls).
+ *
  * @param client - The Sharibo contract client.
  * @param circleId - The ID of the circle to query.
  * @returns The circle's current state.
  */
 export async function getCircle(client: ShariboClient, circleId: bigint): Promise<CircleView> {
-  // get_circle is a pure read: the SDK detects no signature is needed and
-  // refuses signAndSend() without `force` (there's nothing to sign/submit).
   const tx = await withRetry(() => client.get_circle({ circle_id: circleId }));
-  const sent = await tx.signAndSend({ force: true });
-  return sent.result;
+  return tx.result as CircleView;
 }
 
-/** Pure read: the current count of circles ever created. 0 if none yet. */
+/**
+ * Pure read: the current count of circles ever created. 0 if none yet.
+ *
+ * Uses simulation only — no transaction is submitted, no fee is charged, and
+ * no funded keypair is required.
+ */
 export async function getCircleCount(client: ShariboClient): Promise<bigint> {
-  const tx = await client.get_circle_count();
-  const sent = await tx.signAndSend({ force: true });
-  return sent.result as bigint;
+  const tx = await withRetry(() => client.get_circle_count());
+  return tx.result as bigint;
 }
 
-/** Pure read: whether `nullifierHash` has already claimed in this circle. */
+/**
+ * Pure read: whether `nullifierHash` has already claimed in this circle.
+ *
+ * Uses simulation only — no transaction is submitted, no fee is charged, and
+ * no funded keypair is required.
+ */
 export async function hasClaimed(
   client: ShariboClient,
   circleId: bigint,
@@ -250,6 +307,5 @@ export async function hasClaimed(
     circle_id: circleId,
     nullifier_hash: nullifierHash,
   }));
-  const sent = await tx.signAndSend({ force: true });
-  return sent.result;
+  return tx.result as boolean;
 }

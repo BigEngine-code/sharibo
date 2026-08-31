@@ -15,6 +15,7 @@ import {
   generateProof,
   verificationKeyToContractFormat,
   connect,
+  connectReadOnly,
   createCircle,
   fund,
   claim,
@@ -659,7 +660,7 @@ export default function App() {
     setError(null);
     setBusy(`Funding from member ${i + 1}…`);
     try {
-      const [{ Keypair }, { connect, fund, getCircle }] = await Promise.all([
+      const [{ Keypair }, { connect, connectReadOnly, fund, getCircle }] = await Promise.all([
         import("@stellar/stellar-sdk"),
         import("@sharibo/client")
       ]);
@@ -675,8 +676,8 @@ export default function App() {
           idx === i ? { ...mm, funded: true, fundHash: hash } : mm,
         ),
       );
-      const adminClient = await connect(NETWORK, admin);
-      const circle = await getCircle(adminClient, circleId);
+      const readClient = await connectReadOnly(NETWORK);
+      const circle = await getCircle(readClient, circleId);
       setPot(circle.pot);
       setRound(circle.round);
     } catch (e) {
@@ -731,8 +732,9 @@ export default function App() {
         prev.map((mm, idx) => (idx === i ? { ...mm, funded: true, fundHash: hash, freighterKey: pubKey } : mm)),
       );
 
-      const adminClient = await connect(NETWORK, admin);
-      const circle = await getCircle(adminClient, circleId);
+      const { connectReadOnly, getCircle } = await import("@sharibo/client");
+      const readClient = await connectReadOnly(NETWORK);
+      const circle = await getCircle(readClient, circleId);
       setPot(circle.pot);
       setRound(circle.round);
     } catch (e) {
@@ -749,7 +751,7 @@ export default function App() {
     setRejection(null);
     setBusy("Claiming…");
     try {
-      const [{ Keypair }, { computeExternalNullifier, generateProof, connect, claim, getCircle }] = await Promise.all([
+      const [{ Keypair }, { computeExternalNullifier, generateProof, connect, connectReadOnly, claim, getCircle, hasClaimed }] = await Promise.all([
         import("@stellar/stellar-sdk"),
         import("@sharibo/client")
       ]);
@@ -805,9 +807,11 @@ export default function App() {
       setProof(generated.proof);
       setNullifierHash(generated.nullifierHash);
       setClaimResult({ recipient: recipient.publicKey(), hash, proofDurationMs });
-      setNullifierClaimed(await hasClaimed(adminClient, circleId, generated.nullifierHash));
 
-      const circle = await getCircle(adminClient, circleId);
+      const readClient = await connectReadOnly(NETWORK);
+      setNullifierClaimed(await hasClaimed(readClient, circleId, generated.nullifierHash));
+
+      const circle = await getCircle(readClient, circleId);
       setPot(circle.pot);
       setRound(circle.round);
     } catch (e) {
@@ -860,9 +864,9 @@ export default function App() {
       // Reflect the on-chain state either way: the re-funding above happened
       // for real even though the replayed claim itself was rejected.
       try {
-        const { connect, getCircle } = await import("@sharibo/client");
-        const adminClient = await connect(NETWORK, admin);
-        const circle = await getCircle(adminClient, circleId);
+        const { connectReadOnly, getCircle } = await import("@sharibo/client");
+        const readClient = await connectReadOnly(NETWORK);
+        const circle = await getCircle(readClient, circleId);
         setPot(circle.pot);
         setRound(circle.round);
       } catch {
