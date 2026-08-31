@@ -104,7 +104,7 @@ The claimant proves, in zero knowledge:
 
 1. **Membership** — `Poseidon(identityNullifier, identitySecret)` is a leaf under the circle's committed Merkle root (which member: hidden).
 2. **One claim per round** — a nullifier bound to `(circle_id, round)`; the contract records it, so replay fails with `AlreadyClaimed`.
-3. **Unlinkability** — the pot pays out to any address the claimant chooses; in the demo, a keypair that has never touched the circle.
+3. **Unlinkability** — the pot pays out to any address the claimant chooses; in the demo, a keypair that has never touched the circle. **Caveat: the proof does *not* authorise that address** — `recipient` is a plain `claim` argument, not a circuit input (see "Honest limitations").
 
 An on-chain observer sees five deposits and one payout — and no way to connect them.
 
@@ -112,6 +112,7 @@ Full structured breakdown — assets, adversaries, and which code enforces each 
 
 ## Honest limitations
 
+- **The proof does not bind the payout address.** `recipient` is a plain `claim` argument, never part of the proof or its public inputs. Anyone who observes a pending claim's proof and public inputs — a mempool watcher, a careless or malicious relayer — can copy them and resubmit with a different `recipient`, redirecting the pot to their own address (a front-running risk, not a privacy break). Current mitigation: **testnet only, no real funds**, small demo circles, claims relayed through the admin's client. The fix (binding the recipient inside the circuit) is a substantial change — circuit + trusted setup + contract + redeploy — tracked in [issue #246](https://github.com/crackedstudio/sharibo/issues/246). Until it lands, do not evaluate Sharibo with real funds. Full write-up in [docs/threat-model.md](docs/threat-model.md).
 - **Claim-side privacy only.** Funding is fully public, by scope: shielded deposits are a different (harder) problem — roadmap.
 - **One round demoed**, not a full multi-round rotation with on-chain turn ordering.
 - **Testnet + test token**; single-party trusted setup (fine for a demo, not production).
