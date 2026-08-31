@@ -27,6 +27,8 @@ import {
   RpcError,
   ProvingError,
   InvalidInputError,
+  networkOf,
+  NETWORKS,
 } from "@sharibo/client";
 import { config, configError } from "./config";
 import { useI18n } from "./i18n";
@@ -64,7 +66,8 @@ const CIRCLE_SIZE = 5;
 const STROOPS_PER_XLM = 10_000_000n;
 const README_URL = "https://github.com/crackedstudio/sharibo#honest-limitations";
 
-const isTestnet = NETWORK.networkPassphrase.includes("Test SDF Network");
+const networkConfig = networkOf(NETWORK.networkPassphrase);
+const isTestnet = networkConfig !== "custom" && networkConfig.passphrase === NETWORKS.testnet.passphrase;
 const BANNER_TEXT = isTestnet ? "Stellar testnet — no real funds" : "";
 
 function TestnetBanner() {
@@ -106,11 +109,19 @@ function toUiError(error: unknown): string {
   return "Something went wrong. Please retry.";
 }
 
+function getExplorerBase(): string {
+  const net = networkOf(NETWORK.networkPassphrase);
+  if (net === "custom") {
+    return "https://testnet.stellar.expert/explorer";
+  }
+  return net.explorerBase;
+}
+
 function explorerAccount(address: string): string {
-  return `https://stellar.expert/explorer/testnet/account/${address}`;
+  return `${getExplorerBase()}/account/${address}`;
 }
 function explorerContract(): string {
-  return `https://stellar.expert/explorer/testnet/contract/${NETWORK.contractId}`;
+  return `${getExplorerBase()}/contract/${NETWORK.contractId}`;
 }
 function short(address: string): string {
   return `${address.slice(0, 4)}…${address.slice(-4)}`;

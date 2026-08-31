@@ -3,6 +3,7 @@
  * load time.  Import `config` wherever you need the values; import
  * `configError` to check whether the app should render the setup screen.
  */
+import { NETWORKS } from "@sharibo/client";
 
 interface AppConfig {
   contractId: string;
@@ -35,8 +36,8 @@ function validate(): ValidationResult {
   const errors: string[] = [];
 
   const contractId = import.meta.env.VITE_SHARIBO_CONTRACT_ID as string | undefined;
-  const rpcUrl = import.meta.env.VITE_STELLAR_RPC_URL as string | undefined;
-  const networkPassphrase = import.meta.env.VITE_STELLAR_NETWORK_PASSPHRASE as string | undefined;
+  const rpcUrl = import.meta.env.VITE_STELLAR_RPC_URL as string | undefined ?? NETWORKS.testnet.rpcUrl;
+  const networkPassphrase = import.meta.env.VITE_STELLAR_NETWORK_PASSPHRASE as string | undefined ?? NETWORKS.testnet.passphrase;
   const testTokenContractId = import.meta.env.VITE_TEST_TOKEN_CONTRACT_ID as string | undefined;
 
   if (!contractId) {
@@ -47,14 +48,8 @@ function validate(): ValidationResult {
     );
   }
 
-  if (!rpcUrl) {
-    errors.push("VITE_STELLAR_RPC_URL — missing or empty");
-  } else if (!isHttpUrl(rpcUrl)) {
+  if (!isHttpUrl(rpcUrl)) {
     errors.push(`VITE_STELLAR_RPC_URL — invalid URL (got "${rpcUrl}"; expected an http/https URL)`);
-  }
-
-  if (!networkPassphrase) {
-    errors.push("VITE_STELLAR_NETWORK_PASSPHRASE — missing or empty");
   }
 
   if (!testTokenContractId) {
@@ -72,8 +67,8 @@ function validate(): ValidationResult {
   return {
     config: {
       contractId: contractId!,
-      rpcUrl: rpcUrl!,
-      networkPassphrase: networkPassphrase!,
+      rpcUrl,
+      networkPassphrase,
       testTokenContractId: testTokenContractId!,
     },
     errors: [],
