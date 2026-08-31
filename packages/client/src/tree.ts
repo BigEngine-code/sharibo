@@ -1,4 +1,17 @@
 import { poseidon, FR_MODULUS } from "./identity.js";
+import { InvalidInputError } from "./errors.js";
+
+/**
+ * Number of levels in the Merkle tree the on-chain circuit is compiled for.
+ * Single-sourced from `circuits/config.json`; changing it requires a circuit
+ * recompile + trusted-setup + contract redeploy (see the top-level README).
+ *
+ * Used as the default depth for [`validateCircuitInput`](../prove.js).
+ */
+export const TREE_LEVELS = 4;
+
+/** The largest circle a tree of `TREE_LEVELS` can hold: 2**TREE_LEVELS. */
+export const MAX_CIRCLE_SIZE = 2 ** TREE_LEVELS;
 
 /**
  * Fixed placeholder for unused leaves when padding the tree out to full capacity (2**levels).
@@ -149,5 +162,28 @@ export class MerkleTree {
     }
 
     return { root: this.root, pathElements, pathIndices };
+  }
+
+  /**
+   * Generates a Merkle proof for an occupied leaf value.
+   *
+   * Convenience over [`proof`](#proof) that looks the leaf up by its value
+   * rather than requiring the caller to know its index. Throws describing the
+   * leaf and the tree's population when the leaf is not present.
+   *
+   * @param leaf - The leaf value (identity commitment) to prove membership of.
+   * @returns A MerkleProof containing the root, path elements, and path indices.
+   * @throws {InvalidInputError} If the leaf is not in the tree.
+   */
+  proofOf(leaf: bigint): MerkleProof {
+    const index = this.indexOf(leaf);
+    if (index === -1) {
+      const occupied = this.leaves.length;
+      const slots = this.layers[0].length;
+      throw new InvalidInputError(
+        `leaf 0x${leaf.toString(16)} not found in this tree (${slots} slots, ${occupied} occupied)`,
+      );
+    }
+    return this.proof(index);
   }
 }

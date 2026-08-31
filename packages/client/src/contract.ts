@@ -1,7 +1,7 @@
 import { Client as ContractClient, basicNodeSigner } from "@stellar/stellar-sdk/contract";
-import { Keypair, StrKey } from "@stellar/stellar-sdk";
+import { Keypair } from "@stellar/stellar-sdk";
 import type { ContractProof, ContractVerificationKey } from "./prove.js";
-import { ContractError, RpcError } from "./errors.js";
+import { RpcError } from "./errors.js";
 
 /**
  * Network configuration for connecting to the Sharibo contract.
@@ -19,12 +19,11 @@ export interface ShariboNetworkConfig {
 /**
  * A Sharibo contract client with dynamically attached methods.
  *
- * The contract's methods (create_circle/fund/claim/get_circle/has_claimed)
- * are attached to the Client at runtime from the on-chain contract spec (see
- * @stellar/stellar-sdk's `contract.Client.from`), so they aren't visible to
- * TypeScript's static checker — hence `any` here rather than a hand-rolled
- * or codegen'd interface. Keeps this SDK working against whatever the
- * deployed contract's real spec is, rather than a copy that can drift.
+ * The contract's methods are attached to the Client at runtime from the
+ * on-chain contract spec (see `@stellar/stellar-sdk`'s `contract.Client.from`),
+ * so they aren't visible to TypeScript's static checker — hence `any` here
+ * rather than a hand-rolled or codegen'd interface. Keeps this SDK working
+ * against whatever the deployed contract's real spec is.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ShariboClient = any;
@@ -35,6 +34,38 @@ export interface ShariboSigner {
   signTransaction: (txXdr: string, opts?: any) => Promise<string>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   signAuthEntry?: (entryXdr: string, opts?: any) => Promise<string>;
+}
+
+// System fields used by the wrapper functions below; expanded for clarity.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SentTx = any;
+
+// Retry simulator/preparation steps (which are safe to retry) up to 3 times
+// with exponential backoff + jitter, but never re-attempt after
+// signAndSend. See README "Retry Semantics".
+const RETRY_ATTEMPTS = 3;
+const BASE_DELAY_MS = 500;
+// eslint-disable-next-line no-control-regex
+const TRANSIENT = /(429|5\d\d|timeout|rate\s?limit)/i;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function withRetry<T = any>(fn: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      const message =
+        err instanceof Error ? err.message : String(err);
+      const transient = err instanceof RpcError || TRANSIENT.test(message);
+      if (attempt === RETRY_ATTEMPTS || !transient) break;
+      const jitter = Math.random() * 250;
+      const delayMs = BASE_DELAY_MS * 2 ** (attempt - 1) + jitter;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  throw lastError;
 }
 
 export async function connect(
@@ -98,9 +129,10 @@ export function explorerTxUrl(hash: string, networkPassphrase: string): string {
   return `https://${subdomain}stellar.expert/explorer/tx/${hash}`;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function populateTxResult<T>(
   result: T,
-  sent: { sendTransactionResponse: { hash: string }; getTransactionResponse?: { ledger?: number; feeCharged?: string } },
+  sent: SentTx,
 ): TxResult<T> {
   return {
     result,
@@ -114,13 +146,7 @@ function populateTxResult<T>(
  * Creates a new Sharibo circle.
  *
  * @param client - The Sharibo contract client.
- * @param args - Circle creation parameters.
- * @param args.admin - The admin address for the circle.
- * @param args.token - The token address for contributions.
- * @param args.root - The Merkle tree root of identity commitments.
- * @param args.contribution - The required contribution amount per participant.
- * @param args.size - The maximum number of participants.
- * @param args.vk - The verification key for the zero-knowledge proof circuit.
+ * @param args - Circle creation parameters (admin, token, root, contribution, size, vk).
  * @returns The circle ID and transaction hash.
  */
 export async function createCircle(
@@ -150,9 +176,7 @@ export async function createCircle(
  * Funds a circle with a contribution.
  *
  * @param client - The Sharibo contract client.
- * @param args - Funding parameters.
- * @param args.circleId - The ID of the circle to fund.
- * @param args.from - The address sending the contribution.
+ * @param args - Funding parameters (`circleId`, `from`).
  * @returns The transaction hash.
  */
 export async function fund(
@@ -168,12 +192,8 @@ export async function fund(
  * Claims a reward from a circle using a zero-knowledge proof.
  *
  * @param client - The Sharibo contract client.
- * @param args - Claim parameters.
- * @param args.circleId - The ID of the circle to claim from.
- * @param args.recipient - The address to receive the reward.
- * @param args.nullifierHash - The nullifier hash to prevent double-claiming.
- * @param args.externalNullifier - The external nullifier binding to circle and round.
- * @param args.proof - The Groth16 zero-knowledge proof.
+ * @param args - Claim parameters (`circleId`, `recipient`, `nullifierHash`,
+ *   `externalNullifier`, `proof`).
  * @returns The transaction hash.
  */
 export async function claim(
@@ -233,11 +253,53 @@ export async function getCircle(client: ShariboClient, circleId: bigint): Promis
   return sent.result;
 }
 
-/** Pure read: the current count of circles ever created. 0 if none yet. */
+/** Pure read: the current count of circles ever created (0 if none yet). */
 export async function getCircleCount(client: ShariboClient): Promise<bigint> {
   const tx = await client.get_circle_count();
   const sent = await tx.signAndSend({ force: true });
   return sent.result as bigint;
+}
+
+/** Pure read: the current round number for `circleId`. */
+export async function getRound(client: ShariboClient, circleId: bigint): Promise<number> {
+  const tx = await withRetry(() => client.get_round({ circle_id: circleId }));
+  const sent = await tx.signAndSend({ force: true });
+  return Number(sent.result);
+}
+
+/** Pure read: the current pot balance (in token stroops) for `circleId`. */
+export async function getPot(client: ShariboClient, circleId: bigint): Promise<bigint> {
+  const tx = await withRetry(() => client.get_pot({ circle_id: circleId }));
+  const sent = await tx.signAndSend({ force: true });
+  return BigInt(sent.result);
+}
+
+/**
+ * Pure read: compact status tuple `(round, pot, target, cancelled)`.
+ *
+ * @returns `[round, pot, target, cancelled]` for `circleId`.
+ */
+export async function getStatus(
+  client: ShariboClient,
+  circleId: bigint,
+): Promise<{ round: number; pot: bigint; target: bigint; cancelled: boolean }> {
+  const tx = await withRetry(() => client.get_status({ circle_id: circleId }));
+  const sent = await tx.signAndSend({ force: true });
+  const [round, pot, target, cancelled] = sent.result as
+    [bigint | number, bigint | string, bigint | string, boolean];
+  return {
+    round: Number(round),
+    pot: BigInt(pot),
+    target: BigInt(target),
+    cancelled,
+  };
+}
+
+/** Pure read: the ordered list of addresses that funded the current round. */
+export async function getContributors(client: ShariboClient, circleId: bigint): Promise<string[]> {
+  const tx = await withRetry(() => client.get_contributors({ circle_id: circleId }));
+  const sent = await tx.signAndSend({ force: true });
+  return sent.result as string[];
 }
 
 /** Pure read: whether `nullifierHash` has already claimed in this circle. */
@@ -252,4 +314,20 @@ export async function hasClaimed(
   }));
   const sent = await tx.signAndSend({ force: true });
   return sent.result;
+}
+
+/**
+ * Admin-only: cancel a stuck circle and refund all current-round contributors.
+ *
+ * @param client - The Sharibo contract client.
+ * @param circleId - The ID of the circle to cancel.
+ * @returns The transaction hash.
+ */
+export async function cancelCircle(
+  client: ShariboClient,
+  circleId: bigint,
+): Promise<TxResult<void>> {
+  const tx = await withRetry(() => client.cancel_circle({ circle_id: circleId }));
+  const sent = await tx.signAndSend();
+  return populateTxResult(undefined, sent);
 }
