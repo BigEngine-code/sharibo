@@ -23,6 +23,12 @@ each covers and where to find it.
 | [`hackathon/hackathon_demo_script.md`](hackathon/hackathon_demo_script.md) | Annotated 2m20s demo video script (shot list, voiceover, overlays, recording checklist) |
 | [`hackathon/dorahacks_submission.md`](hackathon/dorahacks_submission.md) | DoraHacks submission form text (project description, evidence, honest scope) |
 
+## Architecture
+
+| File | Description |
+|---|---|
+| [`architecture.md`](architecture.md) | Detailed version of the README's repository structure: directory ownership, toolchains, and end-to-end data flow |
+
 ## Architecture decision records (`docs/adr/`)
 
 | File | Description |
