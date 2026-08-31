@@ -136,6 +136,10 @@ pub struct Circle {
     /// Funding is unshielded (addresses are already public), so storing
     /// them here imposes no additional privacy loss — see issue #82.
     pub contributors: Vec<Address>,
+    /// Nullifier hashes used in successful claims for this circle.
+    /// Embedded inside the Circle persistent entry so they inherit the
+    /// continuously-extended TTL lifecycle of the circle itself (issue #254).
+    pub nullifiers: Vec<Fr>,
     /// True once `cancel_circle` has been called; prevents any further
     /// `fund` or `claim` calls so the circle is permanently closed.
     pub cancelled: bool,
@@ -323,6 +327,7 @@ impl Contract {
             pot: 0,
             vk,
             contributors: Vec::new(&env),
+            nullifiers: Vec::new(&env),
             cancelled: false,
             round_deadline_ledgers,
             round_started_ledger,
@@ -509,8 +514,7 @@ impl Contract {
         }
 
         // 3. this nullifier must not have claimed before (any round, this circle)
-        let nullifier_key = DataKey::Nullifier(circle_id, nullifier_hash.clone());
-        if env.storage().persistent().has(&nullifier_key) {
+        if circle.nullifiers.contains(&nullifier_hash) {
             panic_with_error!(&env, Error::AlreadyClaimed);
         }
 
@@ -533,11 +537,6 @@ impl Contract {
         }
 
         // effects
-        env.storage().persistent().set(&nullifier_key, &true);
-        env.storage()
-            .persistent()
-            .extend_ttl(&nullifier_key, LEDGER_THRESHOLD, LEDGER_EXTEND_TO);
-
         let token_client = token::Client::new(&env, &circle.token);
         token_client.transfer(&env.current_contract_address(), &recipient, &circle.pot);
 
@@ -545,6 +544,7 @@ impl Contract {
         circle.round += 1;
         circle.contributors = Vec::new(&env);
         circle.round_started_ledger = env.ledger().sequence();
+        circle.nullifiers.push_back(nullifier_hash);
         env.storage().persistent().set(&key, &circle);
         env.storage()
             .persistent()
@@ -681,9 +681,12 @@ impl Contract {
     /// `true` if the nullifier has ever been used in a successful claim for
     /// this circle (any round); the associated identity cannot claim again.
     pub fn has_claimed(env: Env, circle_id: u64, nullifier_hash: Fr) -> bool {
-        env.storage()
-            .persistent()
-            .has(&DataKey::Nullifier(circle_id, nullifier_hash))
+        let key = DataKey::Circle(circle_id);
+        if let Some(circle) = env.storage().persistent().get::<_, Circle>(&key) {
+            circle.nullifiers.contains(&nullifier_hash)
+        } else {
+            false
+        }
     }
 
     /// Step 1 of two-step admin transfer: the current admin nominates a
