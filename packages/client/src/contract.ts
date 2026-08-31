@@ -2,6 +2,7 @@ import { Client as ContractClient, basicNodeSigner } from "@stellar/stellar-sdk/
 import { Keypair, StrKey } from "@stellar/stellar-sdk";
 import type { ContractProof, ContractVerificationKey } from "./prove.js";
 import { ContractError, RpcError } from "./errors.js";
+import { withRetry } from "./retry.js";
 
 /**
  * Network configuration for connecting to the Sharibo contract.
