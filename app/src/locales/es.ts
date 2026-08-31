@@ -21,7 +21,9 @@ const es = {
   "landing.previousCircleLink": "tanda #{id} ↗",
   "landing.testnetFineprint": "Solo testnet. Las identidades de demostraci\u00f3n se generan de nuevo en tu navegador y nunca se reutilizan.",
   "circle.onChainLink": "tanda #{id} en cadena ↗",
-  "common.startNewCircle": "Iniciar una nueva tanda"
+  "common.startNewCircle": "Iniciar una nueva tanda",
+  "wallet.networkMismatch": "Desajuste de red: Tu billetera Freighter está en {walletNetwork} pero esta app espera {appNetwork}. Por favor abre Freighter, haz clic en el selector de red en la esquina superior derecha, y cambia a {appNetwork}.",
+  "wallet.unknownNetwork": "Configuración de red desconocida. Por favor verifica tu configuración de Freighter."
 } as const;
 
 export default es;

@@ -35,6 +35,7 @@ import {
   FriendbotRetryableError,
   FRIEND_BOT_RATE_LIMIT_MESSAGE,
 } from "./lib/friendbot";
+import { checkNetworkMatch } from "./lib/wallet.freighter";
 
 const BIGINT_MARKER = 'BIGINT::';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -697,8 +698,15 @@ export default function App() {
       }
 
       const networkRes = await getNetworkDetails();
-      if (networkRes.network !== "TESTNET") {
-        throw new Error("Freighter is not set to Testnet. Please switch your network in Freighter.");
+      
+      // Check for network mismatch between wallet and app config
+      const mismatch = checkNetworkMatch(networkRes.network, NETWORK.networkPassphrase);
+      if (mismatch) {
+        throw new Error(
+          `Your Freighter wallet is connected to ${mismatch.walletNetwork}, ` +
+          `but this app is configured for ${mismatch.appNetwork}. ` +
+          `Please open Freighter, click the network selector in the upper right, and switch to ${mismatch.appNetwork}.`
+        );
       }
 
       const addressRes = await getAddress();
@@ -711,8 +719,19 @@ export default function App() {
         publicKey: pubKey,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         signTransaction: async (txXdr: string, opts?: any) => {
+          // Re-check network before signing to catch mid-session network switches
+          const currentNetworkRes = await getNetworkDetails();
+          const currentMismatch = checkNetworkMatch(currentNetworkRes.network, NETWORK.networkPassphrase);
+          if (currentMismatch) {
+            throw new Error(
+              `Your Freighter wallet is connected to ${currentMismatch.walletNetwork}, ` +
+              `but this app is configured for ${currentMismatch.appNetwork}. ` +
+              `Please open Freighter, click the network selector in the upper right, and switch to ${currentMismatch.appNetwork}.`
+            );
+          }
+
           const signedRes = await freighterSignTx(txXdr, {
-            networkPassphrase: networkRes.networkPassphrase
+            networkPassphrase: currentNetworkRes.networkPassphrase
           });
           if (signedRes.error) {
             throw new Error(signedRes.error.toString());
@@ -736,7 +755,7 @@ export default function App() {
       setPot(circle.pot);
       setRound(circle.round);
     } catch (e) {
-      setError(getErrorMessage(e));
+      setError(toUiError(e));
     } finally {
       setBusy(null);
     }
@@ -855,7 +874,7 @@ export default function App() {
         "Unexpected: the replayed claim was accepted (this should never happen).",
       );
     } catch (e) {
-      setRejection(getErrorMessage(e));
+      setRejection(toUiError(e));
     } finally {
       // Reflect the on-chain state either way: the re-funding above happened
       // for real even though the replayed claim itself was rejected.

@@ -21,7 +21,9 @@ const en = {
   "landing.previousCircleLink": "circle #{id} ↗",
   "landing.testnetFineprint": "Testnet only. Demo identities are generated fresh in your browser, never reused.",
   "circle.onChainLink": "circle #{id} on-chain ↗",
-  "common.startNewCircle": "Start a new circle"
+  "common.startNewCircle": "Start a new circle",
+  "wallet.networkMismatch": "Network mismatch: Your Freighter wallet is on {walletNetwork} but this app expects {appNetwork}. Please open Freighter, click the network selector in the upper right, and switch to {appNetwork}.",
+  "wallet.unknownNetwork": "Unknown network configuration. Please verify your Freighter settings."
 } as const;
 
 export default en;
