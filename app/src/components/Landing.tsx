@@ -15,6 +15,27 @@ const NAMES = [
   "chit fund",
 ];
 
+interface NetworkBannerProps {
+  networkPassphrase: string;
+}
+
+export function NetworkBanner({ networkPassphrase }: NetworkBannerProps) {
+  const isTestnet = networkPassphrase.toLowerCase().includes("test");
+  if (!isTestnet) return null;
+  return (
+    <div className="network-banner">
+      Stellar testnet — no real funds ·{" "}
+      <a
+        href="https://github.com/crackedstudio/sharibo#honest-limitations"
+        target="_blank"
+        rel="noreferrer"
+      >
+        limitations ↗
+      </a>
+    </div>
+  );
+}
+
 export function Landing({
   busy,
   error,

@@ -48,6 +48,53 @@ We use a set of topic labels to categorize issues and pull requests. These label
 
 When looking for issues to work on, start by filtering by the `good first issue` label. These issues are specifically marked as suitable for newcomers and provide a great way to get familiar with the codebase. Before you start working on an issue, leave a comment to claim it and let the maintainers know you're working on it. If you have questions about the issue or need clarification, ask them directly on the issue rather than in a pull request—this helps keep the PR focused on the implementation.
 
+## Dead-code check
+
+Sharibo uses [knip](https://knip.dev) to catch unused files, unused exports,
+and unused dependencies before they accumulate.  The check runs as part of the
+full test suite (`just test`) and can be run standalone:
+
+```bash
+npm run lint:dead
+# or: just lint-dead
+```
+
+**Zero issues is the baseline.**  Adding an unreferenced module, export, or
+import will fail the check in CI.
+
+### Marking an intentional public export
+
+`packages/client/src/index.ts` is the SDK barrel — every export it re-exports
+is public API and is automatically exempt from dead-code reporting because
+`includeEntryExports` is `false` for that workspace.
+
+For any *other* symbol that knip flags but that you intentionally want to keep
+(e.g. a utility exported only for external consumers or for tests in a
+downstream package), add the `@public` JSDoc tag:
+
+```ts
+/**
+ * Shared field-element modulus — exported for downstream use.
+ * @public
+ */
+export const FR_MODULUS = 0x73eda753…n;
+```
+
+The `knip.jsonc` config at the repo root suppresses issues for any export
+tagged `@public`.  Use this sparingly — prefer wiring up the module properly
+over suppressing the warning.
+
+### Fixing a reported issue
+
+| Issue type | Typical fix |
+|---|---|
+| Unused file | Wire it up to an entry point, or delete it |
+| Unused export | Import it somewhere, delete it, or tag `@public` |
+| Unused dependency | Remove from `package.json`, or add to `ignoreDependencies` in `knip.jsonc` with a comment |
+
+See [knip.dev/guides/handling-issues](https://knip.dev/guides/handling-issues)
+for a full guide.
+
 ## Setup trouble?
 
 Getting a fresh machine running and tripping on a toolchain issue (`circom`, `wasm32v1-none`, `stellar` vs `soroban`, friendbot limits, testnet resets, missing `circuits/build/`)? See [docs/troubleshooting.md](docs/troubleshooting.md) for symptom → cause → fix walkthroughs.

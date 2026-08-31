@@ -89,3 +89,22 @@ export const configError: string[] = result.errors;
  * `configError.length === 0`; otherwise the values are undefined at runtime.
  */
 export const config: AppConfig = result.config ?? ({} as AppConfig);
+
+// ── Shared runtime constants ──────────────────────────────────────────────────
+// Single-sourced here so App.tsx, useCircleFlow, and any future screens all
+// read from the same place.
+
+export const NETWORK = {
+  contractId: config.contractId,
+  rpcUrl: config.rpcUrl,
+  networkPassphrase: config.networkPassphrase,
+};
+
+export const TOKEN: string = config.testTokenContractId;
+
+// Merkle tree depth — must match circuits/config.json { "levels": N }.
+export const LEVELS = 4;
+
+export const CIRCLE_SIZE = 5;
+
+export const STROOPS_PER_XLM = 10_000_000n;
