@@ -17,6 +17,8 @@ import { NETWORK, TOKEN, LEVELS, CIRCLE_SIZE, STROOPS_PER_XLM } from "../config.
 import { friendbotFund } from "../lib/friendbot.js";
 import type { Member, ClaimResult } from "../types.js";
 
+export type CirclePhase = "idle" | "loading" | "ready" | "error";
+
 // All the state and on-chain calls behind a single demo run: create a
 // circle, fund it from 5 members, prove + claim, then optionally replay the
 // same proof to demonstrate nullifier rejection. Kept as one hook (rather
@@ -25,6 +27,7 @@ import type { Member, ClaimResult } from "../types.js";
 // into screens.
 export function useCircleFlow() {
   const [screen, setScreen] = useState<"landing" | "circle">("landing");
+  const [circlePhase, setCirclePhase] = useState<CirclePhase>("idle");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -85,6 +88,7 @@ export function useCircleFlow() {
 
   async function startCircle() {
     setError(null);
+    setCirclePhase("loading");
     setBusy("Generating a fresh admin + 5 member identities and funding via friendbot…");
     try {
       const adminKp = Keypair.random();
@@ -121,8 +125,10 @@ export function useCircleFlow() {
       setRound(0);
       setPot(0n);
       setScreen("circle");
+      setCirclePhase("ready");
     } catch (e) {
       setError((e as Error).message);
+      setCirclePhase("error");
     } finally {
       setBusy(null);
     }
@@ -248,6 +254,7 @@ export function useCircleFlow() {
 
   return {
     screen,
+    circlePhase,
     busy,
     error,
     contributionXlm,

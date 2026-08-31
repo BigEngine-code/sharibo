@@ -42,3 +42,19 @@ export function FundingList({
     </>
   );
 }
+
+export function FundingListSkeleton() {
+  return (
+    <div aria-hidden="true">
+      <h2>Fund</h2>
+      <div className="members">
+        {Array.from({ length: 5 }, (_, i) => (
+          <div key={i} className="member skeleton-member-row">
+            <span className="skeleton skeleton-text" style={{ width: `${140 + i * 12}px` }} />
+            <span className="skeleton skeleton-text-sm" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

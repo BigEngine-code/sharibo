@@ -30,6 +30,11 @@ import {
 } from "@sharibo/client";
 import { config, configError } from "./config";
 import { useI18n } from "./i18n";
+import { usePoliteLiveRegion, LiveRegion } from "./usePoliteLiveRegion";
+import { explorerAccount, explorerContract, explorerTx, short } from "./lib/explorer";
+import type { CirclePhase } from "./hooks/useCircleFlow";
+import { MemberRingSkeleton } from "./components/MemberRing";
+import { FundingListSkeleton } from "./components/FundingList";
 import {
   friendbotFund as fundWithFriendbot,
   FriendbotRetryableError,
@@ -75,6 +80,25 @@ function TestnetBanner() {
       <a className="banner-link" href={README_URL} target="_blank" rel="noreferrer">
         honest limitations ↗
       </a>
+    </div>
+  );
+}
+
+function LanguageSwitcher({ className = "" }: { className?: string }) {
+  const { locale, locales, setLocale } = useI18n();
+  return (
+    <div className={`language-switcher ${className}`}>
+      <select
+        value={locale}
+        onChange={(e) => setLocale(e.target.value)}
+        aria-label="Language"
+      >
+        {locales.map((code) => (
+          <option key={code} value={code}>
+            {code}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
@@ -426,8 +450,10 @@ export default function App() {
   }
 
   const [screen, setScreen] = useState<"landing" | "circle">("landing");
+  const [circlePhase, setCirclePhase] = useState<CirclePhase>("idle");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [resumePrompt, setResumePrompt] = useState<any>(null);
 
   const [contributionXlm, setContributionXlm] = useState(10);
   const [admin, setAdmin] = useState<Keypair | null>(null);
@@ -470,6 +496,11 @@ export default function App() {
       return;
     }
 
+    if (circlePhase === "loading") {
+      announce("Loading circle data…");
+      return;
+    }
+
     if (claimResult) {
       announce("Price update complete. The claim result is ready.");
       return;
@@ -483,7 +514,7 @@ export default function App() {
     if (fullyFunded) {
       announce("Price update complete. The claim step is ready.");
     }
-  }, [announce, busy, claimResult, error, fullyFunded]);
+  }, [announce, busy, circlePhase, claimResult, error, fullyFunded]);
 
   // ── Focus management ────────────────────────────────────────────────────
   // When a screen or major section appears, move keyboard focus to its
@@ -547,6 +578,7 @@ export default function App() {
 
     setBusy(null);
     setError(null);
+    setCirclePhase("idle");
     setContributionXlm(10);
     setAdmin(null);
     setMembers([]);
@@ -568,6 +600,7 @@ export default function App() {
   }
 
   function loadState(parsed: any) {
+    setCirclePhase("loading");
     setContributionXlm(parsed.contributionXlm);
     setAdmin(Keypair.fromSecret(parsed.adminSecret));
     
@@ -596,10 +629,12 @@ export default function App() {
     
     setScreen("circle");
     setResumePrompt(null);
+    setCirclePhase("ready");
   }
 
   async function startCircle() {
     setError(null);
+    setCirclePhase("loading");
     setBusy(
       "Generating a fresh admin + 5 member identities and funding via friendbot…",
     );
@@ -647,8 +682,10 @@ export default function App() {
       setRound(0);
       setPot(0n);
       setScreen("circle");
+      setCirclePhase("ready");
     } catch (e) {
       setError(toUiError(e));
+      setCirclePhase("error");
     } finally {
       setBusy(null);
     }
@@ -736,7 +773,7 @@ export default function App() {
       setPot(circle.pot);
       setRound(circle.round);
     } catch (e) {
-      setError(getErrorMessage(e));
+      setError(toUiError(e));
     } finally {
       setBusy(null);
     }
@@ -804,7 +841,7 @@ export default function App() {
 
       setProof(generated.proof);
       setNullifierHash(generated.nullifierHash);
-      setClaimResult({ recipient: recipient.publicKey(), hash, proofDurationMs });
+      setClaimResult({ recipient: recipient.publicKey(), hash, proofDurationMs: 0 });
       setNullifierClaimed(await hasClaimed(adminClient, circleId, generated.nullifierHash));
 
       const circle = await getCircle(adminClient, circleId);
@@ -855,7 +892,7 @@ export default function App() {
         "Unexpected: the replayed claim was accepted (this should never happen).",
       );
     } catch (e) {
-      setRejection(getErrorMessage(e));
+      setRejection(toUiError(e));
     } finally {
       // Reflect the on-chain state either way: the re-funding above happened
       // for real even though the replayed claim itself was rejected.
@@ -957,7 +994,7 @@ export default function App() {
     );
   }
 
-  const step: 0 | 1 | 2 | 3 = flow.claimResult ? 3 : flow.fullyFunded ? 2 : 1;
+  const step: 0 | 1 | 2 | 3 = claimResult ? 3 : fullyFunded ? 2 : 1;
 
   return (
     <div className="page">
@@ -979,13 +1016,13 @@ export default function App() {
           </h1>
           <div className="row">
             <a className="link" href={explorerContract()} target="_blank" rel="noreferrer">
-              circle #{flow.circleId?.toString()} on-chain ↗
+              circle #{circleId?.toString()} on-chain ↗
             </a>
             <button
               className="btn btn-small"
-              disabled={!!flow.busy}
-              onClick={flow.resetToLanding}
-              title={`Start over. Your current circle (#${flow.circleId?.toString()}) keeps living on-chain.`}
+              disabled={!!busy}
+              onClick={resetToLanding}
+              title={`Start over. Your current circle (#${circleId?.toString()}) keeps living on-chain.`}
             >
               {t("common.startNewCircle")}
             </button>
@@ -994,59 +1031,74 @@ export default function App() {
 
         <Stepper step={step} />
 
-        <MemberRing members={flow.members} revealed={!!flow.claimResult} />
+        {circlePhase === "loading" ? (
+          <>
+            <MemberRingSkeleton />
+            <div className="pot-bar-wrap" aria-hidden="true">
+              <div className="skeleton skeleton-bar" />
+            </div>
+            <p className="pot-label" aria-hidden="true">
+              <span className="skeleton skeleton-label" />
+            </p>
+            <FundingListSkeleton />
+          </>
+        ) : (
+          <>
+            <MemberRing members={members} revealed={!!claimResult} />
 
-        <div className="pot-bar-wrap">
-          <div
-            className="pot-bar"
-            style={{ width: `${(flow.fundedCount / CIRCLE_SIZE) * 100}%` }}
-          />
-        </div>
-        <p className="pot-label">
-          pot: {(Number(flow.pot) / 1e7).toFixed(1)} / {flow.contributionXlm * CIRCLE_SIZE} XLM ·
-          round {flow.round}
-        </p>
+            <div className="pot-bar-wrap">
+              <div
+                className="pot-bar"
+                style={{ width: `${(fundedCount / CIRCLE_SIZE) * 100}%` }}
+              />
+            </div>
+            <p className="pot-label">
+              pot: {(Number(pot) / 1e7).toFixed(1)} / {contributionXlm * CIRCLE_SIZE} XLM ·
+              round {round}
+            </p>
 
-        <h2>Fund</h2>
-        <div className="members">
-          {members.map((m, i) => (
-            <div key={i} className={`member ${m.funded ? "funded" : ""}`}>
-              <span className="member-addr">
-                member {i + 1} · {short(m.keypair.publicKey())}
-                <CopyButton value={m.keypair.publicKey()} label={`member ${i + 1} address`} />
-              </span>
-              {m.funded ? (
-                <a
-                  className="link"
-                  href={explorerTx(m.fundHash!)}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  ✓ funded ↗
-                </a>
-              ) : (
-                <div className="row">
-                  <button
-                    className="btn btn-small"
-                    disabled={!!busy || round > 0}
-                    onClick={() => fundMember(i)}
-                  >
-                    Fund {contributionXlm} XLM (Demo)
-                  </button>
-                  {hasFreighter && (
-                    <button
-                      className="btn btn-small"
-                      disabled={!!busy || round > 0}
-                      onClick={() => fundWithFreighter(i)}
+            <h2>Fund</h2>
+            <div className="members">
+              {members.map((m, i) => (
+                <div key={i} className={`member ${m.funded ? "funded" : ""}`}>
+                  <span className="member-addr">
+                    member {i + 1} · {short(m.keypair.publicKey())}
+                    <CopyButton value={m.keypair.publicKey()} label={`member ${i + 1} address`} />
+                  </span>
+                  {m.funded ? (
+                    <a
+                      className="link"
+                      href={explorerTx(m.fundHash!)}
+                      target="_blank"
+                      rel="noreferrer"
                     >
-                      Fund with Freighter
-                    </button>
+                      ✓ funded ↗
+                    </a>
+                  ) : (
+                    <div className="row">
+                      <button
+                        className="btn btn-small"
+                        disabled={!!busy || round > 0}
+                        onClick={() => fundMember(i)}
+                      >
+                        Fund {contributionXlm} XLM (Demo)
+                      </button>
+                      {hasFreighter && (
+                        <button
+                          className="btn btn-small"
+                          disabled={!!busy || round > 0}
+                          onClick={() => fundWithFreighter(i)}
+                        >
+                          Fund with Freighter
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
-              )}
+              ))}
             </div>
-          ))}
-        </div>
+          </>
+        )}
 
         {fullyFunded && !claimResult && (
           <>
@@ -1080,7 +1132,7 @@ export default function App() {
                 {/* Constraint count: update this AND circuits/README.md if the circuit changes. */}
                 Groth16 · BLS12-381 · 1,452 constraints · proving locally in your browser, nothing
                 sent anywhere until the proof is done
-                {isProving && provingSeconds !== null ? ` · proving… ${provingSeconds}s` : ""}
+                {isProving && proveElapsedSeconds !== null ? ` · proving… ${proveElapsedSeconds}s` : ""}
               </p>
             )}
           </>
@@ -1166,7 +1218,7 @@ export default function App() {
           </div>
         )}
 
-        {flow.error && <p className="error">{flow.error}</p>}
+        {error && <p className="error">{error}</p>}
       </div>
     </div>
   );
