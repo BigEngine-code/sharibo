@@ -388,6 +388,70 @@ fn claim_reverts_on_tampered_public_input() {
 }
 
 #[test]
+#[should_panic(expected = "Error(Contract, #10)")] // InvalidCircleConfig
+fn zero_size_circle_is_rejected_at_creation() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(Contract, ());
+    let client = ContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = create_token(&env, &token_admin);
+
+    let root = real_root(&env);
+    let vk = real_verification_key(&env);
+
+    // Without the guard, `size = 0` makes `pot_target = contribution * size = 0`.
+    // The first claim sees `pot (0) == target (0)`, passes the `RoundNotFunded`
+    // check, and then burns a nullifier while advancing an otherwise empty pot.
+    client.create_circle(&admin, &token, &root, &100i128, &0u32, &vk);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #10)")] // InvalidCircleConfig
+fn zero_contribution_circle_is_rejected_at_creation() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(Contract, ());
+    let client = ContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = create_token(&env, &token_admin);
+
+    let root = real_root(&env);
+    let vk = real_verification_key(&env);
+
+    // Without validation, `contribution = 0` creates a circle whose `pot_target`
+    // is also 0. From there the same empty-pot claim regression is reachable.
+    client.create_circle(&admin, &token, &root, &0i128, &5u32, &vk);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #10)")] // InvalidCircleConfig
+fn negative_contribution_is_rejected_at_creation() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(Contract, ());
+    let client = ContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = create_token(&env, &token_admin);
+
+    let root = real_root(&env);
+    let vk = real_verification_key(&env);
+
+    // A negative contribution is also invalid: it would make the round target
+    // non-positive and let the same empty-pot edge case slip through during claim.
+    client.create_circle(&admin, &token, &root, &(-100i128), &5u32, &vk);
+}
+
+#[test]
 #[should_panic(expected = "Error(Contract, #2)")] // RoundNotFunded
 // Ideally we'd pin pot == contribution*size - 1 (the single stroop
     // short of full) as the tightest possible underfunded case. But `fund`
@@ -1244,7 +1308,9 @@ mod proptest_apply_fee {
         ) {
             let env = Env::default();
             let fee_bps = 10_000_u32 + excess;
-            let result = std::panic::catch_unwind(|| apply_fee(&env, fee_bps, amount));
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                apply_fee(&env, fee_bps, amount)
+            }));
             prop_assert!(result.is_err(), "apply_fee({fee_bps}, {amount}) should have panicked");
         }
 
@@ -1254,7 +1320,9 @@ mod proptest_apply_fee {
             fee_bps in 0_u32..=10_000_u32,
         ) {
             let env = Env::default();
-            let result = std::panic::catch_unwind(|| apply_fee(&env, fee_bps, amount));
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                apply_fee(&env, fee_bps, amount)
+            }));
             prop_assert!(result.is_err(), "apply_fee({fee_bps}, {amount}) should have panicked");
         }
     }

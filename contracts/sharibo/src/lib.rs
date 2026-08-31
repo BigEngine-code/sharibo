@@ -135,6 +135,8 @@ pub enum Error {
     CircleCancelled = 8,
     /// `apply_fee` called with `fee_bps > 10_000` or `amount < 0`.
     InvalidFeeParams = 9,
+    /// Circle configuration is invalid: `size == 0` or `contribution <= 0`.
+    InvalidCircleConfig = 10,
 }
 
 /// Minimum remaining TTL (in ledgers) that triggers a `extend_ttl` call.
@@ -222,10 +224,9 @@ impl Contract {
     ///
     /// # Errors
     ///
-    /// This entrypoint does not panic with any [`Error`] variant — it
-    /// performs no arithmetic on user-provided `contribution`/`size`.
-    /// Overflow is first possible in [`Self::fund`]/[`Self::claim`] where
-    /// `pot_target` is computed.
+    /// * [`Error::InvalidCircleConfig`] — `size == 0` or `contribution <= 0`.
+    ///   A non-positive target would let an empty pot count as already-funded
+    ///   during the first claim and advance a round without any real deposits.
     pub fn create_circle(
         env: Env,
         admin: Address,
@@ -236,6 +237,10 @@ impl Contract {
         vk: VerificationKey,
     ) -> u64 {
         admin.require_auth();
+
+        if size == 0 || contribution <= 0 {
+            panic_with_error!(&env, Error::InvalidCircleConfig);
+        }
 
         let circle_id: u64 = env
             .storage()
