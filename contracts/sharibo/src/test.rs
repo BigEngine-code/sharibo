@@ -1244,7 +1244,7 @@ mod proptest_apply_fee {
         ) {
             let env = Env::default();
             let fee_bps = 10_000_u32 + excess;
-            let result = std::panic::catch_unwind(|| apply_fee(&env, fee_bps, amount));
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| apply_fee(&env, fee_bps, amount)));
             prop_assert!(result.is_err(), "apply_fee({fee_bps}, {amount}) should have panicked");
         }
 
@@ -1254,7 +1254,7 @@ mod proptest_apply_fee {
             fee_bps in 0_u32..=10_000_u32,
         ) {
             let env = Env::default();
-            let result = std::panic::catch_unwind(|| apply_fee(&env, fee_bps, amount));
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| apply_fee(&env, fee_bps, amount)));
             prop_assert!(result.is_err(), "apply_fee({fee_bps}, {amount}) should have panicked");
         }
     }

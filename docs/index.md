@@ -16,7 +16,7 @@ each covers and where to find it.
 | [`SECURITY.md`](../SECURITY.md) | Security policy and responsible disclosure |
 | [`LICENSE`](../LICENSE) | Project license |
 
-## Hackathon-era artifacts (`docs/hackathon/`)
+## Hackathon-era artifacts (`docs/hackathon/` — point-in-time archive, not maintained)
 
 | File | Description |
 |---|---|
@@ -41,6 +41,7 @@ each covers and where to find it.
 | File | Description |
 |---|---|
 | [`contracts/README.md`](../contracts/README.md) | Contract build and deploy instructions |
+| [`contracts/BENCHMARKS.md`](../contracts/BENCHMARKS.md) | CPU instruction benchmarks and gas analysis for contract entrypoints |
 
 ## Verifiability
 
