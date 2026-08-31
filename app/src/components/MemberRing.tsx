@@ -29,7 +29,10 @@ export function MemberRing({
           );
         })}
         {revealed && (
-          <div className="ring-node ring-recipient" style={{ transform: "translate(0px, -170px)" }}>
+          <div
+            className="ring-node ring-recipient"
+            style={{ transform: `translate(0px, var(--ring-recipient-offset))` }}
+          >
             ?
           </div>
         )}
