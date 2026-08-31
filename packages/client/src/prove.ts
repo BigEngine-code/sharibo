@@ -3,6 +3,7 @@ import {
   prefetchMembershipArtifacts,
   type ProverArtifacts,
 } from "./artifacts";
+import type { OnEventFn } from "./events.js";
 
 export interface ProofResult {
   proof: unknown;
@@ -28,9 +29,11 @@ function getArtifacts(): Promise<ProverArtifacts> {
  */
 export async function fullProve(
   input: Record<string, unknown>,
+  onEvent?: OnEventFn,
 ): Promise<ProofResult> {
   const artifacts = await getArtifacts();
 
+  onEvent?.({ type: "proof:started" });
   const provingStartedAt = performance.now();
   const result = await groth16.fullProve(
     input,
@@ -38,6 +41,7 @@ export async function fullProve(
     artifacts.zkey,
   );
   const provingTimeMs = Math.max(0, performance.now() - provingStartedAt);
+  onEvent?.({ type: "proof:finished" });
 
   return {
     ...result,
@@ -49,8 +53,29 @@ export async function fullProve(
 
 export async function prove(
   input: Record<string, unknown>,
+  onEvent?: OnEventFn,
 ): Promise<ProofResult> {
-  return fullProve(input);
+  return fullProve(input, onEvent);
+}
+
+export async function generateProof(
+  input: Record<string, unknown>,
+  wasmFile: string,
+  zkeyFile: string,
+  onEvent?: OnEventFn
+): Promise<ProofResult> {
+  onEvent?.({ type: "proof:started" });
+  const provingStartedAt = performance.now();
+  const result = await groth16.fullProve(input, wasmFile, zkeyFile);
+  const provingTimeMs = Math.max(0, performance.now() - provingStartedAt);
+  onEvent?.({ type: "proof:finished" });
+
+  return {
+    ...result,
+    provingTimeMs,
+    artifactDownloadTimeMs: 0,
+    totalTimeMs: provingTimeMs,
+  };
 }
 
 export { prefetchMembershipArtifacts } from "./artifacts";

@@ -2,6 +2,8 @@ import { Client as ContractClient, basicNodeSigner } from "@stellar/stellar-sdk/
 import { Keypair, StrKey } from "@stellar/stellar-sdk";
 import type { ContractProof, ContractVerificationKey } from "./prove.js";
 import { ContractError, RpcError } from "./errors.js";
+import { OnEventFn, SdkEventEmitter } from "./events.js";
+import { withRetry } from "./retry.js";
 
 /**
  * Network configuration for connecting to the Sharibo contract.
@@ -14,6 +16,7 @@ export interface ShariboNetworkConfig {
   contractId: string;
   rpcUrl: string;
   networkPassphrase: string;
+  onEvent?: OnEventFn;
 }
 
 /**
@@ -58,7 +61,7 @@ export async function connect(
     signAuthEntry = keypairOrSigner.signAuthEntry;
   }
 
-  return ContractClient.from({
+  const client = await ContractClient.from({
     contractId: config.contractId,
     networkPassphrase: config.networkPassphrase,
     rpcUrl: config.rpcUrl,
@@ -66,6 +69,8 @@ export async function connect(
     signTransaction,
     signAuthEntry,
   });
+  client.emitter = new SdkEventEmitter(config.onEvent);
+  return client;
 }
 
 /**
@@ -141,8 +146,16 @@ export async function createCircle(
     contribution: args.contribution,
     size: args.size,
     vk: args.vk,
-  }));
+  }), client.emitter);
+  
+  // Try to emit tx:submitted before signing/polling
+  try {
+    const hashHex = (tx as any).built?.hash()?.toString("hex") || "unknown";
+    client.emitter?.emit({ type: "tx:submitted", hash: hashHex });
+  } catch (e) { /* ignore if hash isn't available */ }
+
   const sent = await tx.signAndSend();
+  client.emitter?.emit({ type: "tx:confirmed", hash: sent.sendTransactionResponse.hash });
   return populateTxResult(sent.result as bigint, sent);
 }
 
@@ -159,8 +172,13 @@ export async function fund(
   client: ShariboClient,
   args: { circleId: bigint; from: string },
 ): Promise<TxResult<void>> {
-  const tx = await withRetry(() => client.fund({ circle_id: args.circleId, from: args.from }));
+  const tx = await withRetry(() => client.fund({ circle_id: args.circleId, from: args.from }), client.emitter);
+  try {
+    const hashHex = (tx as any).built?.hash()?.toString("hex") || "unknown";
+    client.emitter?.emit({ type: "tx:submitted", hash: hashHex });
+  } catch (e) {}
   const sent = await tx.signAndSend();
+  client.emitter?.emit({ type: "tx:confirmed", hash: sent.sendTransactionResponse.hash });
   return populateTxResult(undefined, sent);
 }
 
@@ -192,8 +210,13 @@ export async function claim(
     nullifier_hash: args.nullifierHash,
     external_nullifier: args.externalNullifier,
     proof: args.proof,
-  }));
+  }), client.emitter);
+  try {
+    const hashHex = (tx as any).built?.hash()?.toString("hex") || "unknown";
+    client.emitter?.emit({ type: "tx:submitted", hash: hashHex });
+  } catch (e) {}
   const sent = await tx.signAndSend();
+  client.emitter?.emit({ type: "tx:confirmed", hash: sent.sendTransactionResponse.hash });
   return populateTxResult(undefined, sent);
 }
 
@@ -228,7 +251,7 @@ export interface CircleView {
 export async function getCircle(client: ShariboClient, circleId: bigint): Promise<CircleView> {
   // get_circle is a pure read: the SDK detects no signature is needed and
   // refuses signAndSend() without `force` (there's nothing to sign/submit).
-  const tx = await withRetry(() => client.get_circle({ circle_id: circleId }));
+  const tx = await withRetry(() => client.get_circle({ circle_id: circleId }), client.emitter);
   const sent = await tx.signAndSend({ force: true });
   return sent.result;
 }
@@ -249,7 +272,7 @@ export async function hasClaimed(
   const tx = await withRetry(() => client.has_claimed({
     circle_id: circleId,
     nullifier_hash: nullifierHash,
-  }));
+  }), client.emitter);
   const sent = await tx.signAndSend({ force: true });
   return sent.result;
 }

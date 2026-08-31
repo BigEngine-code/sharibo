@@ -61,7 +61,10 @@ const SKIP_REPLAY = flags["skip-replay"]!;
 const REUSE_CIRCLE = flags["reuse-circle"] != null ? BigInt(flags["reuse-circle"]) : null;
 const VERBOSE = flags.verbose!;
 
-function verbose(...args: unknown[]) {
+function verbose(...args: any[]) {
+  if (args.length === 2 && args[1] && typeof args[1] === "object" && "type" in args[1]) {
+    runArtifact.events?.push(args[1]);
+  }
   if (VERBOSE) console.log("   [verbose]", ...args);
 }
 
@@ -199,6 +202,7 @@ interface RunArtifact {
   members: RunArtifactMember[];
   claim?: { recipient: string; txHash: string; nullifierHash: string };
   replayAttempt?: { rejected: boolean; detail: string };
+  events?: any[];
 }
 
 const runArtifact: RunArtifact = {
@@ -286,7 +290,7 @@ async function main() {
   verbose("connecting admin client...");
   const adminClient = await withTimeout(
     connect(
-      { contractId: CONTRACT_ID, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE },
+      { contractId: CONTRACT_ID, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE, onEvent: (e) => verbose(e.type, e) },
       admin,
     ),
     30_000,
@@ -322,7 +326,7 @@ async function main() {
     verbose(`connecting member ${i}...`);
     const memberClient = await withTimeout(
       connect(
-        { contractId: CONTRACT_ID, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE },
+        { contractId: CONTRACT_ID, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE, onEvent: (e) => verbose(e.type, e) },
         m.keypair,
       ),
       30_000,
@@ -373,6 +377,7 @@ async function main() {
         },
         path.join(circuitsBuildDir, "membership_js", "membership.wasm"),
         path.join(circuitsBuildDir, "membership_final.zkey"),
+        (e) => verbose(e.type, e)
       );
     assert(root === tree.root, "proof's public root must match the circle's root");
     assert(
@@ -432,7 +437,7 @@ async function main() {
     for (const [i, m] of members.entries()) {
       verbose(`connecting member ${i} for round 1...`);
       const memberClient = await withTimeout(
-        connect({ contractId: CONTRACT_ID, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE }, m.keypair),
+        connect({ contractId: CONTRACT_ID, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE, onEvent: (e) => verbose(e.type, e) }, m.keypair),
         30_000,
         `connect(member ${i}, round 1)`,
       );

@@ -428,6 +428,7 @@ export default function App() {
   const [screen, setScreen] = useState<"landing" | "circle">("landing");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [events, setEvents] = useState<any[]>([]);
 
   const [contributionXlm, setContributionXlm] = useState(10);
   const [admin, setAdmin] = useState<Keypair | null>(null);
@@ -630,7 +631,7 @@ export default function App() {
         r.json(),
       );
       const vk = verificationKeyToContractFormat(vkJson);
-      const adminClient = await connect(NETWORK, adminKp);
+      const adminClient = await connect({ ...NETWORK, onEvent: (e) => setEvents(prev => [...prev, e]) }, adminKp);
       const { result: newCircleId } = await createCircle(adminClient, {
         admin: adminKp.publicKey(),
         token: TOKEN,
@@ -665,7 +666,7 @@ export default function App() {
       ]);
       const m = members[i];
       await fundWithFriendbot(m.keypair.publicKey());
-      const memberClient = await connect(NETWORK, m.keypair);
+      const memberClient = await connect({ ...NETWORK, onEvent: (e) => setEvents(prev => [...prev, e]) }, m.keypair);
       const { hash } = await fund(memberClient, {
         circleId,
         from: m.keypair.publicKey(),
@@ -675,7 +676,7 @@ export default function App() {
           idx === i ? { ...mm, funded: true, fundHash: hash } : mm,
         ),
       );
-      const adminClient = await connect(NETWORK, admin);
+      const adminClient = await connect({ ...NETWORK, onEvent: (e) => setEvents(prev => [...prev, e]) }, admin);
       const circle = await getCircle(adminClient, circleId);
       setPot(circle.pot);
       setRound(circle.round);
@@ -721,7 +722,7 @@ export default function App() {
         }
       };
 
-      const memberClient = await connect(NETWORK, freighterSigner);
+      const memberClient = await connect({ ...NETWORK, onEvent: (e) => setEvents(prev => [...prev, e]) }, freighterSigner);
       const { hash } = await fund(memberClient, {
         circleId,
         from: pubKey,
@@ -731,7 +732,7 @@ export default function App() {
         prev.map((mm, idx) => (idx === i ? { ...mm, funded: true, fundHash: hash, freighterKey: pubKey } : mm)),
       );
 
-      const adminClient = await connect(NETWORK, admin);
+      const adminClient = await connect({ ...NETWORK, onEvent: (e) => setEvents(prev => [...prev, e]) }, admin);
       const circle = await getCircle(adminClient, circleId);
       setPot(circle.pot);
       setRound(circle.round);
@@ -783,6 +784,7 @@ export default function App() {
           },
           wasm,
           zkey,
+          (e) => setEvents(prev => [...prev, e])
         );
       } finally {
         clearInterval(proveTimer);
@@ -793,7 +795,7 @@ export default function App() {
       await fundWithFriendbot(recipient.publicKey());
 
       setClaimStage("submitting");
-      const adminClient = await connect(NETWORK, admin);
+      const adminClient = await connect({ ...NETWORK, onEvent: (e) => setEvents(prev => [...prev, e]) }, admin);
       const { hash } = await claim(adminClient, {
         circleId,
         recipient: recipient.publicKey(),
@@ -804,7 +806,7 @@ export default function App() {
 
       setProof(generated.proof);
       setNullifierHash(generated.nullifierHash);
-      setClaimResult({ recipient: recipient.publicKey(), hash, proofDurationMs });
+      setClaimResult({ recipient: recipient.publicKey(), hash, proofDurationMs: generated.provingTimeMs });
       setNullifierClaimed(await hasClaimed(adminClient, circleId, generated.nullifierHash));
 
       const circle = await getCircle(adminClient, circleId);
@@ -833,9 +835,9 @@ export default function App() {
       // Fund round `round` again so this exercises the nullifier-reuse
       // check specifically, not just "the pot is empty" — the same
       // proof's nullifier gets rejected even against a fresh, funded round.
-      const adminClient = await connect(NETWORK, admin);
+      const adminClient = await connect({ ...NETWORK, onEvent: (e) => setEvents(prev => [...prev, e]) }, admin);
       for (const m of members) {
-        const memberClient = await connect(NETWORK, m.keypair);
+        const memberClient = await connect({ ...NETWORK, onEvent: (e) => setEvents(prev => [...prev, e]) }, m.keypair);
         await fund(memberClient, { circleId, from: m.keypair.publicKey() });
       }
       const freshExternalNullifier = await computeExternalNullifier(
@@ -855,13 +857,13 @@ export default function App() {
         "Unexpected: the replayed claim was accepted (this should never happen).",
       );
     } catch (e) {
-      setRejection(getErrorMessage(e));
+      setRejection(toUiError(e));
     } finally {
       // Reflect the on-chain state either way: the re-funding above happened
       // for real even though the replayed claim itself was rejected.
       try {
         const { connect, getCircle } = await import("@sharibo/client");
-        const adminClient = await connect(NETWORK, admin);
+        const adminClient = await connect({ ...NETWORK, onEvent: (e) => setEvents(prev => [...prev, e]) }, admin);
         const circle = await getCircle(adminClient, circleId);
         setPot(circle.pot);
         setRound(circle.round);
@@ -1167,6 +1169,26 @@ export default function App() {
         )}
 
         {flow.error && <p className="error">{flow.error}</p>}
+        {events.length > 0 && (
+          <div style={{ marginTop: "2rem", textAlign: "center" }}>
+            <button
+              className="btn btn-small"
+              onClick={() => {
+                const bundle = {
+                  circleId: flow.circleId,
+                  round: flow.round,
+                  pot: flow.pot,
+                  events
+                };
+                navigator.clipboard?.writeText(JSON.stringify(bundle, replacer, 2)).then(() => {
+                  alert("Debug bundle copied!");
+                });
+              }}
+            >
+              Copy debug bundle
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
