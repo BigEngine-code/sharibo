@@ -21,8 +21,8 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "node --import tsx --test src/*.test.ts",
+    "test:watch": "node --import tsx --test --watch src/*.test.ts",
     "bench:prove": "tsx bench/prove.bench.ts"
   },
   "dependencies": {

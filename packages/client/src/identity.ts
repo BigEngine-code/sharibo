@@ -99,10 +99,20 @@ export async function computeExternalNullifier(circleId: bigint, round: bigint):
   // for `Number(round)` on a bigint > 2^53, silently lose precision first),
   // producing a valid-looking but wrong hash that the contract rejects with
   // an opaque `WrongRoundTag` — Issue #65.
-  if (circleId < 0n || circleId >= 2n ** 64n) {
+  if (circleId < 0n) {
+    throw new InvalidInputError(
+      `circleId must satisfy 0 <= circleId < 2**64 (u64), got ${circleId}`,
+    );
+  }
+  if (circleId >= 2n ** 64n) {
     throw new RangeError(`circleId must satisfy 0 <= circleId < 2**64 (u64), got ${circleId}`);
   }
-  if (round < 0n || round >= 2n ** 32n) {
+  if (round < 0n) {
+    throw new InvalidInputError(
+      `round must satisfy 0 <= round < 2**32 (u32), got ${round}`,
+    );
+  }
+  if (round >= 2n ** 32n) {
     throw new RangeError(`round must satisfy 0 <= round < 2**32 (u32), got ${round}`);
   }
 

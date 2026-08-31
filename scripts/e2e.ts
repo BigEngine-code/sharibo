@@ -41,8 +41,6 @@ import {
   fund,
   claim,
   getCircle,
-  TREE_LEVELS,
-  ContractError,
 } from "@sharibo/client";
 import { checkContractDeployed } from "./testnet-health.js";
 
@@ -334,11 +332,12 @@ async function main() {
       30_000,
       `fund(member ${i})`,
     );
-    console.log("   pot fully funded:", fundedCircle.pot.toString(), "stroops");
-  });
+  }
 
   console.log("\n4. Generating a real ZK proof for member", CLAIMANT_INDEX, "...");
   const externalNullifier = await computeExternalNullifier(circleId, 0n);
+  const claimant = members[CLAIMANT_INDEX];
+  const merkleProof = tree.proof(CLAIMANT_INDEX);
   const circuitsBuildDir = path.join(
     path.dirname(fileURLToPath(import.meta.url)),
     "..",
@@ -361,27 +360,12 @@ async function main() {
         path.join(circuitsBuildDir, "membership_final.zkey"),
       ),
     );
-    const { proof, nullifierHash, root, externalNullifier: provenExternalNullifier } =
-      await generateProof(
-        {
-          identityNullifier: claimant.identity.identityNullifier,
-          identitySecret: claimant.identity.identitySecret,
-          pathElements: merkleProof.pathElements,
-          pathIndices: merkleProof.pathIndices,
-          root: tree.root,
-          externalNullifier,
-        },
-        path.join(circuitsBuildDir, "membership_js", "membership.wasm"),
-        path.join(circuitsBuildDir, "membership_final.zkey"),
-      );
     assert(root === tree.root, "proof's public root must match the circle's root");
     assert(
       provenExternalNullifier === externalNullifier,
       "proof's public externalNullifier must match the expected round tag",
     );
     console.log("   proof generated, nullifierHash =", nullifierHash.toString());
-    return { proof, nullifierHash };
-  });
 
   console.log("\n5. Generating a FRESH recipient address (never used as a funder)...");
   const recipient = await step("fund fresh recipient", async () => {
@@ -479,6 +463,7 @@ async function main() {
     "connecting it to any of the 5 funders — that's the unlinkability the ZK proof buys.",
   );
 
+  writeRunArtifact();
   printStepSummary();
 
   // The RPC client's underlying HTTP keep-alive connections otherwise leave

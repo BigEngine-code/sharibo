@@ -3,6 +3,7 @@
  * load time.  Import `config` wherever you need the values; import
  * `configError` to check whether the app should render the setup screen.
  */
+import { TREE_LEVELS } from "@sharibo/client";
 
 interface AppConfig {
   contractId: string;
@@ -89,3 +90,16 @@ export const configError: string[] = result.errors;
  * `configError.length === 0`; otherwise the values are undefined at runtime.
  */
 export const config: AppConfig = result.config ?? ({} as AppConfig);
+
+// Convenience constants derived from the validated config + shared SDK
+// values, so feature code (hooks, explorer links) can import them from one
+// place instead of re-deriving them.
+export const NETWORK = {
+  contractId: config.contractId,
+  rpcUrl: config.rpcUrl,
+  networkPassphrase: config.networkPassphrase,
+};
+export const TOKEN = config.testTokenContractId;
+export const LEVELS = TREE_LEVELS;
+export const CIRCLE_SIZE = 5;
+export const STROOPS_PER_XLM = 10_000_000n;

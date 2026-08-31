@@ -1,9 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MerkleTree } from "./tree.js";
-import { generateIdentity } from "./identity.js";
+import { MerkleTree, TREE_LEVELS } from "./tree.js";
+import { generateIdentity, FR_MODULUS } from "./identity.js";
 
-const LEVELS = 4;
+const LEVELS = TREE_LEVELS;
+
+// ---- proofOf (find a proof by leaf value) ----
 
 test("proofOf returns a valid Merkle proof for a leaf known to be in the tree", () => {
   const identities = Array.from({ length: 5 }, () => generateIdentity());
@@ -64,7 +66,7 @@ test("proofOf error message includes a shortened hex representation of the leaf"
   assert.throws(
     () => tree.proofOf(unknownLeaf),
     (err: Error) => {
-      // The error should mention "0x" (the hex prefix) and "not found"
+      // The error should mention "0x" (the hex prefix) and "not found".
       return err.message.startsWith("leaf 0x") && err.message.includes("not found");
     },
   );
@@ -93,8 +95,6 @@ test("proofOf throws for a leaf not in a tree that has zero occupied slots (empt
     },
   );
 });
-import { MerkleTree, ZERO_VALUE } from "./tree.js";
-import { FR_MODULUS } from "./identity.js";
 
 // ---- levels validation ----
 

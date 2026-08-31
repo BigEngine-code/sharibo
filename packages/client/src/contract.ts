@@ -1,7 +1,6 @@
 import { Client as ContractClient, basicNodeSigner } from "@stellar/stellar-sdk/contract";
-import { Keypair, StrKey } from "@stellar/stellar-sdk";
+import { Keypair } from "@stellar/stellar-sdk";
 import type { ContractProof, ContractVerificationKey } from "./prove.js";
-import { ContractError, RpcError } from "./errors.js";
 
 /**
  * Network configuration for connecting to the Sharibo contract.
@@ -111,6 +110,61 @@ function populateTxResult<T>(
 }
 
 /**
+ * The @stellar/stellar-sdk contract client is dynamically typed
+ * (`ShariboClient` is `any`), so the transaction handle its methods return
+ * can't be inferred through the generic helper below — pin the shape we use.
+ */
+export interface ContractTransaction {
+  signAndSend: (opts?: { force?: boolean }) => Promise<{
+    result: unknown;
+    sendTransactionResponse: { hash: string };
+    getTransactionResponse?: { ledger?: number; feeCharged?: string };
+  }>;
+}
+
+/**
+ * Retries a transient RPC failure (HTTP 429/5xx, timeout, fetch failures)
+ * with exponential backoff + jitter, up to {@link opts.retries} (default 3)
+ * attempts. Only the simulate phase is wrapped in callers' code — the
+ * subsequent `signAndSend()` is left outside the retry so a submission is
+ * never accidentally sent twice.
+ */
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  opts: { retries?: number; baseMs?: number } = {},
+): Promise<T> {
+  const retries = opts.retries ?? 3;
+  const baseMs = opts.baseMs ?? 500;
+
+  let attempt = 0;
+  while (true) {
+    try {
+      return await fn();
+    } catch (error: unknown) {
+      if (attempt >= retries) throw error;
+
+      const msg = (error instanceof Error ? error.message : String(error)).toLowerCase();
+      const isTransient =
+        msg.includes("429") ||
+        msg.includes("500") ||
+        msg.includes("502") ||
+        msg.includes("503") ||
+        msg.includes("504") ||
+        msg.includes("timeout") ||
+        msg.includes("connection reset") ||
+        msg.includes("fetch failed");
+
+      if (!isTransient) throw error;
+
+      attempt++;
+      const jitter = 0.5 + Math.random() * 0.5;
+      const delay = baseMs * Math.pow(2, attempt - 1) * jitter;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
+/**
  * Creates a new Sharibo circle.
  *
  * @param client - The Sharibo contract client.
@@ -134,14 +188,14 @@ export async function createCircle(
     vk: ContractVerificationKey;
   },
 ): Promise<TxResult<bigint>> {
-  const tx = await withRetry(() => client.create_circle({
+  const tx = (await withRetry(() => client.create_circle({
     admin: args.admin,
     token: args.token,
     root: args.root,
     contribution: args.contribution,
     size: args.size,
     vk: args.vk,
-  }));
+  }))) as ContractTransaction;
   const sent = await tx.signAndSend();
   return populateTxResult(sent.result as bigint, sent);
 }
@@ -159,7 +213,9 @@ export async function fund(
   client: ShariboClient,
   args: { circleId: bigint; from: string },
 ): Promise<TxResult<void>> {
-  const tx = await withRetry(() => client.fund({ circle_id: args.circleId, from: args.from }));
+  const tx = (await withRetry(
+    () => client.fund({ circle_id: args.circleId, from: args.from }),
+  )) as ContractTransaction;
   const sent = await tx.signAndSend();
   return populateTxResult(undefined, sent);
 }
@@ -186,13 +242,13 @@ export async function claim(
     proof: ContractProof;
   },
 ): Promise<TxResult<void>> {
-  const tx = await withRetry(() => client.claim({
+  const tx = (await withRetry(() => client.claim({
     circle_id: args.circleId,
     recipient: args.recipient,
     nullifier_hash: args.nullifierHash,
     external_nullifier: args.externalNullifier,
     proof: args.proof,
-  }));
+  }))) as ContractTransaction;
   const sent = await tx.signAndSend();
   return populateTxResult(undefined, sent);
 }
@@ -228,9 +284,9 @@ export interface CircleView {
 export async function getCircle(client: ShariboClient, circleId: bigint): Promise<CircleView> {
   // get_circle is a pure read: the SDK detects no signature is needed and
   // refuses signAndSend() without `force` (there's nothing to sign/submit).
-  const tx = await withRetry(() => client.get_circle({ circle_id: circleId }));
+  const tx = (await withRetry(() => client.get_circle({ circle_id: circleId }))) as ContractTransaction;
   const sent = await tx.signAndSend({ force: true });
-  return sent.result;
+  return sent.result as CircleView;
 }
 
 /** Pure read: the current count of circles ever created. 0 if none yet. */
@@ -246,10 +302,10 @@ export async function hasClaimed(
   circleId: bigint,
   nullifierHash: bigint,
 ): Promise<boolean> {
-  const tx = await withRetry(() => client.has_claimed({
+  const tx = (await withRetry(() => client.has_claimed({
     circle_id: circleId,
     nullifier_hash: nullifierHash,
-  }));
+  }))) as ContractTransaction;
   const sent = await tx.signAndSend({ force: true });
-  return sent.result;
+  return sent.result as boolean;
 }
