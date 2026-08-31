@@ -339,6 +339,11 @@ h2 {
 .ring-node.funded {
   background: var(--accent2);
 }
+.ring-node.pending {
+  background: #ffefd5;
+  border-color: #ffcf3f;
+  animation: pulse 1.5s ease-in-out infinite;
+}
 .ring-node.ring-recipient {
   background: var(--accent);
   border-style: dashed;
@@ -390,6 +395,15 @@ h2 {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
   }
 }
 
@@ -452,6 +466,25 @@ h2 {
 }
 .member.funded {
   background: var(--accent2);
+}
+.member.pending {
+  background: #ffefd5;
+  border-color: #ffcf3f;
+}
+.pending-indicator {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  color: #666;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 .member-addr {
   font-family: "JetBrains Mono", monospace;
@@ -570,7 +603,6 @@ code {
   padding: 2px 4px;
 }
 
-<<<<<<< HEAD
 /* ── Mobile (< --bp-md) ─────────────────────────────────────────────── */
 @media (max-width: 767px) {
   :root {
@@ -713,12 +745,13 @@ code {
   .step {
     flex: 1 1 calc(50% - 2px);
     font-size: 8px;
-=======
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .btn,
   .pot-bar,
   .ring-node {
     transition: none !important;
->>>>>>> 2e9a849 (Add prefers-reduced-motion media query to disable animations)
   }
 }
