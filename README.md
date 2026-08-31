@@ -112,11 +112,12 @@ Full structured breakdown — assets, adversaries, and which code enforces each 
 
 ## Honest limitations
 
-- **Claim-side privacy only.** Funding is fully public, by scope: shielded deposits are a different (harder) problem — roadmap.
+- **Claim-side privacy only.** Funding is fully public, by scope: shielded deposits are a different (harder) problem — [roadmap](docs/roadmap.md).
 - **One round demoed**, not a full multi-round rotation with on-chain turn ordering.
 - **Testnet + test token**; single-party trusted setup (fine for a demo, not production).
 - **Poseidon-over-BLS12-381 constants come from a third-party package** — modulus cross-checked against Soroban's own constant and structurally reviewed (8 full + 56 partial rounds, x⁵ S-box), but not independently audited. See canonical details in [docs/poseidon-provenance.md](docs/poseidon-provenance.md).
 - Nothing is silently faked; every simplification is disclosed here, in code comments, and in [NOTES.md](NOTES.md). Details: [breakdown §18](full_product_breakdown.md#18-honest-limitations).
+- **How far this is from handling real funds** — a hard-prerequisites-included checklist, not a timeline: [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Tests
 
