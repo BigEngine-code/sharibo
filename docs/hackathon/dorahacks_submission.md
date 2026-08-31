@@ -18,26 +18,27 @@ Sharibo — a private rotating savings circle (ajo / tanda / susu / tontine) on 
 
 ## Evidence (testnet, verifiable without installing anything)
 
-| What | Where |
-|---|---|
-| Sharibo contract | `CB64IZIBBSPUY63UMIVACKWDKRFNH6WJ2EPAOLM7QR4ZI6IJOT4N2LCF` |
+| What                         | Where                                                                 |
+| ---------------------------- | --------------------------------------------------------------------- |
+| Sharibo contract             | `CB64IZIBBSPUY63UMIVACKWDKRFNH6WJ2EPAOLM7QR4ZI6IJOT4N2LCF`            |
 | Real proof accepted on-chain | tx `2258397474e3ad420d6dd8310cb0976d270c29ec4a4ec2b60a9ae58408088087` |
-| Tampered proof rejected | `Error(Contract, #5)` `InvalidProof` |
-| Nullifier replay rejected | `Error(Contract, #4)` `AlreadyClaimed` |
-| Test suite | 5/5 circuit, 8/8 contract, full e2e passing on live testnet |
+| Tampered proof rejected      | `Error(Contract, #5)` `InvalidProof`                                  |
+| Nullifier replay rejected    | `Error(Contract, #4)` `AlreadyClaimed`                                |
+| Test suite                   | 5/5 circuit, 8/8 contract, full e2e passing on live testnet           |
 
 Verify the accepted transaction yourself in one command:
+
 ```bash
 curl -s https://horizon-testnet.stellar.org/transactions/2258397474e3ad420d6dd8310cb0976d270c29ec4a4ec2b60a9ae58408088087 | grep -E '"successful"|"ledger"'
 ```
 
 ## Honest scope
 
-Privacy covers who *claims*, not who *funds* — funding is fully public on-chain by design; shielding deposits is a separate, harder problem left for future work. One round is demoed, not a full multi-round rotation with on-chain turn ordering. This runs on Stellar testnet with test tokens and a single-party trusted-setup ceremony — appropriate for a hackathon demo, not for production. The Poseidon parameters for BLS12-381 come from a third-party package, cross-checked against Soroban SDK's own field constant but not independently audited. Every one of these is disclosed in the repo, not discovered by a judge — see `README.md` → Honest limitations and `full_product_breakdown.md` §18.
+Privacy covers who *claims*, not who *funds* — funding is fully public on-chain by design; shielding deposits is a separate, harder problem left for future work. One round is demoed, not a full multi-round rotation with on-chain turn ordering. This runs on Stellar testnet with test tokens and a single-party trusted-setup ceremony — appropriate for a hackathon demo, not for production. The Poseidon parameters for BLS12-381 come from a third-party package, cross-checked against Soroban SDK's own field constant but not independently audited. Every one of these is disclosed in the repo, not discovered by a judge — see [`README.md`](../../README.md) → Honest limitations and [`full_product_breakdown.md`](../../full_product_breakdown.md) §18.
 
 ## Links
 
 - Repo: `<FILL IN — your GitHub URL>`
 - Demo video: `<FILL IN — once recorded>`
 - Live app (testnet, click through it yourself): https://dist-flax-three-43.vercel.app
-- Full technical breakdown: `full_product_breakdown.md` in the repo
+- Full technical breakdown: [`full_product_breakdown.md`](../../full_product_breakdown.md) in the repo
