@@ -1,8 +1,6 @@
 import { groth16 } from "snarkjs";
-import {
-  prefetchMembershipArtifacts,
-  type ProverArtifacts,
-} from "./artifacts";
+
+import type { ProverArtifacts } from "./artifacts";
 
 export interface ProofResult {
   proof: unknown;
@@ -14,9 +12,11 @@ export interface ProofResult {
 
 let artifactPromise: Promise<ProverArtifacts> | undefined;
 
-function getArtifacts(): Promise<ProverArtifacts> {
+async function getArtifacts(): Promise<ProverArtifacts> {
   if (!artifactPromise) {
-    artifactPromise = prefetchMembershipArtifacts();
+    artifactPromise = import("./artifacts").then(({ prefetchMembershipArtifacts }) =>
+      prefetchMembershipArtifacts()
+    );
   }
   return artifactPromise;
 }
@@ -53,5 +53,8 @@ export async function prove(
   return fullProve(input);
 }
 
-export { prefetchMembershipArtifacts } from "./artifacts";
+export async function prefetchMembershipArtifacts(): Promise<ProverArtifacts> {
+  return getArtifacts();
+}
+
 export type { ProverArtifacts } from "./artifacts";
