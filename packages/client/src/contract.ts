@@ -111,6 +111,27 @@ function populateTxResult<T>(
 }
 
 /**
+ * Runs the supplied operation and retries it with exponential backoff.
+ */
+export async function withRetry<T>(
+  fn: () => T | Promise<T>,
+  retries = 3,
+  baseDelayMs = 200,
+): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (attempt >= retries) {
+        throw error;
+      }
+      const delay = baseDelayMs * 2 ** attempt;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
+/**
  * Creates a new Sharibo circle.
  *
  * @param client - The Sharibo contract client.
@@ -226,18 +247,14 @@ export interface CircleView {
  * @returns The circle's current state.
  */
 export async function getCircle(client: ShariboClient, circleId: bigint): Promise<CircleView> {
-  // get_circle is a pure read: the SDK detects no signature is needed and
-  // refuses signAndSend() without `force` (there's nothing to sign/submit).
-  const tx = await withRetry(() => client.get_circle({ circle_id: circleId }));
-  const sent = await tx.signAndSend({ force: true });
-  return sent.result;
+  // get_circle is a pure read: use the simulated `.call()` path instead of
+  // signing and submitting a transaction.
+  return withRetry(() => client.get_circle({ circle_id: circleId }).call());
 }
 
 /** Pure read: the current count of circles ever created. 0 if none yet. */
 export async function getCircleCount(client: ShariboClient): Promise<bigint> {
-  const tx = await client.get_circle_count();
-  const sent = await tx.signAndSend({ force: true });
-  return sent.result as bigint;
+  return client.get_circle_count().call();
 }
 
 /** Pure read: whether `nullifierHash` has already claimed in this circle. */
@@ -246,10 +263,8 @@ export async function hasClaimed(
   circleId: bigint,
   nullifierHash: bigint,
 ): Promise<boolean> {
-  const tx = await withRetry(() => client.has_claimed({
+  return withRetry(() => client.has_claimed({
     circle_id: circleId,
     nullifier_hash: nullifierHash,
-  }));
-  const sent = await tx.signAndSend({ force: true });
-  return sent.result;
+  }).call());
 }
