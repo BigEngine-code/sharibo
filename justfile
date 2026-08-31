@@ -43,3 +43,7 @@ app:
 # Run everything except e2e (which spends testnet friendbot quota)
 all: circuits contract client app
     @echo 'All recipes completed (e2e skipped — uses testnet funds/friendbot quota)'
+
+# Verify: run lint and client checks
+verify: client
+    npm run lint

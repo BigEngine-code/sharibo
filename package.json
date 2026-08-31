@@ -10,6 +10,8 @@
   ],
   "scripts": {
     "e2e": "npm run e2e --workspace=scripts",
-    "test": "npm test --workspace=app"
+    "test": "npm test --workspace=app",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
   }
 }

@@ -1,7 +1,6 @@
 import { Client as ContractClient, basicNodeSigner } from "@stellar/stellar-sdk/contract";
-import { Keypair, StrKey } from "@stellar/stellar-sdk";
+import { Keypair } from "@stellar/stellar-sdk";
 import type { ContractProof, ContractVerificationKey } from "./prove.js";
-import { ContractError, RpcError } from "./errors.js";
 
 /**
  * Network configuration for connecting to the Sharibo contract.
@@ -26,15 +25,12 @@ export interface ShariboNetworkConfig {
  * or codegen'd interface. Keeps this SDK working against whatever the
  * deployed contract's real spec is, rather than a copy that can drift.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ShariboClient = any;
+export type ShariboClient = ReturnType<typeof ContractClient.from>;
 
 export interface ShariboSigner {
   publicKey: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  signTransaction: (txXdr: string, opts?: any) => Promise<string>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  signAuthEntry?: (entryXdr: string, opts?: any) => Promise<string>;
+  signTransaction: (txXdr: string, opts?: unknown) => Promise<string>;
+  signAuthEntry?: (entryXdr: string, opts?: unknown) => Promise<string>;
 }
 
 export async function connect(
@@ -42,10 +38,8 @@ export async function connect(
   keypairOrSigner: Keypair | ShariboSigner,
 ): Promise<ShariboClient> {
   let publicKey: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let signTransaction: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let signAuthEntry: any;
+  let signTransaction: (txXdr: string, opts?: unknown) => Promise<string>;
+  let signAuthEntry: ((entryXdr: string, opts?: unknown) => Promise<string>) | undefined;
 
   if (keypairOrSigner instanceof Keypair) {
     const signer = basicNodeSigner(keypairOrSigner, config.networkPassphrase);
