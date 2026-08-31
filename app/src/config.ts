@@ -2,16 +2,21 @@
  * Reads and validates all required VITE_* environment variables at module
  * load time.  Import `config` wherever you need the values; import
  * `configError` to check whether the app should render the setup screen.
+ *
+ * Failure is honest: `config` is `null` when validation fails, so the type
+ * system forces callers to check `configError` (or `config !== null`) before
+ * dereferencing it — there is no fake empty object that silently surfaces
+ * `undefined` fields at runtime.
  */
 
-interface AppConfig {
+export interface AppConfig {
   contractId: string;
   rpcUrl: string;
   networkPassphrase: string;
   testTokenContractId: string;
 }
 
-interface ValidationResult {
+export interface ValidationResult {
   config: AppConfig | null;
   /** Human-readable lines describing every problem found. */
   errors: string[];
@@ -31,7 +36,7 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
-function validate(): ValidationResult {
+export function validate(): ValidationResult {
   const errors: string[] = [];
 
   const contractId = import.meta.env.VITE_SHARIBO_CONTRACT_ID as string | undefined;
@@ -85,7 +90,10 @@ const result = validate();
 export const configError: string[] = result.errors;
 
 /**
- * Typed, validated config.  Only access this after confirming
- * `configError.length === 0`; otherwise the values are undefined at runtime.
+ * Validated config, or `null` when validation failed.
+ *
+ * When validation fails (`configError` is non-empty) this is `null`, so it is
+ * an actual runtime error to use it before checking the gate — the type
+ * system enforces the setup-screen check instead of pretending.
  */
-export const config: AppConfig = result.config ?? ({} as AppConfig);
+export const config: AppConfig | null = result.config;

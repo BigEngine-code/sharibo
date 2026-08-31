@@ -53,12 +53,16 @@ function reviver(key: string, value: any) {
   return value;
 }
 
+// `config` is null when config validation failed (see config.ts); the component
+// below gates on `configError.length > 0` and renders the setup screen, so these
+// module-level values are only ever used on the happy path. Optional chaining
+// keeps importing this module from crashing on a misconfigured build.
 const NETWORK = {
-  contractId: config.contractId,
-  rpcUrl: config.rpcUrl,
-  networkPassphrase: config.networkPassphrase,
+  contractId: config?.contractId ?? "",
+  rpcUrl: config?.rpcUrl ?? "",
+  networkPassphrase: config?.networkPassphrase ?? "",
 };
-const TOKEN = config.testTokenContractId;
+const TOKEN = config?.testTokenContractId ?? "";
 const LEVELS = TREE_LEVELS;
 const CIRCLE_SIZE = 5;
 const STROOPS_PER_XLM = 10_000_000n;
