@@ -13,7 +13,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { writeFileSync, unlinkSync, existsSync } from "node:fs";
+import { writeFileSync, unlinkSync, existsSync, readFileSync } from "node:fs";
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -27,18 +27,9 @@ function writeEnv(content: string) {
   writeFileSync(envPath, content, "utf8");
 }
 
-function readEnvSafe(): string | null {
-  try {
-    const { readFileSync } = require("node:fs");
-    return readFileSync(envPath, "utf8");
-  } catch {
-    return null;
-  }
-}
-
 beforeEach(() => {
   try {
-    envBackup = require("node:fs").readFileSync(envPath, "utf8");
+    envBackup = readFileSync(envPath, "utf8");
   } catch {
     envBackup = null;
   }

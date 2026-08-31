@@ -1,6 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { FR_MODULUS, randomFieldElement, computeExternalNullifier } from "./identity.js";
+import {
+  FR_MODULUS,
+  randomFieldElement,
+  computeExternalNullifier,
+  computeNullifierHash,
+  generateIdentity,
+  poseidon,
+} from "./identity.js";
+import { InvalidInputError } from "./errors.js";
 
 // Issue #63: pin FR_MODULUS against independent sources so a transcription
 // error in the hex literal fails the suite instead of silently corrupting

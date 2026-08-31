@@ -16,7 +16,7 @@ test("transient simulate-phase failure recovers", async () => {
   };
 
   const mockClient = {
-    fund: (args: any) => {
+    fund: () => {
       simulateCalls++;
       if (simulateCalls < 3) {
         throw new Error("RPC Error 429 Too Many Requests");
@@ -42,7 +42,7 @@ test("post-submit failure surfaces immediately without a second submission", asy
   };
 
   const mockClient = {
-    fund: (args: any) => {
+    fund: () => {
       simulateCalls++;
       return mockTx;
     },

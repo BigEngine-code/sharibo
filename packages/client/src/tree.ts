@@ -1,4 +1,11 @@
 import { poseidon, FR_MODULUS } from "./identity.js";
+import { InvalidInputError } from "./errors.js";
+
+// Must match `component main = Sharibo(4)` in the generated
+// circuits/membership.circom (single-sourced from circuits/config.json). The
+// circuit is the source of truth for the tree depth.
+export const TREE_LEVELS = 4;
+export const MAX_CIRCLE_SIZE = 2 ** TREE_LEVELS;
 
 /**
  * Fixed placeholder for unused leaves when padding the tree out to full capacity (2**levels).
@@ -121,6 +128,28 @@ export class MerkleTree {
    */
   indexOf(leaf: bigint): number {
     return this.leaves.findIndex((l) => l === leaf);
+  }
+
+  /**
+   * Generates a Merkle proof for a leaf looked up by value.
+   *
+   * Unlike {@link proof}, which takes an index, this finds the leaf by its bigint
+   * value. Useful when you only hold the commitment, not the member's index.
+   *
+   * @param leaf - The leaf value to build a proof for.
+   * @returns A MerkleProof containing the root, path elements, and path indices.
+   * @throws {InvalidInputError} If the leaf is not in the tree.
+   */
+  proofOf(leaf: bigint): MerkleProof {
+    const index = this.indexOf(leaf);
+    if (index === -1) {
+      const occupied = this.leaves.length;
+      const slots = this.layers[0].length;
+      throw new InvalidInputError(
+        `leaf 0x${leaf.toString(16)} not found in this tree (${occupied} occupied / ${slots} slots)`,
+      );
+    }
+    return this.proof(index);
   }
 
   /**
