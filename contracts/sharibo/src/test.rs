@@ -12,6 +12,8 @@ use soroban_sdk::{
 };
 use std::vec::Vec as StdVec;
 
+mod reentrancy;
+
 // ---- BLS12-381 test fixture helpers ----
 // The vk/proof/public-signal decimal coordinates below were produced by the
 // real Phase 1 pipeline (circuits/scripts/{compile,setup,prove}.sh) for a
