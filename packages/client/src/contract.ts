@@ -1,7 +1,7 @@
 import { Client as ContractClient, basicNodeSigner } from "@stellar/stellar-sdk/contract";
-import { Keypair, StrKey } from "@stellar/stellar-sdk";
+import { Keypair } from "@stellar/stellar-sdk";
 import type { ContractProof, ContractVerificationKey } from "./prove.js";
-import { ContractError, RpcError } from "./errors.js";
+import { validateContractProof, validateContractVerificationKey } from "./validate.js";
 
 /**
  * Network configuration for connecting to the Sharibo contract.
@@ -134,6 +134,7 @@ export async function createCircle(
     vk: ContractVerificationKey;
   },
 ): Promise<TxResult<bigint>> {
+  validateContractVerificationKey(args.vk);
   const tx = await withRetry(() => client.create_circle({
     admin: args.admin,
     token: args.token,
@@ -186,6 +187,7 @@ export async function claim(
     proof: ContractProof;
   },
 ): Promise<TxResult<void>> {
+  validateContractProof(args.proof);
   const tx = await withRetry(() => client.claim({
     circle_id: args.circleId,
     recipient: args.recipient,
