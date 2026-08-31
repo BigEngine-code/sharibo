@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { expect } = require("chai");
 const wasm_tester = require("circom_tester").wasm;
+const snarkjs = require("snarkjs");
 const {
   generateIdentity,
   computeExternalNullifier,
@@ -18,6 +19,12 @@ const CIRCUITS_CONFIG = JSON.parse(
   fs.readFileSync(path.join(__dirname, "..", "config.json"), "utf8"),
 );
 const LEVELS = CIRCUITS_CONFIG.levels;
+
+// Committed expected constraint count per tree depth (issue #272) — see
+// circuits/constraints.json. Keyed by depth so it survives the
+// configurable-depth work instead of pinning a single global number.
+const CONSTRAINTS_PATH = path.join(__dirname, "..", "constraints.json");
+const COMMITTED_CONSTRAINTS = JSON.parse(fs.readFileSync(CONSTRAINTS_PATH, "utf8"));
 
 const VECTORS = JSON.parse(
   fs.readFileSync(path.join(__dirname, "..", "..", "test-vectors", "poseidon.json"), "utf8"),
@@ -45,6 +52,42 @@ describe("Sharibo membership circuit (BLS12-381)", function () {
       LEVELS,
       identities.map((id) => id.commitment),
     );
+  });
+
+  // The constraint count drives browser proving time, .zkey size, and
+  // on-chain verification cost (see circuits/README.md "Constraint count").
+  // wasm_tester's compile step already writes a .r1cs alongside the .wasm
+  // (circom_tester always compiles with --r1cs), so this reads that same
+  // artifact rather than recompiling. Keyed by LEVELS in constraints.json so
+  // a circuit edit or a Poseidon dependency bump that silently changes the
+  // count fails here instead of shipping unnoticed (issue #272).
+  it("compiled constraint count matches the committed circuits/constraints.json", async () => {
+    const r1csPath = path.join(circuit.dir, circuit.baseName + ".r1cs");
+    const info = await snarkjs.r1cs.info(r1csPath);
+    // readR1cs() builds a curve object backed by worker_threads for field
+    // arithmetic; without terminating it, those workers keep the process
+    // alive and mocha never exits even though all tests already passed.
+    await info.curve.terminate();
+    const actual = info.nConstraints;
+    const depthKey = String(LEVELS);
+    const committed = COMMITTED_CONSTRAINTS[depthKey];
+
+    if (committed === undefined) {
+      throw new Error(
+        `circuits/constraints.json has no committed constraint count for tree depth ${depthKey}. ` +
+          `This build's actual count is ${actual}. If that's expected, add ` +
+          `"${depthKey}": ${actual} to circuits/constraints.json.`,
+      );
+    }
+
+    expect(
+      actual,
+      `Compiled constraint count for depth ${depthKey} is ${actual}, but circuits/constraints.json ` +
+        `commits to ${committed}. If this change is intentional (circuit edit, Poseidon package bump, ` +
+        `etc.), update "${depthKey}": ${committed} to "${depthKey}": ${actual} in circuits/constraints.json ` +
+        `— and, per the README's "Keep in sync" note, the "Current count" line in circuits/README.md and ` +
+        `the "1,452 constraints" search string in app/src/App.tsx.`,
+    ).to.equal(committed);
   });
 
   async function buildInput(memberIndex, circleId, round) {
