@@ -2,176 +2,27 @@
 #[cfg(test)]
 extern crate std;
 
+mod fee;
+mod storage;
+mod types;
+mod verify;
+
+// Re-export every public item so the on-chain contract spec and any direct
+// crate consumers see the same paths as before.  This keeps the deployed
+// WASM's contract interface byte-identical to the pre-split build.
+pub use fee::apply_fee;
+pub use storage::{LEDGER_EXTEND_TO, LEDGER_THRESHOLD};
+pub use types::{Circle, DataKey, Error, Proof, VerificationKey};
+pub use verify::{compute_external_nullifier, verify_groth16};
+
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype,
-    crypto::bls12_381::{Fr, G1Affine, G2Affine},
-    panic_with_error, token, vec, Address, Bytes, Env, Vec,
+    contract, contractimpl,
+    crypto::bls12_381::Fr,
+    panic_with_error, token, vec, Address, Env, Vec,
 };
 
-/// Groth16 verification key over BLS12-381.
-///
-/// Committed at circle creation time; every [`Self::claim`] proof is checked
-/// against this key. Encodes the trusted-setup output of the Semaphore-style
-/// circuit used by the off-chain prover.
-#[contracttype]
-#[derive(Clone)]
-pub struct VerificationKey {
-    /// `G1` element from the toxic-waste combination `[α]·G1`.
-    pub alpha: G1Affine,
-    /// `G2` element `[β]·G2`.
-    pub beta: G2Affine,
-    /// `G2` element `[γ]·G2` — the public-input gate.
-    pub gamma: G2Affine,
-    /// `G2` element `[δ]·G2` — the private-witness gate.
-    pub delta: G2Affine,
-    /// `vk_x` basis: `ic[0] + Σ pub_input_i · ic[i+1]`.
-    /// Length must be exactly `number_of_public_inputs + 1`.
-    pub ic: Vec<G1Affine>,
-}
-
-/// A Groth16 proof over BLS12-381 produced by the off-chain prover.
-///
-/// The three group elements satisfy the standard pairing equation checked by
-/// [`Contract::verify_groth16`].
-#[contracttype]
-#[derive(Clone)]
-pub struct Proof {
-    /// `A` commitment (the `π_a` G1 element).
-    pub a: G1Affine,
-    /// `B` commitment (the `π_b` G2 element).
-    pub b: G2Affine,
-    /// `C` commitment (the `π_c` G1 element).
-    pub c: G1Affine,
-}
-
-/// On-chain state for a single Semaphore-style contribution circle.
-///
-/// A circle is a fixed-size ring of members (commitment [`Self::root`]) who
-/// each contribute [`Self::contribution`] tokens per round. Once the pot is
-/// full, one member can claim the entire pot per round using a ZK proof that
-/// they are in the ring, with their nullifier preventing double-claims
-/// across rounds.
-#[contracttype]
-#[derive(Clone)]
-pub struct Circle {
-    /// Owner of the circle. Required to call [`Contract::cancel_circle`];
-    /// does **not** gate funding or claiming — those are permissionless
-    /// (fund) / zero-knowledge (claim).
-    pub admin: Address,
-    /// SAC token contract used for contributions and payouts.
-    pub token: Address,
-    /// Merkle root of the member-commitment tree. Committed at creation
-    /// and used as a public input to every [`Self::claim`] proof; binds
-    /// the set of members who are eligible to claim.
-    pub root: Fr,
-    /// Amount each [`Contract::fund`] call deposits into [`Self::pot`].
-    /// All contributors pay the same fixed amount per round.
-    pub contribution: i128,
-    /// Number of funders required to fill a round. `pot_target =
-    /// contribution * size`; [`Contract::claim`] requires exact equality.
-    pub size: u32,
-    /// Current round number. Increments by 1 after each successful
-    /// [`Contract::claim`]. Binds the proof's external_nullifier so a
-    /// proof from round N cannot be replayed in round N+1.
-    pub round: u32,
-    /// Tokens deposited for the **current** round. Zeroed out after a
-    /// successful claim or cancel (after refunds are issued).
-    pub pot: i128,
-    /// Verification key for the ZK circuit — all claims in this circle
-    /// must prove against this key.
-    pub vk: VerificationKey,
-    /// Addresses that have funded the **current** round in order.
-    /// Reset to empty after a successful `claim` or `cancel_circle`.
-    /// Refunds on cancel are processed in this same order.
-    /// Funding is unshielded (addresses are already public), so storing
-    /// them here imposes no additional privacy loss — see issue #82.
-    pub contributors: Vec<Address>,
-    /// True once `cancel_circle` has been called; prevents any further
-    /// `fund` or `claim` calls so the circle is permanently closed.
-    pub cancelled: bool,
-}
-
-/// Storage keys for the contract's persistent and instance storage.
-///
-/// Exposed publicly because callers that read storage directly (e.g. SDK
-/// indexers) need to know the exact `#[contracttype]` discriminants.
-#[contracttype]
-#[derive(Clone)]
-pub enum DataKey {
-    /// Instance-stored `u64` counter assigning the next free circle id.
-    NextCircleId,
-    /// Persistent-stored [`Circle`] keyed by its assigned id.
-    Circle(u64),
-    /// Persistent-stored `bool` marker: has `(circle_id, nullifier_hash)`
-    /// already been used in a successful [`Contract::claim`]? Prevents
-    /// double-claims across rounds.
-    Nullifier(u64, Fr),
-}
-
-/// Revertable error codes for every public entrypoint.
-///
-/// All panics use `panic_with_error!` so the discriminant is surfaced to
-/// on-chain callers and off-chain simulations.
-#[contracterror]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-#[repr(u32)]
-pub enum Error {
-    /// No [`Circle`] is stored at the requested `circle_id`.
-    CircleNotFound = 1,
-    /// [`Contract::claim`] called before the pot reached `contribution * size`.
-    RoundNotFunded = 2,
-    /// Proof's external_nullifier did not match `hash(circle_id, round)`.
-    WrongRoundTag = 3,
-    /// Nullifier has already been used in a prior claim for this circle.
-    AlreadyClaimed = 4,
-    /// Groth16 pairing check returned false.
-    InvalidProof = 5,
-    /// The round pot is already at `contribution * size`; further funds
-    /// would permanently brick `claim`'s exact-equality check.
-    RoundFull = 6,
-    /// Checked pot arithmetic overflowed (absurd contribution/size).
-    Overflow = 7,
-    /// `cancel_circle` or `fund`/`claim` called on a cancelled circle.
-    CircleCancelled = 8,
-    /// `apply_fee` called with `fee_bps > 10_000` or `amount < 0`.
-    InvalidFeeParams = 9,
-}
-
-/// Minimum remaining TTL (in ledgers) that triggers a `extend_ttl` call.
-///
-/// Every write entrypoint (`create_circle`, `fund`, `claim`, `cancel_circle`)
-/// calls `extend_ttl(LEDGER_THRESHOLD, LEDGER_EXTEND_TO)`. The Soroban host
-/// only performs the extension when the entry's current TTL has fallen below
-/// `LEDGER_THRESHOLD`; if it is already higher, the call is a no-op. Setting
-/// this to 100 ledgers (≈ 8 minutes at ~5 s/ledger) means that any write
-/// performed in the last few minutes of a circle's live window will refresh it
-/// to the full `LEDGER_EXTEND_TO` budget.
-const LEDGER_THRESHOLD: u32 = 100;
-
-/// TTL (in ledgers) that persistent and instance entries are extended to on
-/// each write.
-///
-/// 500,000 ledgers × 5 s/ledger ≈ **29 days** of activity-triggered liveness.
-///
-/// The Soroban network cap for persistent entry TTL is **535,679 ledgers**
-/// (≈ 30 days; see <https://developers.stellar.org/docs/tools/cli/cookbook/extend-contract-wasm>).
-/// `LEDGER_EXTEND_TO` is intentionally set just below that ceiling to leave a
-/// small safety margin while still giving circles close to the maximum window.
-///
-/// If a circle goes dormant (no `fund`, `claim`, or `cancel_circle` call) for
-/// longer than this window, its persistent entry will be archived. An operator
-/// must then submit a `RestoreFootprintOp` (via `stellar contract restore`)
-/// before any further interaction is possible. See `contracts/README.md §Storage
-/// lifetime` for the runbook.
-const LEDGER_EXTEND_TO: u32 = 500_000;
-
-// Compile-time sanity check: the threshold at which we re-extend must be
-// strictly less than the target we extend to, or the extension can never
-// make progress.
-const _: () = assert!(
-    LEDGER_THRESHOLD < LEDGER_EXTEND_TO,
-    "LEDGER_THRESHOLD must be strictly less than LEDGER_EXTEND_TO",
-);
+use storage::extend_instance_ttl;
+use types::DataKey::*;
 
 /// Sharibo contract: permissionless Semaphore-style contribution circles on
 /// Soroban.
@@ -269,9 +120,7 @@ impl Contract {
         // would reset to 0 and create_circle would silently overwrite
         // circle 0. Extending here ensures the counter outlives quiet
         // periods (see contracts/README.md §Instance-storage archival).
-        env.storage()
-            .instance()
-            .extend_ttl(LEDGER_THRESHOLD, LEDGER_EXTEND_TO);
+        extend_instance_ttl(&env);
 
         circle_id
     }
@@ -327,7 +176,7 @@ impl Contract {
         }
 
         let token_client = token::Client::new(&env, &circle.token);
-        token_client.transfer(&from, env.current_contract_address(), &circle.contribution);
+        token_client.transfer(&from, &env.current_contract_address(), &circle.contribution);
 
         // Defensive: with RoundFull above, pot + contribution cannot exceed
         // target when target itself fits in i128. Still use checked_add so an
@@ -342,9 +191,7 @@ impl Contract {
         env.storage()
             .persistent()
             .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_EXTEND_TO);
-        env.storage()
-            .instance()
-            .extend_ttl(LEDGER_THRESHOLD, LEDGER_EXTEND_TO);
+        extend_instance_ttl(&env);
     }
 
     /// Zero-knowledge payout: transfer the full round pot to `recipient`
@@ -439,9 +286,8 @@ impl Contract {
         }
 
         // 2. the proof's external_nullifier must be bound to this exact circle+round
-        let expected_external_nullifier =
-            Self::compute_external_nullifier(&env, circle_id, circle.round);
-        if external_nullifier != expected_external_nullifier {
+        let expected_en = compute_external_nullifier(&env, circle_id, circle.round);
+        if external_nullifier != expected_en {
             panic_with_error!(&env, Error::WrongRoundTag);
         }
 
@@ -458,7 +304,7 @@ impl Contract {
             circle.root.clone(),
             external_nullifier,
         ];
-        if !Self::verify_groth16(&env, &circle.vk, &proof, &public_inputs) {
+        if !verify_groth16(&env, &circle.vk, &proof, &public_inputs) {
             panic_with_error!(&env, Error::InvalidProof);
         }
 
@@ -478,25 +324,10 @@ impl Contract {
         env.storage()
             .persistent()
             .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_EXTEND_TO);
-        env.storage()
-            .instance()
-            .extend_ttl(LEDGER_THRESHOLD, LEDGER_EXTEND_TO);
+        extend_instance_ttl(&env);
     }
 
     /// Look up a [`Circle`] by its assigned id.
-    ///
-    /// # Authentication
-    ///
-    /// None — pure read, available to any caller.
-    ///
-    /// # Arguments
-    ///
-    /// * `circle_id` — id returned from [`Self::create_circle`].
-    ///
-    /// # Returns
-    ///
-    /// A full [`Circle`] struct (including the embedded [`VerificationKey`]
-    /// and current-round [`Circle::contributors`]).
     ///
     /// # Errors
     ///
@@ -519,9 +350,6 @@ impl Contract {
 
     /// Pure read: the current round number for `circle_id`.
     ///
-    /// Cheaper than [`Self::get_circle`] for callers that only need to track
-    /// round advancement (e.g. polling the proof's external_nullifier binding).
-    ///
     /// # Errors
     ///
     /// * [`Error::CircleNotFound`] — `circle_id` does not exist.
@@ -535,9 +363,6 @@ impl Contract {
     }
 
     /// Pure read: the current pot balance (in token stroops) for `circle_id`.
-    ///
-    /// Cheaper than [`Self::get_circle`] for UI polling that only needs the
-    /// funding-progress bar.
     ///
     /// # Errors
     ///
@@ -553,19 +378,10 @@ impl Contract {
 
     /// Pure read: compact status tuple `(round, pot, target, cancelled)`.
     ///
-    /// Returns everything the app's polling loop needs in one RPC call,
-    /// without deserializing the embedded [`VerificationKey`]:
-    ///
-    /// * `round` — current round number.
-    /// * `pot` — tokens deposited so far in this round.
-    /// * `target` — `contribution * size`; pot must equal this for a claim.
-    /// * `cancelled` — whether the circle has been permanently closed.
-    ///
     /// # Errors
     ///
     /// * [`Error::CircleNotFound`] — `circle_id` does not exist.
-    /// * [`Error::Overflow`] — `contribution * size` overflows `i128`
-    ///   (absurd parameters set at circle creation).
+    /// * [`Error::Overflow`] — `contribution * size` overflows `i128`.
     pub fn get_status(env: Env, circle_id: u64) -> (u32, i128, i128, bool) {
         let circle: Circle = env
             .storage()
@@ -576,12 +392,7 @@ impl Contract {
         (circle.round, circle.pot, target, circle.cancelled)
     }
 
-    /// Pure read: the ordered list of addresses that have funded the
-    /// **current** round of `circle_id`.
-    ///
-    /// Intended for the cancel/refund UI — callers can display the contributors
-    /// and let the admin verify who will be refunded before calling
-    /// [`Self::cancel_circle`].
+    /// Pure read: ordered list of addresses that have funded the current round.
     ///
     /// # Errors
     ///
@@ -596,22 +407,7 @@ impl Contract {
     }
 
     /// Pure read: whether `nullifier_hash` has already been used to claim in
-    /// this circle. Mirrors the storage lookup in [`Self::claim`] so wallets
-    /// can check eligibility without submitting a failing transaction.
-    ///
-    /// # Authentication
-    ///
-    /// None — pure read.
-    ///
-    /// # Arguments
-    ///
-    /// * `circle_id` — circle the caller wants to claim from.
-    /// * `nullifier_hash` — identity nullifier to probe.
-    ///
-    /// # Returns
-    ///
-    /// `true` if the nullifier has ever been used in a successful claim for
-    /// this circle (any round); the associated identity cannot claim again.
+    /// this circle.
     pub fn has_claimed(env: Env, circle_id: u64, nullifier_hash: Fr) -> bool {
         env.storage()
             .persistent()
@@ -623,31 +419,7 @@ impl Contract {
     ///
     /// # Authentication
     ///
-    /// Requires [`Circle::admin`]`.require_auth()`. Only the admin set at
-    /// circle creation can cancel.
-    ///
-    /// **When to use**: a circle where a member disappears and the pot will
-    /// never reach the full target. Without this, contributed tokens are
-    /// permanently stranded (claim requires `pot == contribution * size`).
-    ///
-    /// **Privacy note**: contributor addresses are already public (funding is
-    /// unshielded), so refunds expose no additional information today.
-    /// However, per-contributor storage constrains any future shielded-funding
-    /// design — see issue #82.
-    ///
-    /// # Arguments
-    ///
-    /// * `circle_id` — the circle to cancel.
-    ///
-    /// # State effects
-    ///
-    /// * Transfers `contribution` tokens back to each address in
-    ///   [`Circle::contributors`] in order.
-    /// * Zeros [`Circle::pot`], sets [`Circle::cancelled`] = `true`, clears
-    ///   [`Circle::contributors`].
-    /// * Writes the updated circle and extends TTL. After this the circle
-    ///   is permanently closed: further [`Self::fund`] and [`Self::claim`]
-    ///   calls revert with [`Error::CircleCancelled`].
+    /// Requires [`Circle::admin`]`.require_auth()`.
     ///
     /// # Errors
     ///
@@ -686,60 +458,23 @@ impl Contract {
             .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_EXTEND_TO);
     }
 
-    // Binds a proof to (circle_id, round) with SHA-256 (a native, accelerated
-    // Soroban host function), reduced into the BLS12-381 scalar field via
-    // `Fr::from_bytes` (which reduces mod r automatically). This is a
-    // deliberate, permanent choice, not a placeholder: Soroban has no native
-    // Poseidon host function, so hashing this check with Poseidon would mean
-    // hand-porting a Poseidon permutation into pure Rust for no security
-    // benefit — SHA-256 is equally sound for binding a proof to a round.
-    // Poseidon is used where it actually earns its keep: *inside* the
-    // circuit's constraint system (commitment + nullifierHash), where a
-    // SNARK-unfriendly hash like SHA-256 would cost far more constraints.
-    // See NOTES.md.
-    fn compute_external_nullifier(env: &Env, circle_id: u64, round: u32) -> Fr {
-        let mut bytes = Bytes::new(env);
-        bytes.extend_from_array(&circle_id.to_be_bytes());
-        bytes.extend_from_array(&round.to_be_bytes());
-        let digest = env.crypto().sha256(&bytes).to_bytes();
-        Fr::from_bytes(digest)
+    // Delegating wrappers — kept as associated functions so tests and the
+    // contract spec that references `Contract::compute_external_nullifier` and
+    // `Contract::verify_groth16` continue to compile without change.
+
+    /// See [`compute_external_nullifier`].
+    pub(crate) fn compute_external_nullifier(env: &Env, circle_id: u64, round: u32) -> Fr {
+        compute_external_nullifier(env, circle_id, round)
     }
 
-    // Real on-chain Groth16 verification over BLS12-381, using Soroban's
-    // native accelerated pairing host functions (see NOTES.md for why
-    // BLS12-381 rather than BN254 — a pure-Rust BN254 pairing check does not
-    // fit the CPU budget). Checks the standard Groth16 pairing equation:
-    // e(-A, B) * e(alpha, beta) * e(vk_x, gamma) * e(C, delta) == 1
-    // where vk_x = ic[0] + sum(public_inputs[i] * ic[i+1]).
-    fn verify_groth16(
+    /// See [`verify_groth16`].
+    pub(crate) fn verify_groth16(
         env: &Env,
         vk: &VerificationKey,
         proof: &Proof,
         public_inputs: &Vec<Fr>,
     ) -> bool {
-        if public_inputs.len() + 1 != vk.ic.len() {
-            return false;
-        }
-
-        let bls = env.crypto().bls12_381();
-
-        let mut vk_x = vk.ic.get(0).unwrap();
-        for i in 0..public_inputs.len() {
-            let term = bls.g1_mul(&vk.ic.get(i + 1).unwrap(), &public_inputs.get(i).unwrap());
-            vk_x = bls.g1_add(&vk_x, &term);
-        }
-
-        let neg_a = -proof.a.clone();
-        let vp1 = vec![env, neg_a, vk.alpha.clone(), vk_x, proof.c.clone()];
-        let vp2 = vec![
-            env,
-            proof.b.clone(),
-            vk.beta.clone(),
-            vk.gamma.clone(),
-            vk.delta.clone(),
-        ];
-
-        bls.pairing_check(vp1, vp2)
+        verify_groth16(env, vk, proof, public_inputs)
     }
 }
 
@@ -749,63 +484,6 @@ fn pot_target(env: &Env, circle: &Circle) -> i128 {
         .contribution
         .checked_mul(circle.size as i128)
         .unwrap_or_else(|| panic_with_error!(env, Error::Overflow))
-}
-
-/// Split `amount` into a protocol fee and the net payout.
-///
-/// # Formula
-///
-/// ```text
-/// fee = fee_bps * amount / 10_000   (integer truncation — rounds down)
-/// net = amount - fee
-/// ```
-///
-/// Because `fee` is truncated, the sum `fee + net` is always exactly
-/// equal to `amount` — no tokens are created or destroyed.
-///
-/// # Overflow safety
-///
-/// The intermediate product `fee_bps * amount` would overflow `i128` for
-/// large amounts if computed naively. The implementation avoids this by
-/// splitting `amount` into a quotient and remainder:
-///
-/// ```text
-/// fee = (amount / 10_000) * fee_bps + (amount % 10_000) * fee_bps / 10_000
-/// ```
-///
-/// Both terms fit in `i128` for all `amount >= 0` and `fee_bps <= 10_000`.
-///
-/// # Arguments
-///
-/// * `fee_bps` — fee in basis points; must be in `0..=10_000` (i.e.
-///   0 % – 100 %). Values outside this range are **rejected** with
-///   [`Error::InvalidFeeParams`] — they are never silently accepted.
-/// * `amount` — gross token amount to split. Must be non-negative;
-///   negative values are **rejected** with [`Error::InvalidFeeParams`].
-///
-/// # Returns
-///
-/// `(fee, net)` where `fee + net == amount`.
-///
-/// # Errors
-///
-/// * [`Error::InvalidFeeParams`] — `fee_bps > 10_000` or `amount < 0`.
-pub fn apply_fee(env: &Env, fee_bps: u32, amount: i128) -> (i128, i128) {
-    if fee_bps > 10_000 || amount < 0 {
-        panic_with_error!(env, Error::InvalidFeeParams);
-    }
-    // Split to avoid overflow: amount = q * 10_000 + r, so
-    //   fee_bps * amount = fee_bps * q * 10_000 + fee_bps * r
-    // Dividing by 10_000:
-    //   fee = fee_bps * q + fee_bps * r / 10_000
-    // Both `fee_bps * q` and `fee_bps * r` fit in i128 for all valid inputs
-    // (q <= i128::MAX / 10_000 and r < 10_000, fee_bps <= 10_000).
-    let bps = fee_bps as i128;
-    let q = amount / 10_000;
-    let r = amount % 10_000;
-    let fee = bps * q + bps * r / 10_000;
-    let net = amount - fee;
-    (fee, net)
 }
 
 mod test;
