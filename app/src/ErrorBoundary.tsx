@@ -2,6 +2,7 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 
 interface Props {
   children: ReactNode;
+  onReset?: () => void;
 }
 
 interface State {
@@ -15,6 +16,14 @@ interface State {
 // app's own setError state in App.tsx).
 export class ErrorBoundary extends Component<Props, State> {
   state: State = { error: null };
+
+  private readonly reset = () => {
+    if (this.props.onReset) {
+      this.props.onReset();
+      return;
+    }
+    window.location.reload();
+  };
 
   static getDerivedStateFromError(error: Error): State {
     return { error };
@@ -34,7 +43,7 @@ export class ErrorBoundary extends Component<Props, State> {
               The demo hit an unexpected error and can't continue safely from here.
             </p>
             <p className="error">{this.state.error.message}</p>
-            <button className="btn btn-primary" onClick={() => window.location.reload()}>
+            <button className="btn btn-primary" onClick={this.reset}>
               Start over
             </button>
             <p className="fineprint">
