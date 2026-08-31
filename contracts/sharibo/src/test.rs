@@ -704,6 +704,93 @@ fn get_circle_unknown_reverts() {
     let _ = client.get_circle(&999u64);
 }
 
+#[test]
+fn get_round_returns_current_round() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    assert_eq!(client.get_round(&s.circle_id), 0);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #1)")] // CircleNotFound
+fn get_round_unknown_reverts() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    client.get_round(&999u64);
+}
+
+#[test]
+fn get_pot_returns_current_pot() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    assert_eq!(client.get_pot(&s.circle_id), 0i128);
+
+    client.fund(&s.circle_id, &s.members[0]);
+    assert_eq!(client.get_pot(&s.circle_id), s.contribution);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #1)")] // CircleNotFound
+fn get_pot_unknown_reverts() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    client.get_pot(&999u64);
+}
+
+#[test]
+fn get_status_returns_round_pot_target_cancelled() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+
+    let (round, pot, target, cancelled) = client.get_status(&s.circle_id);
+    assert_eq!(round, 0);
+    assert_eq!(pot, 0i128);
+    assert_eq!(target, s.contribution * (s.size as i128));
+    assert!(!cancelled);
+
+    // Fund one member and confirm pot advances.
+    client.fund(&s.circle_id, &s.members[0]);
+    let (round2, pot2, target2, cancelled2) = client.get_status(&s.circle_id);
+    assert_eq!(round2, 0);
+    assert_eq!(pot2, s.contribution);
+    assert_eq!(target2, target);
+    assert!(!cancelled2);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #1)")] // CircleNotFound
+fn get_status_unknown_reverts() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    client.get_status(&999u64);
+}
+
+#[test]
+fn get_contributors_returns_funders_in_order() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+
+    // Before anyone funds, the list is empty.
+    let contributors = client.get_contributors(&s.circle_id);
+    assert_eq!(contributors.len(), 0);
+
+    // After two members fund, they appear in insertion order.
+    client.fund(&s.circle_id, &s.members[0]);
+    client.fund(&s.circle_id, &s.members[1]);
+    let contributors = client.get_contributors(&s.circle_id);
+    assert_eq!(contributors.len(), 2);
+    assert_eq!(contributors.get(0).unwrap(), s.members[0]);
+    assert_eq!(contributors.get(1).unwrap(), s.members[1]);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #1)")] // CircleNotFound
+fn get_contributors_unknown_reverts() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    client.get_contributors(&999u64);
+}
+
 // CPU-instruction harness: measures create_circle / fund / claim, plus a
 // synthetic larger-IC Groth16 verify (more public inputs → more g1_mul).
 // Tree depth does NOT change claim cost (circuit-only); IC length does.
@@ -1111,18 +1198,23 @@ fn instance_ttl_extended_after_create_fund_claim() {
     assert_eq!(circle.round, 1, "claim should have advanced round to 1");
 }
 
-// ---- Proptest: apply_fee rounding invariant ----
+// ---- Proptest: apply_fee invariants ----
 //
-// For every (amount, fee_bps) pair in the valid domain, the split must be
-// lossless: fee + net == amount exactly.  Integer truncation in
-// `fee = fee_bps * amount / 10_000` means `fee` rounds *down*, but the
-// remainder always lands entirely in `net` — no tokens are created or lost.
+// Two sub-suites:
 //
-// Domain:
-//   amount  : 0 ..= i128::MAX / 2   (avoids intermediate multiplication
-//              overflow in fee_bps * amount, since fee_bps ≤ 10_000 and
-//              10_000 * (i128::MAX / 2) < i128::MAX)
-//   fee_bps : 0 ..= 10_000          (0% – 100%, the full valid range)
+// 1. Valid domain — lossless split: fee + net == amount exactly.
+//    Integer truncation in `fee = fee_bps * amount / 10_000` rounds *down*;
+//    the remainder always lands entirely in `net` — no tokens created or lost.
+//    Also asserts fee <= amount (net is non-negative) for the valid range.
+//
+//    Domain:
+//      amount  : 0 ..= i128::MAX / 2   (avoids intermediate multiplication
+//                 overflow, since fee_bps ≤ 10_000 and
+//                 10_000 * (i128::MAX / 2) < i128::MAX)
+//      fee_bps : 0 ..= 10_000          (0% – 100%)
+//
+// 2. Out-of-range rejection — fee_bps > 10_000 or amount < 0 must panic
+//    with Error::InvalidFeeParams rather than silently produce a negative net.
 mod proptest_apply_fee {
     use super::*;
     use proptest::prelude::*;
@@ -1133,13 +1225,37 @@ mod proptest_apply_fee {
             amount  in 0_i128..=(i128::MAX / 2),
             fee_bps in 0_u32..=10_000_u32,
         ) {
-            let (fee, net) = apply_fee(fee_bps, amount);
+            let env = Env::default();
+            let (fee, net) = apply_fee(&env, fee_bps, amount);
             prop_assert_eq!(
                 fee + net,
                 amount,
                 "apply_fee({}, {}) = ({}, {}); fee + net = {}",
                 fee_bps, amount, fee, net, fee + net
             );
+            // net must never be negative — fee cannot exceed the amount.
+            prop_assert!(net >= 0, "apply_fee({fee_bps}, {amount}) produced negative net {net}");
+        }
+
+        #[test]
+        fn rejects_fee_bps_above_10000(
+            amount  in 0_i128..=(i128::MAX / 2),
+            excess  in 1_u32..=u32::MAX - 10_000,
+        ) {
+            let env = Env::default();
+            let fee_bps = 10_000_u32 + excess;
+            let result = std::panic::catch_unwind(|| apply_fee(&env, fee_bps, amount));
+            prop_assert!(result.is_err(), "apply_fee({fee_bps}, {amount}) should have panicked");
+        }
+
+        #[test]
+        fn rejects_negative_amount(
+            amount  in i128::MIN..=-1_i128,
+            fee_bps in 0_u32..=10_000_u32,
+        ) {
+            let env = Env::default();
+            let result = std::panic::catch_unwind(|| apply_fee(&env, fee_bps, amount));
+            prop_assert!(result.is_err(), "apply_fee({fee_bps}, {amount}) should have panicked");
         }
     }
 }

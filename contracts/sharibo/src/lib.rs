@@ -133,10 +133,45 @@ pub enum Error {
     Overflow = 7,
     /// `cancel_circle` or `fund`/`claim` called on a cancelled circle.
     CircleCancelled = 8,
+    /// `apply_fee` called with `fee_bps > 10_000` or `amount < 0`.
+    InvalidFeeParams = 9,
 }
 
+/// Minimum remaining TTL (in ledgers) that triggers a `extend_ttl` call.
+///
+/// Every write entrypoint (`create_circle`, `fund`, `claim`, `cancel_circle`)
+/// calls `extend_ttl(LEDGER_THRESHOLD, LEDGER_EXTEND_TO)`. The Soroban host
+/// only performs the extension when the entry's current TTL has fallen below
+/// `LEDGER_THRESHOLD`; if it is already higher, the call is a no-op. Setting
+/// this to 100 ledgers (≈ 8 minutes at ~5 s/ledger) means that any write
+/// performed in the last few minutes of a circle's live window will refresh it
+/// to the full `LEDGER_EXTEND_TO` budget.
 const LEDGER_THRESHOLD: u32 = 100;
+
+/// TTL (in ledgers) that persistent and instance entries are extended to on
+/// each write.
+///
+/// 500,000 ledgers × 5 s/ledger ≈ **29 days** of activity-triggered liveness.
+///
+/// The Soroban network cap for persistent entry TTL is **535,679 ledgers**
+/// (≈ 30 days; see <https://developers.stellar.org/docs/tools/cli/cookbook/extend-contract-wasm>).
+/// `LEDGER_EXTEND_TO` is intentionally set just below that ceiling to leave a
+/// small safety margin while still giving circles close to the maximum window.
+///
+/// If a circle goes dormant (no `fund`, `claim`, or `cancel_circle` call) for
+/// longer than this window, its persistent entry will be archived. An operator
+/// must then submit a `RestoreFootprintOp` (via `stellar contract restore`)
+/// before any further interaction is possible. See `contracts/README.md §Storage
+/// lifetime` for the runbook.
 const LEDGER_EXTEND_TO: u32 = 500_000;
+
+// Compile-time sanity check: the threshold at which we re-extend must be
+// strictly less than the target we extend to, or the extension can never
+// make progress.
+const _: () = assert!(
+    LEDGER_THRESHOLD < LEDGER_EXTEND_TO,
+    "LEDGER_THRESHOLD must be strictly less than LEDGER_EXTEND_TO",
+);
 
 /// Sharibo contract: permissionless Semaphore-style contribution circles on
 /// Soroban.
@@ -482,6 +517,84 @@ impl Contract {
             .unwrap_or(0)
     }
 
+    /// Pure read: the current round number for `circle_id`.
+    ///
+    /// Cheaper than [`Self::get_circle`] for callers that only need to track
+    /// round advancement (e.g. polling the proof's external_nullifier binding).
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::CircleNotFound`] — `circle_id` does not exist.
+    pub fn get_round(env: Env, circle_id: u64) -> u32 {
+        let circle: Circle = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Circle(circle_id))
+            .unwrap_or_else(|| panic_with_error!(&env, Error::CircleNotFound));
+        circle.round
+    }
+
+    /// Pure read: the current pot balance (in token stroops) for `circle_id`.
+    ///
+    /// Cheaper than [`Self::get_circle`] for UI polling that only needs the
+    /// funding-progress bar.
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::CircleNotFound`] — `circle_id` does not exist.
+    pub fn get_pot(env: Env, circle_id: u64) -> i128 {
+        let circle: Circle = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Circle(circle_id))
+            .unwrap_or_else(|| panic_with_error!(&env, Error::CircleNotFound));
+        circle.pot
+    }
+
+    /// Pure read: compact status tuple `(round, pot, target, cancelled)`.
+    ///
+    /// Returns everything the app's polling loop needs in one RPC call,
+    /// without deserializing the embedded [`VerificationKey`]:
+    ///
+    /// * `round` — current round number.
+    /// * `pot` — tokens deposited so far in this round.
+    /// * `target` — `contribution * size`; pot must equal this for a claim.
+    /// * `cancelled` — whether the circle has been permanently closed.
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::CircleNotFound`] — `circle_id` does not exist.
+    /// * [`Error::Overflow`] — `contribution * size` overflows `i128`
+    ///   (absurd parameters set at circle creation).
+    pub fn get_status(env: Env, circle_id: u64) -> (u32, i128, i128, bool) {
+        let circle: Circle = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Circle(circle_id))
+            .unwrap_or_else(|| panic_with_error!(&env, Error::CircleNotFound));
+        let target = pot_target(&env, &circle);
+        (circle.round, circle.pot, target, circle.cancelled)
+    }
+
+    /// Pure read: the ordered list of addresses that have funded the
+    /// **current** round of `circle_id`.
+    ///
+    /// Intended for the cancel/refund UI — callers can display the contributors
+    /// and let the admin verify who will be refunded before calling
+    /// [`Self::cancel_circle`].
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::CircleNotFound`] — `circle_id` does not exist.
+    pub fn get_contributors(env: Env, circle_id: u64) -> Vec<Address> {
+        let circle: Circle = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Circle(circle_id))
+            .unwrap_or_else(|| panic_with_error!(&env, Error::CircleNotFound));
+        circle.contributors
+    }
+
     /// Pure read: whether `nullifier_hash` has already been used to claim in
     /// this circle. Mirrors the storage lookup in [`Self::claim`] so wallets
     /// can check eligibility without submitting a failing transaction.
@@ -665,16 +778,22 @@ fn pot_target(env: &Env, circle: &Circle) -> i128 {
 /// # Arguments
 ///
 /// * `fee_bps` — fee in basis points; must be in `0..=10_000` (i.e.
-///   0 % – 100 %). Values outside this range are accepted without
-///   error but may produce surprising results (e.g. `fee_bps > 10_000`
-///   gives `fee > amount`).
-/// * `amount` — gross token amount to split. Must be non-negative for
-///   the round-trip invariant `fee + net == amount` to hold.
+///   0 % – 100 %). Values outside this range are **rejected** with
+///   [`Error::InvalidFeeParams`] — they are never silently accepted.
+/// * `amount` — gross token amount to split. Must be non-negative;
+///   negative values are **rejected** with [`Error::InvalidFeeParams`].
 ///
 /// # Returns
 ///
 /// `(fee, net)` where `fee + net == amount`.
-pub fn apply_fee(fee_bps: u32, amount: i128) -> (i128, i128) {
+///
+/// # Errors
+///
+/// * [`Error::InvalidFeeParams`] — `fee_bps > 10_000` or `amount < 0`.
+pub fn apply_fee(env: &Env, fee_bps: u32, amount: i128) -> (i128, i128) {
+    if fee_bps > 10_000 || amount < 0 {
+        panic_with_error!(env, Error::InvalidFeeParams);
+    }
     // Split to avoid overflow: amount = q * 10_000 + r, so
     //   fee_bps * amount = fee_bps * q * 10_000 + fee_bps * r
     // Dividing by 10_000:
