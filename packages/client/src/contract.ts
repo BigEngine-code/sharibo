@@ -37,6 +37,12 @@ export interface ShariboSigner {
   signAuthEntry?: (entryXdr: string, opts?: any) => Promise<string>;
 }
 
+const contractClientCache = new Map<string, Promise<ShariboClient>>();
+
+export function clearContractClientCache(): void {
+  contractClientCache.clear();
+}
+
 export async function connect(
   config: ShariboNetworkConfig,
   keypairOrSigner: Keypair | ShariboSigner,
@@ -58,7 +64,20 @@ export async function connect(
     signAuthEntry = keypairOrSigner.signAuthEntry;
   }
 
-  return ContractClient.from({
+  const cacheKey = JSON.stringify([
+    config.contractId,
+    config.rpcUrl,
+    config.networkPassphrase,
+    publicKey,
+  ]);
+
+  const cached = contractClientCache.get(cacheKey);
+
+  if (cached) {
+    return cached;
+  }
+
+  const clientPromise = ContractClient.from({
     contractId: config.contractId,
     networkPassphrase: config.networkPassphrase,
     rpcUrl: config.rpcUrl,
@@ -66,6 +85,15 @@ export async function connect(
     signTransaction,
     signAuthEntry,
   });
+
+  contractClientCache.set(cacheKey, clientPromise);
+
+  try {
+    return await clientPromise;
+  } catch (error) {
+    contractClientCache.delete(cacheKey);
+    throw error;
+  }
 }
 
 /**
