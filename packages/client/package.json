@@ -26,8 +26,8 @@
     "bench:prove": "tsx bench/prove.bench.ts"
   },
   "dependencies": {
+    "@sharibo/core": "*",
     "@stellar/stellar-sdk": "^16.2.0",
-    "poseidon-bls12381": "1.0.2",
     "snarkjs": "0.7.6"
   },
   "devDependencies": {

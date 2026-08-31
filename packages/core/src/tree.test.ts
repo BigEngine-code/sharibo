@@ -1,9 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MerkleTree } from "./tree.js";
-import { generateIdentity } from "./identity.js";
+import { MerkleTree, ZERO_VALUE } from "./tree.js";
+import { generateIdentity, FR_MODULUS } from "./identity.js";
 
 const LEVELS = 4;
+
+// ---- proofOf: proof by leaf value ----
 
 test("proofOf returns a valid Merkle proof for a leaf known to be in the tree", () => {
   const identities = Array.from({ length: 5 }, () => generateIdentity());
@@ -93,8 +95,6 @@ test("proofOf throws for a leaf not in a tree that has zero occupied slots (empt
     },
   );
 });
-import { MerkleTree, ZERO_VALUE } from "./tree.js";
-import { FR_MODULUS } from "./identity.js";
 
 // ---- levels validation ----
 
@@ -215,4 +215,8 @@ test("MerkleTree.create with zero leaves produces a padded tree", () => {
   const tree = MerkleTree.create(3, []);
   assert.ok(tree instanceof MerkleTree);
   assert.ok(typeof tree.root === "bigint");
+});
+
+test("ZERO_VALUE is exported and equals 0n", () => {
+  assert.equal(ZERO_VALUE, 0n);
 });

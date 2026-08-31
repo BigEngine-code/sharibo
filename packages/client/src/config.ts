@@ -1,1 +1,1 @@
-export { TREE_LEVELS, MAX_CIRCLE_SIZE } from "./tree.js";
+export { TREE_LEVELS, MAX_CIRCLE_SIZE } from "@sharibo/core";

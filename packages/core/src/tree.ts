@@ -1,4 +1,10 @@
 import { poseidon, FR_MODULUS } from "./identity.js";
+import { InvalidInputError } from "./errors.js";
+
+// Must match `component main = Sharibo(4)` in circuits/membership.circom
+// (generated from circuits/config.json). The circuit is the source of truth.
+export const TREE_LEVELS = 4;
+export const MAX_CIRCLE_SIZE = 2 ** TREE_LEVELS;
 
 /**
  * Fixed placeholder for unused leaves when padding the tree out to full capacity (2**levels).
@@ -124,7 +130,7 @@ export class MerkleTree {
   }
 
   /**
-   * Generates a Merkle proof for a leaf at the given index.
+   * Generates a Merkle proof for the leaf at the given index.
    *
    * @param leafIndex - The index of the leaf in the tree.
    * @returns A MerkleProof containing the root, path elements, and path indices.
@@ -149,5 +155,29 @@ export class MerkleTree {
     }
 
     return { root: this.root, pathElements, pathIndices };
+  }
+
+  /**
+   * Generates a Merkle proof for a leaf looked up by value.
+   *
+   * This is a convenience over {@link indexOf} + {@link proof} for callers
+   * that hold the leaf value (e.g. a commitment) rather than its index.
+   *
+   * @param leaf - The leaf value to build a proof for.
+   * @returns A MerkleProof for the given leaf.
+   * @throws {InvalidInputError} If the leaf is not present in the tree.
+   */
+  proofOf(leaf: bigint): MerkleProof {
+    const index = this.indexOf(leaf);
+    if (index === -1) {
+      const occupied = this.leaves.length;
+      const capacity = 2 ** this.levels;
+      // Shortened hex so the error stays readable for 255-bit field elements.
+      const shortHex = "0x" + leaf.toString(16).slice(0, 16);
+      throw new InvalidInputError(
+        `leaf ${shortHex} (${leaf}) not found in this tree — ${occupied} occupied / ${capacity} slots`,
+      );
+    }
+    return this.proof(index);
   }
 }

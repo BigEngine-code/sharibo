@@ -4,6 +4,7 @@
   "type": "module",
   "workspaces": [
     "circuits",
+    "packages/core",
     "packages/client",
     "scripts",
     "app"

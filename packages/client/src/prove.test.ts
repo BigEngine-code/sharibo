@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { validateCircuitInput, type CircuitInput } from "./prove.js";
-import { FR_MODULUS } from "./identity.js";
+import { FR_MODULUS } from "@sharibo/core";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
