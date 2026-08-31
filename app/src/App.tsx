@@ -459,7 +459,19 @@ export default function App() {
   // after a reset. Stored as { id, explorerUrl } so the fineprint is self-contained.
   const [prevCircle, setPrevCircle] = useState<{ id: string; explorerUrl: string } | null>(null);
 
-  const contribution = BigInt(contributionXlm) * STROOPS_PER_XLM;
+  // Holds the AbortController for the currently-running claim flow so that
+  // resetToLanding and the unmount cleanup can cancel it synchronously.
+  const claimAbortRef = useRef<AbortController | null>(null);
+
+  // Abort any in-flight claim when the component unmounts (e.g. the user
+  // navigates away mid-proof).  This prevents a stale setState from firing on
+  // a dead component and triggering React's "Can't perform a React state
+  // update on an unmounted component" warning.
+  useEffect(() => {
+    return () => {
+      claimAbortRef.current?.abort();
+    };
+  }, []);
   const fundedCount = members.filter((m) => m.funded).length;
   const fullyFunded = pot === contribution * BigInt(CIRCLE_SIZE);
   const { announce, message: liveRegionMessage } = usePoliteLiveRegion(120);
@@ -541,6 +553,10 @@ export default function App() {
       );
       if (!ok) return;
     }
+
+    // Cancel any in-flight proof generation / artifact download.
+    claimAbortRef.current?.abort();
+    claimAbortRef.current = null;
 
     setPreviousCircleId(circleId);
     sessionStorage.removeItem("sharibo_demo_state");
@@ -744,6 +760,13 @@ export default function App() {
 
   async function doClaim() {
     if (!admin || !tree || circleId === null) return;
+
+    // Cancel any previous claim that might still be running.
+    claimAbortRef.current?.abort();
+    const controller = new AbortController();
+    claimAbortRef.current = controller;
+    const { signal } = controller;
+
     setError(null);
     setClaimResult(null);
     setRejection(null);
@@ -753,20 +776,24 @@ export default function App() {
         import("@stellar/stellar-sdk"),
         import("@sharibo/client")
       ]);
+
+      if (signal.aborted) return;
       const claimant = members[claimantIndex];
       const merkleProof = tree.proof(claimantIndex);
       const externalNullifier = await computeExternalNullifier(circleId, BigInt(round));
 
+      if (signal.aborted) return;
       setClaimStage("artifacts");
       const [wasm, zkey] = await Promise.all([
-        fetch("/circuits/membership.wasm")
+        fetch("/circuits/membership.wasm", { signal })
           .then((r) => r.arrayBuffer())
           .then((b) => new Uint8Array(b)),
-        fetch("/circuits/membership_final.zkey")
+        fetch("/circuits/membership_final.zkey", { signal })
           .then((r) => r.arrayBuffer())
           .then((b) => new Uint8Array(b)),
       ]);
 
+      if (signal.aborted) return;
       setClaimStage("proving");
       setProveElapsedSeconds(0);
       const proveTimer = setInterval(() => setProveElapsedSeconds((s) => s + 1), 1000);
@@ -783,15 +810,18 @@ export default function App() {
           },
           wasm,
           zkey,
+          { signal },
         );
       } finally {
         clearInterval(proveTimer);
       }
 
+      if (signal.aborted) return;
       setClaimStage("funding");
       const recipient = Keypair.random();
       await fundWithFriendbot(recipient.publicKey());
 
+      if (signal.aborted) return;
       setClaimStage("submitting");
       const adminClient = await connect(NETWORK, admin);
       const { hash } = await claim(adminClient, {
@@ -802,19 +832,32 @@ export default function App() {
         proof: generated.proof,
       });
 
+      if (signal.aborted) return;
       setProof(generated.proof);
       setNullifierHash(generated.nullifierHash);
       setClaimResult({ recipient: recipient.publicKey(), hash, proofDurationMs });
       setNullifierClaimed(await hasClaimed(adminClient, circleId, generated.nullifierHash));
 
       const circle = await getCircle(adminClient, circleId);
+      if (signal.aborted) return;
       setPot(circle.pot);
       setRound(circle.round);
     } catch (e) {
-      setError(toUiError(e));
+      // Suppress state updates for intentional aborts — the component is
+      // either unmounting or the user deliberately reset the flow.
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      if (!signal.aborted) {
+        setError(toUiError(e));
+      }
     } finally {
-      setBusy(null);
-      setClaimStage(null);
+      if (!signal.aborted) {
+        setBusy(null);
+        setClaimStage(null);
+      }
+      // Release the ref only if this controller is still the active one.
+      if (claimAbortRef.current === controller) {
+        claimAbortRef.current = null;
+      }
     }
   }
 
