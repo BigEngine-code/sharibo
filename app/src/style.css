@@ -1,13 +1,41 @@
 @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;700&display=swap");
 
+/* ── Light theme (default) ──────────────────────────────────────────── */
 :root {
+  color-scheme: light;
+
+  /* Core palette */
   --bg: #fff4d6;
+  --card: #ffffff;
   --ink: #111111;
+  /* Text rendered on the bright fills (accent / accent2 / namewall / steps).
+     Stays dark in BOTH themes — those fills stay vivid in dark mode too. */
+  --on-accent: #111111;
+  --muted: #555555;
+  --faint: #737373;
   --accent: #ffcf3f;
   --accent2: #7cf5c4;
   --danger: #d93025;
+  --danger-text: #d93025;
+
+  /* Surfaces & edges */
+  --surface: #eeeeee;
+  --surface-soft: #fafafa;
+  --surface-2: #f0f0f0;
+  --chip: #f0e8ff;
+  --explainer: #fffdf5;
+  --banner: #f5f5f5;
+  --edge: #cccccc;
+  --edge-2: #dddddd;
+  --code: #eeeeee;
+
+  /* Body dot pattern (semi-transparent so it inverts with the theme) */
+  --dot: #00000014;
+
   --border: 4px solid var(--ink);
   --shadow: 8px 8px 0 var(--ink);
+  /* Hard-shadow colour used in the 5/7/3px button offsets. */
+  --hard: var(--ink);
 
   /* Breakpoints (documented tokens — use literal values in @media) */
   --bp-xs: 320px;
@@ -26,6 +54,41 @@
   --touch-min: 44px;
 }
 
+/* ── Dark theme (prefers-color-scheme: dark) ────────────────────────── */
+/* Only the colour tokens flip; geometry/breakpoint tokens are untouched
+   because :root block above already covers them. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --bg: #141518;
+    --card: #1d2026;
+    --ink: #e7ebf2;
+    /* --on-accent intentionally NOT overridden: the bright fills stay the
+       same vivid accent/accent2 in dark mode, so they keep dark text. */
+    --muted: #c6ccd6;
+    --faint: #9aa2af;
+    --danger-text: #ff6b70;
+
+    --surface: #2a2e37;
+    --surface-soft: #2a2e37;
+    --surface-2: #262a31;
+    --chip: #3a2f4d;
+    --explainer: #1a1d23;
+    --banner: #262a31;
+    --edge: #3a3f49;
+    --edge-2: #3a3f49;
+    --code: #2a2e37;
+
+    --dot: #ffffff1e;
+
+    /* Borders keep the light --ink; hard shadows go dark so the offset
+       block still reads as depth instead of a blown-out glow. */
+    --shadow: 8px 8px 0 rgba(0, 0, 0, 0.55);
+    --hard: rgba(0, 0, 0, 0.55);
+  }
+}
+
 * {
   box-sizing: border-box;
 }
@@ -39,7 +102,7 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-family: "Space Grotesk", system-ui, sans-serif;
-  background-image: radial-gradient(circle, #00000014 1px, transparent 1px);
+  background-image: radial-gradient(circle, var(--dot) 1px, transparent 1px);
   background-size: 22px 22px;
   overflow-x: hidden;
 }
@@ -53,7 +116,7 @@ body {
 }
 
 .card {
-  background: white;
+  background: var(--card);
   border: var(--border);
   box-shadow: var(--shadow);
   padding: 32px;
@@ -77,7 +140,7 @@ body {
 
 .language-switcher select {
   border: 2px solid var(--ink);
-  background: #fff;
+  background: var(--card);
   color: var(--ink);
   font-family: "JetBrains Mono", monospace;
   font-size: 12px;
@@ -103,6 +166,7 @@ body {
   padding: 4px 10px;
   border: 2px solid var(--ink);
   background: var(--accent2);
+  color: var(--on-accent);
   transform: rotate(-1deg);
 }
 .namewall-item:nth-child(even) {
@@ -131,12 +195,12 @@ h2 {
   font-weight: 700;
 }
 .sub {
-  color: #333;
+  color: var(--muted);
   line-height: 1.5;
 }
 .fineprint {
   font-size: 12px;
-  color: #666;
+  color: var(--faint);
   margin-top: 16px;
 }
 
@@ -145,9 +209,9 @@ h2 {
   font-size: 12px;
   text-align: center;
   padding: 6px 12px;
-  background: #f0f0f0;
-  border: 2px solid #ccc;
-  color: #555;
+  background: var(--surface-2);
+  border: 2px solid var(--edge);
+  color: var(--muted);
   margin-bottom: 16px;
   width: 100%;
   max-width: 620px;
@@ -159,18 +223,19 @@ h2 {
   font-size: 16px;
   padding: 14px 22px;
   background: var(--accent);
+  color: var(--on-accent);
   border: var(--border);
-  box-shadow: 5px 5px 0 var(--ink);
+  box-shadow: 5px 5px 0 var(--hard);
   cursor: pointer;
   transition: transform 0.05s ease;
 }
 .btn:hover:not(:disabled) {
   transform: translate(-2px, -2px);
-  box-shadow: 7px 7px 0 var(--ink);
+  box-shadow: 7px 7px 0 var(--hard);
 }
 .btn:active:not(:disabled) {
   transform: translate(2px, 2px);
-  box-shadow: 3px 3px 0 var(--ink);
+  box-shadow: 3px 3px 0 var(--hard);
 }
 .btn:disabled {
   opacity: 0.6;
@@ -183,7 +248,7 @@ h2 {
   outline: 3px solid var(--ink);
   outline-offset: 3px;
   box-shadow:
-    5px 5px 0 var(--ink),
+    5px 5px 0 var(--hard),
     0 0 0 6px var(--accent2);
 }
 .btn-primary {
@@ -194,7 +259,7 @@ h2 {
 .btn-small {
   padding: 6px 12px;
   font-size: 13px;
-  box-shadow: 3px 3px 0 var(--ink);
+  box-shadow: 3px 3px 0 var(--hard);
 }
 .btn-danger {
   background: var(--danger);
@@ -205,8 +270,8 @@ h2 {
 .btn-reset {
   padding: 6px 12px;
   font-size: 13px;
-  box-shadow: 3px 3px 0 var(--ink);
-  background: #f0e8ff;
+  box-shadow: 3px 3px 0 var(--hard);
+  background: var(--chip);
   border: 2px solid var(--ink);
 }
 
@@ -230,7 +295,7 @@ h2 {
   margin-top: 16px;
   height: 20px;
   border: var(--border);
-  background: #eee;
+  background: var(--surface);
 }
 .pot-bar {
   height: 100%;
@@ -259,19 +324,19 @@ h2 {
   align-items: center;
   gap: 6px;
   padding: 6px 8px;
-  border: 2px solid #ccc;
-  color: #737373;
-  background: #fafafa;
+  border: 2px solid var(--edge);
+  color: var(--faint);
+  background: var(--surface-soft);
 }
 .step.active {
   border-color: var(--ink);
   background: var(--accent);
-  color: var(--ink);
+  color: var(--on-accent);
 }
 .step.done {
   border-color: var(--ink);
   background: var(--accent2);
-  color: var(--ink);
+  color: var(--on-accent);
 }
 .step-dot {
   display: inline-flex;
@@ -309,7 +374,7 @@ h2 {
   margin: calc(var(--ring-center-size) / -2) 0 0 calc(var(--ring-center-size) / -2);
   border: var(--border);
   border-radius: 50%;
-  background: white;
+  background: var(--card);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -326,7 +391,7 @@ h2 {
   margin: calc(var(--ring-node-size) / -2) 0 0 calc(var(--ring-node-size) / -2);
   border: 2px solid var(--ink);
   border-radius: 50%;
-  background: #eee;
+  background: var(--surface);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -338,9 +403,11 @@ h2 {
 }
 .ring-node.funded {
   background: var(--accent2);
+  color: var(--on-accent);
 }
 .ring-node.ring-recipient {
   background: var(--accent);
+  color: var(--on-accent);
   border-style: dashed;
   transform: translate(0, var(--ring-recipient-offset));
 }
@@ -349,8 +416,8 @@ h2 {
   width: 100%;
   text-align: center;
   font-size: 13px;
-  color: #333;
-  background: #fafafa;
+  color: var(--muted);
+  background: var(--surface-soft);
   border: 2px dashed var(--ink);
   padding: 10px;
 }
@@ -358,7 +425,7 @@ h2 {
 .techline {
   font-family: "JetBrains Mono", monospace;
   font-size: 11px;
-  color: #555;
+  color: var(--muted);
   margin-top: 8px;
   display: flex;
   align-items: center;
@@ -382,7 +449,7 @@ h2 {
   width: 12px;
   height: 12px;
   flex-shrink: 0;
-  border: 2px solid #ccc;
+  border: 2px solid var(--edge);
   border-top-color: var(--ink);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
@@ -396,7 +463,7 @@ h2 {
 .claim-explainer {
   margin-top: 12px;
   border: 2px dashed var(--ink);
-  background: #fffdf5;
+  background: var(--explainer);
 }
 
 .claim-explainer summary {
@@ -448,10 +515,11 @@ h2 {
   align-items: center;
   border: 2px solid var(--ink);
   padding: 8px 12px;
-  background: #fafafa;
+  background: var(--surface-soft);
 }
 .member.funded {
   background: var(--accent2);
+  color: var(--on-accent);
 }
 .member-addr {
   font-family: "JetBrains Mono", monospace;
@@ -469,13 +537,14 @@ h2 {
   height: 22px;
   padding: 0;
   border: 2px solid var(--ink);
-  background: white;
+  background: var(--card);
   font-size: 11px;
   line-height: 1;
   cursor: pointer;
 }
 .copy-btn:hover {
   background: var(--accent);
+  color: var(--on-accent);
 }
 
 .radio {
@@ -515,13 +584,29 @@ a:focus-visible {
   margin-top: 20px;
   border: var(--border);
   background: var(--accent2);
+  color: var(--on-accent);
   padding: 16px;
+}
+/* The result box and funded member rows sit on the vivid accent2 fill, so
+   their text and links stay on --on-accent (dark) in BOTH themes. */
+.result .link,
+.result code,
+.member.funded .link {
+  color: var(--on-accent);
+}
+.result code {
+  background: rgba(17, 17, 17, 0.08);
 }
 .callout {
   background: var(--accent);
   border: 2px dashed var(--ink);
+  color: var(--on-accent);
   padding: 10px;
   font-size: 14px;
+}
+.callout code {
+  background: rgba(17, 17, 17, 0.08);
+  color: var(--on-accent);
 }
 
 .rejected {
@@ -535,7 +620,7 @@ a:focus-visible {
 }
 
 .error {
-  color: var(--danger);
+  color: var(--danger-text);
   font-weight: 700;
   font-family: "JetBrains Mono", monospace;
   font-size: 13px;
@@ -550,9 +635,9 @@ a:focus-visible {
   margin-bottom: 12px;
   font-size: 12px;
   font-family: "JetBrains Mono", monospace;
-  color: #666;
-  background: #f5f5f5;
-  border: 2px solid #ddd;
+  color: var(--muted);
+  background: var(--banner);
+  border: 2px solid var(--edge-2);
   width: 100%;
   max-width: 620px;
 }
@@ -560,17 +645,16 @@ a:focus-visible {
 .banner-link {
   font-family: "JetBrains Mono", monospace;
   font-size: 12px;
-  color: #666;
+  color: var(--muted);
   text-decoration: underline;
 }
 
 code {
   font-family: "JetBrains Mono", monospace;
-  background: #eee;
+  background: var(--code);
   padding: 2px 4px;
 }
 
-<<<<<<< HEAD
 /* ── Mobile (< --bp-md) ─────────────────────────────────────────────── */
 @media (max-width: 767px) {
   :root {
@@ -662,7 +746,7 @@ code {
     min-height: var(--touch-min);
     padding: 8px 12px;
     border: 2px solid var(--ink);
-    background: #fafafa;
+    background: var(--surface-soft);
     gap: 10px;
   }
   .radio input[type="radio"] {
@@ -713,12 +797,14 @@ code {
   .step {
     flex: 1 1 calc(50% - 2px);
     font-size: 8px;
-=======
+  }
+}
+
+/* ── Reduce motion ──────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .btn,
   .pot-bar,
   .ring-node {
     transition: none !important;
->>>>>>> 2e9a849 (Add prefers-reduced-motion media query to disable animations)
   }
 }

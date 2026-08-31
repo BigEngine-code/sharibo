@@ -204,8 +204,11 @@ function installIndicator(): void {
     const element = document.createElement("div");
     element.id = "sharibo-prover-preparation";
     element.setAttribute("aria-live", "polite");
+    // Inherit the host app's theme via CSS custom properties (defined on
+    // :root in app/src/style.css) instead of hardcoding a dark palette, so
+    // the indicator flips with prefers-color-scheme automatically.
     element.style.cssText =
-      "position:fixed;right:16px;bottom:16px;z-index:1000;padding:6px 10px;border-radius:6px;background:rgba(20,25,35,.78);color:#b9c2d0;font:12px system-ui,sans-serif;pointer-events:none";
+      "position:fixed;right:16px;bottom:16px;z-index:1000;padding:6px 10px;border-radius:6px;background:var(--card);color:var(--muted);border:2px solid var(--ink);font:12px system-ui,sans-serif;pointer-events:none";
     document.body.appendChild(element);
     updateIndicator(currentProgress);
   };
