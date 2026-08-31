@@ -2,6 +2,7 @@ import { Client as ContractClient, basicNodeSigner } from "@stellar/stellar-sdk/
 import { Keypair, StrKey } from "@stellar/stellar-sdk";
 import type { ContractProof, ContractVerificationKey } from "./prove.js";
 import { ContractError, RpcError } from "./errors.js";
+import { decodeContractError } from "./decodeError.js";
 
 /**
  * Network configuration for connecting to the Sharibo contract.
@@ -98,6 +99,67 @@ export function explorerTxUrl(hash: string, networkPassphrase: string): string {
   return `https://${subdomain}stellar.expert/explorer/tx/${hash}`;
 }
 
+/**
+ * Maximum number of retry attempts for transient RPC errors (429, 5xx).
+ * Contract errors ("Error(Contract, #N)") are never retried — they are
+ * deterministic and will fail identically on every attempt.
+ */
+const MAX_RETRIES = 3;
+
+/**
+ * Returns `true` when the error looks like a transient RPC failure that
+ * is safe to retry (rate-limit, server timeout, gateway error, etc.).
+ */
+function isTransientRpcError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message;
+  // Match common transient HTTP status codes and SDK-level wording.
+  return (
+    /\b(429|5[0-9]{2})\b/.test(msg) ||
+    /Too Many Requests/i.test(msg) ||
+    /rate.?limit/i.test(msg) ||
+    /timeout/i.test(msg) ||
+    /Gateway Timeout/i.test(msg) ||
+    /Service Unavailable/i.test(msg)
+  );
+}
+
+/**
+ * Wrap an async operation with retry-on-transient-error semantics.
+ *
+ * Only retries when `isTransientRpcError` returns `true`; contract errors
+ * ("Error(Contract, #N)") are deterministic and immediately re-thrown as
+ * typed subclasses via `decodeContractError`.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function withRetry(fn: () => Promise<any>): Promise<any> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+
+      // Contract errors are deterministic — never retry them.
+      const decoded = decodeContractError(err);
+      if (decoded instanceof ContractError) {
+        throw decoded;
+      }
+
+      // Transient RPC error — retry with backoff if attempts remain.
+      if (isTransientRpcError(err) && attempt < MAX_RETRIES - 1) {
+        await new Promise((r) => setTimeout(r, 2 ** attempt * 200));
+        continue;
+      }
+
+      // Non-transient or exhausted retries — throw as RpcError.
+      throw decoded;
+    }
+  }
+  // Exhausted retries for transient error — wrap and throw.
+  throw decodeContractError(lastError);
+}
+
 function populateTxResult<T>(
   result: T,
   sent: { sendTransactionResponse: { hash: string }; getTransactionResponse?: { ledger?: number; feeCharged?: string } },
@@ -134,16 +196,20 @@ export async function createCircle(
     vk: ContractVerificationKey;
   },
 ): Promise<TxResult<bigint>> {
-  const tx = await withRetry(() => client.create_circle({
-    admin: args.admin,
-    token: args.token,
-    root: args.root,
-    contribution: args.contribution,
-    size: args.size,
-    vk: args.vk,
-  }));
-  const sent = await tx.signAndSend();
-  return populateTxResult(sent.result as bigint, sent);
+  try {
+    const tx = await withRetry(() => client.create_circle({
+      admin: args.admin,
+      token: args.token,
+      root: args.root,
+      contribution: args.contribution,
+      size: args.size,
+      vk: args.vk,
+    }));
+    const sent = await tx.signAndSend();
+    return populateTxResult(sent.result as bigint, sent);
+  } catch (err) {
+    throw decodeContractError(err);
+  }
 }
 
 /**
@@ -159,9 +225,13 @@ export async function fund(
   client: ShariboClient,
   args: { circleId: bigint; from: string },
 ): Promise<TxResult<void>> {
-  const tx = await withRetry(() => client.fund({ circle_id: args.circleId, from: args.from }));
-  const sent = await tx.signAndSend();
-  return populateTxResult(undefined, sent);
+  try {
+    const tx = await withRetry(() => client.fund({ circle_id: args.circleId, from: args.from }));
+    const sent = await tx.signAndSend();
+    return populateTxResult(undefined, sent);
+  } catch (err) {
+    throw decodeContractError(err);
+  }
 }
 
 /**
@@ -186,15 +256,19 @@ export async function claim(
     proof: ContractProof;
   },
 ): Promise<TxResult<void>> {
-  const tx = await withRetry(() => client.claim({
-    circle_id: args.circleId,
-    recipient: args.recipient,
-    nullifier_hash: args.nullifierHash,
-    external_nullifier: args.externalNullifier,
-    proof: args.proof,
-  }));
-  const sent = await tx.signAndSend();
-  return populateTxResult(undefined, sent);
+  try {
+    const tx = await withRetry(() => client.claim({
+      circle_id: args.circleId,
+      recipient: args.recipient,
+      nullifier_hash: args.nullifierHash,
+      external_nullifier: args.externalNullifier,
+      proof: args.proof,
+    }));
+    const sent = await tx.signAndSend();
+    return populateTxResult(undefined, sent);
+  } catch (err) {
+    throw decodeContractError(err);
+  }
 }
 
 /**
@@ -228,16 +302,24 @@ export interface CircleView {
 export async function getCircle(client: ShariboClient, circleId: bigint): Promise<CircleView> {
   // get_circle is a pure read: the SDK detects no signature is needed and
   // refuses signAndSend() without `force` (there's nothing to sign/submit).
-  const tx = await withRetry(() => client.get_circle({ circle_id: circleId }));
-  const sent = await tx.signAndSend({ force: true });
-  return sent.result;
+  try {
+    const tx = await withRetry(() => client.get_circle({ circle_id: circleId }));
+    const sent = await tx.signAndSend({ force: true });
+    return sent.result;
+  } catch (err) {
+    throw decodeContractError(err);
+  }
 }
 
 /** Pure read: the current count of circles ever created. 0 if none yet. */
 export async function getCircleCount(client: ShariboClient): Promise<bigint> {
-  const tx = await client.get_circle_count();
-  const sent = await tx.signAndSend({ force: true });
-  return sent.result as bigint;
+  try {
+    const tx = await client.get_circle_count();
+    const sent = await tx.signAndSend({ force: true });
+    return sent.result as bigint;
+  } catch (err) {
+    throw decodeContractError(err);
+  }
 }
 
 /** Pure read: whether `nullifierHash` has already claimed in this circle. */
@@ -246,10 +328,14 @@ export async function hasClaimed(
   circleId: bigint,
   nullifierHash: bigint,
 ): Promise<boolean> {
-  const tx = await withRetry(() => client.has_claimed({
-    circle_id: circleId,
-    nullifier_hash: nullifierHash,
-  }));
-  const sent = await tx.signAndSend({ force: true });
-  return sent.result;
+  try {
+    const tx = await withRetry(() => client.has_claimed({
+      circle_id: circleId,
+      nullifier_hash: nullifierHash,
+    }));
+    const sent = await tx.signAndSend({ force: true });
+    return sent.result;
+  } catch (err) {
+    throw decodeContractError(err);
+  }
 }
