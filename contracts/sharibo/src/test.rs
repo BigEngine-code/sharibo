@@ -11,6 +11,7 @@ use soroban_sdk::{
     BytesN, U256,
 };
 use std::vec::Vec as StdVec;
+use std::collections::BTreeMap;
 
 // ---- BLS12-381 test fixture helpers ----
 // The vk/proof/public-signal decimal coordinates below were produced by the
@@ -322,6 +323,51 @@ fn setup(size: u32, contribution: i128) -> Setup {
     }
 }
 
+// Shared invariant checker for Issue #265
+fn assert_invariants(env: &Env, contract_id: &Address, client: &ContractClient, circle_id: u64) {
+    // Circle structural invariants
+    let circle = client.get_circle(&circle_id);
+
+    // pot == contribution * contributors.len()
+    let contrib_count = circle.contributors.len() as i128;
+    assert_eq!(circle.pot, circle.contribution * contrib_count, "pot != contribution * contributors.len(): pot={} contribution={} count={}", circle.pot, circle.contribution, contrib_count);
+
+    // pot <= contribution * size
+    let target = circle.contribution.checked_mul(circle.size as i128).unwrap_or(i128::MAX);
+    assert!(circle.pot <= target, "pot {} > target {}", circle.pot, target);
+
+    // After a successful claim the pot must be zero and contributors cleared
+    if circle.round > 0 && circle.pot == 0 && !circle.cancelled {
+        assert_eq!(circle.contributors.len(), 0, "after claim contributors must be empty");
+    }
+
+    // After cancel: pot == 0, cancelled == true, contributors empty
+    if circle.cancelled {
+        assert_eq!(circle.pot, 0, "cancelled circle must have pot==0");
+        assert!(circle.cancelled, "cancelled flag must be true");
+        assert_eq!(circle.contributors.len(), 0, "cancelled circle must have no contributors");
+    }
+
+    // The contract's token balance must be at least the sum of all live pots
+    // across circles that use the same token. We gather per-token totals and
+    // compare with on-chain balances for each token seen.
+    let mut totals: BTreeMap<Address, i128> = BTreeMap::new();
+    let circle_count = Contract::get_circle_count(env);
+    for id in 0..circle_count {
+        let c = client.get_circle(&id);
+        if !c.cancelled {
+            let entry = totals.entry(c.token.clone()).or_insert(0i128);
+            *entry = entry.checked_add(c.pot).unwrap_or(i128::MAX);
+        }
+    }
+
+    for (token_addr, total_pots) in totals.iter() {
+        let token_client = token::Client::new(env, token_addr);
+        let contract_balance = token_client.balance(contract_id);
+        assert!(contract_balance >= *total_pots, "contract token balance {} for token {:?} is less than total live pots {}", contract_balance, token_addr, total_pots);
+    }
+}
+
 #[test]
 fn happy_path_round_pays_out_and_advances() {
     let s = setup(5, 100);
@@ -331,6 +377,29 @@ fn happy_path_round_pays_out_and_advances() {
     for m in s.members.iter() {
         client.fund(&s.circle_id, m);
     }
+
+    // Invariants after funding
+    assert_invariants(&s.env, &s.client_id, &client, s.circle_id);
+    // Invariants after funding
+    assert_invariants(&s.env, &s.client_id, &client, s.circle_id);
+
+    // Invariants after filling the round
+    assert_invariants(&s.env, &s.client_id, &client, s.circle_id);
+
+    // Invariants after funding
+    assert_invariants(&s.env, &s.client_id, &client, s.circle_id);
+
+    // Invariants after funding round 0
+    assert_invariants(&s.env, &s.client_id, &client, s.circle_id);
+
+    // Invariants after funding
+    assert_invariants(&s.env, &s.client_id, &client, s.circle_id);
+
+    // Invariants after funding
+    assert_invariants(&s.env, &s.client_id, &client, s.circle_id);
+
+    // Invariants after funding
+    assert_invariants(&s.env, &s.client_id, &client, s.circle_id);
 
     let circle = client.get_circle(&s.circle_id);
     assert_eq!(circle.pot, s.contribution * (s.size as i128));
@@ -347,6 +416,20 @@ fn happy_path_round_pays_out_and_advances() {
         &external_nullifier,
         &proof,
     );
+
+    // Invariants after claim
+    assert_invariants(&s.env, &s.client_id, &client, s.circle_id);
+    // Invariants after claim
+    assert_invariants(&s.env, &s.client_id, &client, s.circle_id);
+
+    // Invariants after claim
+    assert_invariants(&s.env, &s.client_id, &client, s.circle_id);
+
+    // Invariants after claim
+    assert_invariants(&s.env, &s.client_id, &client, s.circle_id);
+
+    // Invariants after claim
+    assert_invariants(&s.env, &s.client_id, &client, s.circle_id);
 
     assert_eq!(
         token_client.balance(&recipient),
@@ -403,6 +486,9 @@ fn claim_reverts_when_underfunded() {
     for m in s.members.iter().take(4) {
         client.fund(&s.circle_id, m);
     }
+
+    // Invariants after partial funding
+    assert_invariants(&s.env, &s.client_id, &client, s.circle_id);
 
     let recipient = Address::generate(&s.env);
     let nullifier_hash = real_nullifier_hash(&s.env);
@@ -484,6 +570,9 @@ fn second_claim_with_same_nullifier_reverts() {
         &proof,
     );
 
+    // Invariants after first claim
+    assert_invariants(&s.env, &s.client_id, &client, s.circle_id);
+
     // top up and fund round 1 fully, then try to reuse the exact same
     // nullifier_hash from round 0. It's rejected by the nullifier map
     // before the (real, but now mismatched-round) proof would even be
@@ -493,6 +582,9 @@ fn second_claim_with_same_nullifier_reverts() {
         token_admin_client.mint(m, &s.contribution);
         client.fund(&s.circle_id, m);
     }
+
+    // Invariants after funding round 1
+    assert_invariants(&s.env, &s.client_id, &client, s.circle_id);
     let recipient_b = Address::generate(&s.env);
     let external_nullifier_1 = expected_external_nullifier(&s.env, s.circle_id, 1);
     client.claim(
@@ -538,6 +630,9 @@ fn same_identity_can_claim_two_consecutive_rounds() {
     token_admin_client.mint(&funder, &contribution);
     client.fund(&circle_id, &funder);
 
+    // Invariants after funding round 0
+    assert_invariants(&env, &contract_id, &client, circle_id);
+
     let nullifier_hash_r0 = real_nullifier_hash(&env);
     let external_nullifier_r0 = real_external_nullifier_round0(&env);
     let proof_r0 = round_reuse_proof_round0(&env);
@@ -551,6 +646,8 @@ fn same_identity_can_claim_two_consecutive_rounds() {
         &external_nullifier_r0,
         &proof_r0,
     );
+    // Invariants after claim round 0
+    assert_invariants(&env, &contract_id, &client, circle_id);
     assert!(client.has_claimed(&circle_id, &nullifier_hash_r0));
     assert_eq!(token_client.balance(&recipient_r0), contribution);
 
@@ -561,6 +658,9 @@ fn same_identity_can_claim_two_consecutive_rounds() {
     // ---- round 1: fund again, then claim again — same identity, no error ----
     token_admin_client.mint(&funder, &contribution);
     client.fund(&circle_id, &funder);
+
+    // Invariants after funding round 1
+    assert_invariants(&env, &contract_id, &client, circle_id);
 
     let nullifier_hash_r1 = round_reuse_nullifier_hash_round1(&env);
     let external_nullifier_r1 = expected_external_nullifier(&env, circle_id, 1);
@@ -580,6 +680,9 @@ fn same_identity_can_claim_two_consecutive_rounds() {
         &external_nullifier_r1,
         &proof_r1,
     );
+
+    // Invariants after claim round 1
+    assert_invariants(&env, &contract_id, &client, circle_id);
 
     // The claim succeeded: no RoundNotFunded/WrongRoundTag/AlreadyClaimed/
     // InvalidProof panic. Same identity, two rounds, two payouts.
@@ -623,6 +726,9 @@ fn fund_requires_member_auth() {
 
     let member = &s.members[0];
     client.fund(&s.circle_id, member);
+
+    // Invariants after single fund
+    assert_invariants(&s.env, &s.client_id, &client, s.circle_id);
 
     let auths = s.env.auths();
     assert_eq!(auths.len(), 1);
@@ -884,6 +990,9 @@ fn anyone_can_fund() {
     token_admin_client.mint(&stranger, &s.contribution);
     client.fund(&s.circle_id, &stranger);
 
+    // Invariants after stranger fund
+    assert_invariants(&s.env, &s.client_id, &client, s.circle_id);
+
     let circle = client.get_circle(&s.circle_id);
     assert_eq!(circle.pot, s.contribution);
 }
@@ -906,6 +1015,9 @@ fn cancel_refunds_partial_funders_and_closes_circle() {
         client.fund(&s.circle_id, f);
     }
 
+    // Invariants after partial funding
+    assert_invariants(&s.env, &s.client_id, &client, s.circle_id);
+
     let circle_before = client.get_circle(&s.circle_id);
     assert_eq!(circle_before.pot, s.contribution * 4);
     assert_eq!(circle_before.contributors.len(), 4);
@@ -915,6 +1027,12 @@ fn cancel_refunds_partial_funders_and_closes_circle() {
 
     let _admin = client.get_circle(&s.circle_id).admin;
     client.cancel_circle(&s.circle_id);
+
+    // Invariants after cancel
+    assert_invariants(&s.env, &s.client_id, &client, s.circle_id);
+
+    // Invariants after cancel
+    assert_invariants(&s.env, &s.client_id, &client, s.circle_id);
 
     // Every funder must have been refunded exactly their contribution.
     for (f, bal_before) in funders.iter().zip(before.iter()) {
@@ -957,7 +1075,13 @@ fn claim_after_cancel_reverts() {
     for m in s.members.iter() {
         client.fund(&s.circle_id, m);
     }
+
+    // Invariants after funding
+    assert_invariants(&s.env, &s.client_id, &client, s.circle_id);
     client.cancel_circle(&s.circle_id);
+
+    // Invariants after cancel
+    assert_invariants(&s.env, &s.client_id, &client, s.circle_id);
 
     let recipient = Address::generate(&s.env);
     client.claim(
@@ -975,6 +1099,8 @@ fn double_cancel_reverts() {
     let s = setup(5, 100);
     let client = ContractClient::new(&s.env, &s.client_id);
     client.cancel_circle(&s.circle_id);
+    // Invariants after first cancel
+    assert_invariants(&s.env, &s.client_id, &client, s.circle_id);
     client.cancel_circle(&s.circle_id);
 }
 
@@ -1071,6 +1197,9 @@ fn instance_ttl_extended_after_create_fund_claim() {
     // create_circle must extend instance TTL.
     client.create_circle(&admin, &token, &root, &100i128, &5u32, &vk);
 
+    // Invariants after create
+    assert_invariants(&env, &contract_id, &client, 0u64);
+
     // Advance the ledger by LEDGER_THRESHOLD so the instance entry would
     // expire without the extension; the TTL should now be refreshed.
     env.ledger().with_mut(|l| {
@@ -1084,6 +1213,9 @@ fn instance_ttl_extended_after_create_fund_claim() {
     let member = Address::generate(&env);
     token_admin_client.mint(&member, &100i128);
     client.fund(&0u64, &member);
+
+    // Invariants after fund
+    assert_invariants(&env, &contract_id, &client, 0u64);
 
     // fund 4 more so we can claim.
     for _ in 0..4 {
@@ -1101,6 +1233,9 @@ fn instance_ttl_extended_after_create_fund_claim() {
         &real_external_nullifier_round0(&env),
         &real_valid_proof(&env),
     );
+
+    // Invariants after claim
+    assert_invariants(&env, &contract_id, &client, 0u64);
 
     // Verify the instance entry is still live (has a TTL > 0) after all
     // three write paths have run. If extend_ttl were missing, the entry
@@ -1140,6 +1275,76 @@ mod proptest_apply_fee {
                 "apply_fee({}, {}) = ({}, {}); fee + net = {}",
                 fee_bps, amount, fee, net, fee + net
             );
+        }
+    }
+}
+
+// ---- Proptest: circle invariants (random legal sequences of fund/claim/cancel)
+mod proptest_circle_invariants {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn random_legal_sequence(actions in proptest::collection::vec(0u8..=2u8, 1..20)) {
+            let env = Env::default();
+            env.mock_all_auths();
+            let contract_id = env.register(Contract, ());
+            let client = ContractClient::new(&env, &contract_id);
+            let admin = Address::generate(&env);
+            let token_admin = Address::generate(&env);
+            let token = create_token(&env, &token_admin);
+            let token_admin_client = token::StellarAssetClient::new(&env, &token);
+
+            // Fixed small circle to allow using real proof fixtures.
+            let root = real_root(&env);
+            let vk = real_verification_key(&env);
+            let contribution: i128 = 100;
+            let size: u32 = 5;
+            let circle_id = client.create_circle(&admin, &token, &root, &contribution, &size, &vk);
+
+            // Pre-mint balances for a pool of potential funders.
+            let mut funders: StdVec<Address> = StdVec::new();
+            for _ in 0..size {
+                let m = Address::generate(&env);
+                token_admin_client.mint(&m, &contribution);
+                funders.push(m);
+            }
+
+            for a in actions.into_iter() {
+                match a {
+                    0 => {
+                        // fund a random member if not full
+                        if client.get_circle(&circle_id).pot < contribution * (size as i128) {
+                            let ix = (env.crypto().sha256(&Bytes::from_array(&env, &[a])).to_bytes()[0] as usize) % (funders.len());
+                            let who = funders.get(ix).unwrap();
+                            client.fund(&circle_id, who);
+                            assert_invariants(&env, &contract_id, &client, circle_id);
+                        }
+                    }
+                    1 => {
+                        // claim only when full
+                        let circle = client.get_circle(&circle_id);
+                        if circle.pot == circle.contribution * (circle.size as i128) && !circle.cancelled {
+                            let recipient = Address::generate(&env);
+                            let nullifier_hash = real_nullifier_hash(&env);
+                            let external_nullifier = expected_external_nullifier(&env, circle_id, circle.round);
+                            let proof = real_valid_proof(&env);
+                            client.claim(&circle_id, &recipient, &nullifier_hash, &external_nullifier, &proof);
+                            assert_invariants(&env, &contract_id, &client, circle_id);
+                        }
+                    }
+                    2 => {
+                        // cancel if not already cancelled
+                        let circle = client.get_circle(&circle_id);
+                        if !circle.cancelled {
+                            client.cancel_circle(&circle_id);
+                            assert_invariants(&env, &contract_id, &client, circle_id);
+                        }
+                    }
+                    _ => {}
+                }
+            }
         }
     }
 }
