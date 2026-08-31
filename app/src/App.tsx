@@ -35,6 +35,7 @@ import {
   FriendbotRetryableError,
   FRIEND_BOT_RATE_LIMIT_MESSAGE,
 } from "./lib/friendbot";
+import styles from "./App.module.css";
 
 const BIGINT_MARKER = 'BIGINT::';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -70,9 +71,9 @@ const BANNER_TEXT = isTestnet ? "Stellar testnet — no real funds" : "";
 function TestnetBanner() {
   if (!BANNER_TEXT) return null;
   return (
-    <div className="testnet-banner">
+    <div className={styles.testnetBanner}>
       <span>{BANNER_TEXT}</span>
-      <a className="banner-link" href={README_URL} target="_blank" rel="noreferrer">
+      <a className={styles.bannerLink} href={README_URL} target="_blank" rel="noreferrer">
         honest limitations ↗
       </a>
     </div>
@@ -143,7 +144,7 @@ function CopyButton({ value, label }: { value: string; label: string }) {
   return (
     <button
       type="button"
-      className="copy-btn"
+      className={styles.copyBtn}
       onClick={handleCopy}
       aria-label={`Copy ${label}`}
       title={`Copy ${label}`}
@@ -189,21 +190,21 @@ const CLAIM_STAGES: ClaimStage[] = ["artifacts", "proving", "funding", "submitti
 function ClaimProgress({ stage, elapsedSeconds }: { stage: ClaimStage; elapsedSeconds: number }) {
   const activeIndex = CLAIM_STAGES.indexOf(stage);
   return (
-    <div className="claim-progress">
-      <div className="stepper">
+    <div className={styles.claimProgress}>
+      <div className={styles.stepper}>
         {CLAIM_STAGES.map((s, i) => (
           <div
             key={s}
-            className={`step ${i < activeIndex ? "done" : i === activeIndex ? "active" : ""}`}
+            className={`${styles.step} ${i < activeIndex ? styles.done : i === activeIndex ? styles.active : ""}`}
           >
-            <span className="step-dot">{i < activeIndex ? "✓" : i + 1}</span>
+            <span className={styles.stepDot}>{i < activeIndex ? "✓" : i + 1}</span>
             {CLAIM_STAGE_LABELS[s]}
           </div>
         ))}
       </div>
       {stage === "proving" && (
-        <p className="techline">
-          <span className="spinner" aria-hidden="true" /> Groth16 · BLS12-381 · 1,452 constraints ·
+        <p className={styles.techline}>
+          <span className={styles.spinner} aria-hidden="true" /> Groth16 · BLS12-381 · 1,452 constraints ·
           proving locally in your browser, nothing sent anywhere until the proof is done ·{" "}
           {elapsedSeconds}s elapsed
         </p>
@@ -219,20 +220,20 @@ function Stepper({ step }: { step: 0 | 1 | 2 | 3 }) {
     // nav + ol give screen readers "step N of 4" list semantics without
     // changing any visual output — CSS targets .stepper and .step as before.
     <nav aria-label="Circle progress">
-      <ol className="stepper" style={{ listStyle: "none", margin: 0, padding: 0 }}>
+      <ol className={styles.stepper} style={{ listStyle: "none", margin: 0, padding: 0 }}>
         {labels.map((label, i) => {
           const state = i < step ? "done" : i === step ? "active" : "";
           return (
             <li
               key={label}
-              className={`step ${state}`}
+              className={`${styles.step} ${state}`}
               // aria-current="step" marks the single active step; completed
               // and upcoming steps get no aria-current attribute at all.
               {...(i === step ? { "aria-current": "step" as const } : {})}
             >
               {/* The dot (✓ / number) is decorative — the li text already
                   conveys position, so hide the dot from the AT tree. */}
-              <span className="step-dot" aria-hidden="true">
+              <span className={styles.stepDot} aria-hidden="true">
                 {i < step ? "✓" : i + 1}
               </span>
               {label}
@@ -248,7 +249,7 @@ function NetworkBanner() {
   const isTestnet = NETWORK.networkPassphrase.toLowerCase().includes("test");
   if (!isTestnet) return null;
   return (
-    <div className="network-banner">
+    <div className={styles.networkBanner}>
       Stellar testnet — no real funds ·{" "}
       <a
         href="https://github.com/glorious21-coder/sharibo#honest-limitations"
@@ -285,29 +286,21 @@ function MemberRing({ members, revealed }: { members: { funded: boolean }[]; rev
   const radius = useRingRadius();
   const fundedCount = members.filter((m) => m.funded).length;
 
-  // Build a concise, dynamic summary for assistive technology.
   const ringLabel = revealed
     ? `${members.length}-member circle — pot claimed. Payout recipient is unlinkable to any member.`
     : `${members.length}-member circle, ${fundedCount} of ${members.length} funded, pot not yet claimed.`;
 
-  // id used to associate the post-claim caption with the figure via
-  // aria-describedby so VoiceOver reads it as supplementary description.
   const captionId = "ring-caption";
 
   return (
-    <div className="ring-wrap">
-      {/*
-        role="img" turns the whole ring into a single AT object described by
-        aria-label; aria-describedby wires up the visible caption when present.
-        All child nodes are aria-hidden — the label already covers their state.
-      */}
+    <div className={styles.ringWrap}>
       <div
-        className="ring"
+        className={styles.ring}
         role="img"
         aria-label={ringLabel}
         {...(revealed ? { "aria-describedby": captionId } : {})}
       >
-        <div className="ring-center" aria-hidden="true">
+        <div className={styles.ringCenter} aria-hidden="true">
           {revealed ? "✓" : "pot"}
         </div>
         {members.map((m, i) => {
@@ -318,7 +311,7 @@ function MemberRing({ members, revealed }: { members: { funded: boolean }[]; rev
             <div
               key={i}
               aria-hidden="true"
-              className={`ring-node ${m.funded ? "funded" : ""}`}
+              className={`${styles.ringNode} ${m.funded ? styles.funded : ""}`}
               style={{ transform: `translate(${x}px, ${y}px)` }}
             >
               {i + 1}
@@ -328,7 +321,7 @@ function MemberRing({ members, revealed }: { members: { funded: boolean }[]; rev
         {revealed && (
           <div
             aria-hidden="true"
-            className="ring-node ring-recipient"
+            className={`${styles.ringNode} ${styles.ringRecipient}`}
             style={{ transform: "translate(0px, -170px)" }}
           >
             ?
@@ -336,9 +329,7 @@ function MemberRing({ members, revealed }: { members: { funded: boolean }[]; rev
         )}
       </div>
       {revealed && (
-        // id matches aria-describedby above; role="note" hints to AT that
-        // this is supplementary information attached to the figure.
-        <p id={captionId} role="note" className="ring-caption">
+        <p id={captionId} role="note" className={styles.ringCaption}>
           Payout landed on the address above — cryptographically, it could be tied to <em>any</em>{" "}
           of the {members.length} members in the ring. An outside observer cannot tell which.
         </p>
@@ -351,12 +342,12 @@ function EnvSetupScreen({ errors }: { errors: string[] }) {
   const { t } = useI18n();
 
   return (
-    <div className="page">
-      <div className="card hero">
-        <LanguageSwitcher className="language-switcher-hero" />
+    <div className={styles.page}>
+      <div className={`${styles.card} ${styles.hero}`}>
+        <LanguageSwitcher className={styles.languageSwitcherHero} />
         <h1>SHARIBO</h1>
         <h2 style={{ color: "var(--color-error, #e55)" }}>{t("env.setupRequired")}</h2>
-        <p className="sub">
+        <p className={styles.sub}>
           {t("env.setupIntro")} {t("env.setupHowTo")}
         </p>
         <ul style={{ textAlign: "left", margin: "1rem 0", padding: "0 1.25rem" }}>
@@ -366,7 +357,7 @@ function EnvSetupScreen({ errors }: { errors: string[] }) {
             </li>
           ))}
         </ul>
-        <p className="fineprint">
+        <p className={styles.fineprint}>
           {t("env.setupDetails")}
         </p>
       </div>
@@ -376,9 +367,9 @@ function EnvSetupScreen({ errors }: { errors: string[] }) {
 
 function ClaimExplainer() {
   return (
-    <details className="claim-explainer">
+    <details className={styles.claimExplainer}>
       <summary>How this claim proof works</summary>
-      <div className="claim-explainer-body">
+      <div className={styles.claimExplainerBody}>
         <section>
           <h3>What the proof is saying</h3>
           <p>
@@ -874,17 +865,17 @@ export default function App() {
 
   if (resumePrompt && screen === "landing") {
     return (
-      <div className="page">
-        <div className="card hero">
+      <div className={styles.page}>
+        <div className={`${styles.card} ${styles.hero}`}>
           <h1>Resume Circle #{resumePrompt.circleId.toString()}?</h1>
-          <p className="sub">
+          <p className={styles.sub}>
             It looks like you refreshed the page while a circle was active. Do you want to resume?
           </p>
-          <div className="row" style={{ marginTop: '2rem', justifyContent: 'center', gap: '1rem' }}>
-            <button className="btn btn-primary" onClick={() => loadState(resumePrompt)}>
+          <div className={styles.row} style={{ marginTop: '2rem', justifyContent: 'center', gap: '1rem' }}>
+            <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => loadState(resumePrompt)}>
               Resume Circle
             </button>
-            <button className="btn btn-danger" onClick={() => {
+            <button className={`${styles.btn} ${styles.btnDanger}`} onClick={() => {
               sessionStorage.removeItem("sharibo_demo_state");
               setResumePrompt(null);
             }}>
@@ -898,40 +889,40 @@ export default function App() {
 
   if (screen === "landing") {
     return (
-      <div className="page">
+      <div className={styles.page}>
         <NetworkBanner />
-        <div className="card hero">
-          <LanguageSwitcher className="language-switcher-hero" />
-          <div className="namewall">
+        <div className={`${styles.card} ${styles.hero}`}>
+          <LanguageSwitcher className={styles.languageSwitcherHero} />
+          <div className={styles.namewall}>
             {NAMES.map((n) => (
-              <span key={n} className="namewall-item">
+              <span key={n} className={styles.namewallItem}>
                 {n}
               </span>
             ))}
           </div>
           <h1>SHARIBO</h1>
-          <p className="tagline">
+          <p className={styles.tagline}>
             A private rotating savings circle — on Stellar, with real
             zero-knowledge proofs.
           </p>
-          <p className="sub">
+          <p className={styles.sub}>
             Every round, everyone contributes. Every round, one member takes the
             pot. Sharibo proves <em>who's entitled to claim</em> without ever
             revealing <em>who</em> claimed.
           </p>
           <button
-            className="btn btn-primary"
+            className={`${styles.btn} ${styles.btnPrimary}`}
             disabled={!!busy}
             onClick={startCircle}
           >
             {busy ?? "Launch a 5-member circle on testnet"}
           </button>
-          {error && <p className="error">{error}</p>}
+          {error && <p className={styles.error}>{error}</p>}
           {previousCircleId !== null && (
-            <p className="fineprint">
+            <p className={styles.fineprint}>
               Your previous circle lives on at{" "}
               <a
-                className="link"
+                className={styles.link}
                 href={explorerContract()}
                 target="_blank"
                 rel="noreferrer"
@@ -940,14 +931,14 @@ export default function App() {
               </a>
             </p>
           )}
-          <p className="fineprint">
+          <p className={styles.fineprint}>
             Testnet only. Demo identities are generated fresh in your browser,
             never reused.
           </p>
           {prevCircle && (
-            <p className="fineprint">
+            <p className={styles.fineprint}>
               Your previous circle #{prevCircle.id} lives on-chain —{" "}
-              <a className="link" href={prevCircle.explorerUrl} target="_blank" rel="noreferrer">
+              <a className={styles.link} href={prevCircle.explorerUrl} target="_blank" rel="noreferrer">
                 view on explorer ↗
               </a>
             </p>
@@ -960,9 +951,9 @@ export default function App() {
   const step: 0 | 1 | 2 | 3 = flow.claimResult ? 3 : flow.fullyFunded ? 2 : 1;
 
   return (
-    <div className="page">
+    <div className={styles.page}>
       <NetworkBanner />
-      <div className="card">
+      <div className={styles.card}>
         <LanguageSwitcher />
         {/*
           Persistent live region — always in the DOM so the browser registers
@@ -973,16 +964,16 @@ export default function App() {
           than diffing individual text nodes, which is more reliable across ATs.
         */}
         <LiveRegion message={liveRegionMessage} />
-        <div className="row space-between">
-          <h1 className="small" ref={circleHeadingRef} tabIndex={-1}>
+        <div className={`${styles.row} ${styles.spaceBetween}`}>
+          <h1 className={styles.h1Small} ref={circleHeadingRef} tabIndex={-1}>
             SHARIBO
           </h1>
-          <div className="row">
-            <a className="link" href={explorerContract()} target="_blank" rel="noreferrer">
+          <div className={styles.row}>
+            <a className={styles.link} href={explorerContract()} target="_blank" rel="noreferrer">
               circle #{flow.circleId?.toString()} on-chain ↗
             </a>
             <button
-              className="btn btn-small"
+              className={`${styles.btn} ${styles.btnSmall}`}
               disabled={!!flow.busy}
               onClick={flow.resetToLanding}
               title={`Start over. Your current circle (#${flow.circleId?.toString()}) keeps living on-chain.`}
@@ -996,28 +987,28 @@ export default function App() {
 
         <MemberRing members={flow.members} revealed={!!flow.claimResult} />
 
-        <div className="pot-bar-wrap">
+        <div className={styles.potBarWrap}>
           <div
-            className="pot-bar"
+            className={styles.potBar}
             style={{ width: `${(flow.fundedCount / CIRCLE_SIZE) * 100}%` }}
           />
         </div>
-        <p className="pot-label">
+        <p className={styles.potLabel}>
           pot: {(Number(flow.pot) / 1e7).toFixed(1)} / {flow.contributionXlm * CIRCLE_SIZE} XLM ·
           round {flow.round}
         </p>
 
         <h2>Fund</h2>
-        <div className="members">
+        <div className={styles.members}>
           {members.map((m, i) => (
-            <div key={i} className={`member ${m.funded ? "funded" : ""}`}>
-              <span className="member-addr">
+            <div key={i} className={`${styles.member} ${m.funded ? styles.funded : ""}`}>
+              <span className={styles.memberAddr}>
                 member {i + 1} · {short(m.keypair.publicKey())}
                 <CopyButton value={m.keypair.publicKey()} label={`member ${i + 1} address`} />
               </span>
               {m.funded ? (
                 <a
-                  className="link"
+                  className={styles.link}
                   href={explorerTx(m.fundHash!)}
                   target="_blank"
                   rel="noreferrer"
@@ -1025,9 +1016,9 @@ export default function App() {
                   ✓ funded ↗
                 </a>
               ) : (
-                <div className="row">
+                <div className={styles.row}>
                   <button
-                    className="btn btn-small"
+                    className={`${styles.btn} ${styles.btnSmall}`}
                     disabled={!!busy || round > 0}
                     onClick={() => fundMember(i)}
                   >
@@ -1035,7 +1026,7 @@ export default function App() {
                   </button>
                   {hasFreighter && (
                     <button
-                      className="btn btn-small"
+                      className={`${styles.btn} ${styles.btnSmall}`}
                       disabled={!!busy || round > 0}
                       onClick={() => fundWithFreighter(i)}
                     >
@@ -1053,14 +1044,14 @@ export default function App() {
             <h2 ref={claimHeadingRef} tabIndex={-1}>
               Claim
             </h2>
-            <p className="sub">
+            <p className={styles.sub}>
               Pick which member is claiming this round — the proof will show the
               contract that they're a real member <em>without</em> revealing
               which one.
             </p>
-            <div className="row">
+            <div className={styles.row}>
               {members.map((_, i) => (
-                <label key={i} className="radio">
+                <label key={i} className={styles.radio}>
                   <input
                     type="radio"
                     checked={claimantIndex === i}
@@ -1071,12 +1062,12 @@ export default function App() {
                 </label>
               ))}
             </div>
-            <button className="btn btn-primary" disabled={!!busy} onClick={doClaim}>
+            <button className={`${styles.btn} ${styles.btnPrimary}`} disabled={!!busy} onClick={doClaim}>
               {claimStage ? CLAIM_STAGE_LABELS[claimStage] : "Generate proof & claim"}
             </button>
             <ClaimExplainer />
             {busy && (
-              <p className="techline">
+              <p className={styles.techline}>
                 {/* Constraint count: update this AND circuits/README.md if the circuit changes. */}
                 Groth16 · BLS12-381 · 1,452 constraints · proving locally in your browser, nothing
                 sent anywhere until the proof is done
@@ -1087,7 +1078,7 @@ export default function App() {
         )}
 
         {claimResult && (
-          <div className="result">
+          <div className={styles.result}>
             <h2 ref={payoutHeadingRef} tabIndex={-1}>
               Payout landed
             </h2>
@@ -1101,7 +1092,7 @@ export default function App() {
               circle.
             </p>
             <a
-              className="link"
+              className={styles.link}
               href={explorerTx(claimResult.hash)}
               target="_blank"
               rel="noreferrer"
@@ -1109,12 +1100,12 @@ export default function App() {
               view claim transaction ↗
             </a>
             <CopyButton value={claimResult.hash} label="claim transaction hash" />
-            <p className="callout">
+            <p className={styles.callout}>
               Compare the 5 funding transactions above to this claim — same
               contract, no shared address, no visible link.
             </p>
             <button
-              className="btn btn-danger"
+              className={`${styles.btn} ${styles.btnDanger}`}
               disabled={!!busy || (!!rejection && nullifierClaimed)}
               onClick={claimAgain}
               title={
@@ -1126,18 +1117,18 @@ export default function App() {
               {busy ?? "Try to claim again with the same proof"}
             </button>
             {nullifierClaimed && !rejection && (
-              <p className="callout">
+              <p className={styles.callout}>
                 <code>has_claimed</code> is true for this nullifier — a replay will be rejected
                 on-chain.
               </p>
             )}
             {rejection && (
               <>
-                <div className="rejected">
+                <div className={styles.rejected}>
                   <strong>Rejected on-chain:</strong> {rejection}
                 </div>
                 <button
-                  className="btn btn-primary"
+                  className={`${styles.btn} ${styles.btnPrimary}`}
                   disabled={!!busy}
                   onClick={resetToLanding}
                 >
@@ -1146,17 +1137,17 @@ export default function App() {
               </>
             )}
             {rejection && (
-              <div className="new-circle-cta">
+              <div className={styles.newCircleCta}>
                 <button
-                  className="btn btn-primary"
+                  className={`${styles.btn} ${styles.btnPrimary}`}
                   disabled={!!busy}
                   onClick={resetToLanding}
                 >
                   ↺ Start a new circle
                 </button>
-                <p className="fineprint">
+                <p className={styles.fineprint}>
                   Circle #{circleId?.toString()} stays on-chain forever —{" "}
-                  <a className="link" href={explorerContract()} target="_blank" rel="noreferrer">
+                  <a className={styles.link} href={explorerContract()} target="_blank" rel="noreferrer">
                     view on explorer ↗
                   </a>
                   . Starting a new circle generates fresh identities and a brand-new on-chain record.
@@ -1166,7 +1157,7 @@ export default function App() {
           </div>
         )}
 
-        {flow.error && <p className="error">{flow.error}</p>}
+        {flow.error && <p className={styles.error}>{flow.error}</p>}
       </div>
     </div>
   );
