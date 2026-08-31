@@ -47,3 +47,24 @@ all: circuits contract client app
 # Verify: run lint and client checks
 verify: client
     npm run lint
+
+# Run coverage for all workspaces and print a short per-workspace summary.
+# This is a local instrument (not a merge gate). It runs each workspace's
+# test command with coverage enabled and emits the report locations.
+coverage:
+    @echo 'Collecting coverage for: app, packages/client, scripts, contracts'
+    # App (vitest will write to coverage/app)
+    cd app && npm test || true
+    # Client (vitest will write to coverage/packages-client)
+    npm run test --workspace=packages/client || true
+    # Scripts (node --test may be used by the scripts workspace)
+    npm run test --workspace=scripts || true
+    # Contracts (cargo-llvm-cov must be installed; see contracts/README.md)
+    cd contracts && cargo llvm-cov --workspace --tests --lcov --output-path coverage || true
+    @echo
+    @echo 'Summary:'
+    @printf '%-25s %-12s %s\n' "Workspace" "Report" "Notes"
+    @printf '%-25s %-12s %s\n' "app" "coverage/app" "vitest + v8"
+    @printf '%-25s %-12s %s\n' "packages/client" "coverage/packages-client" "vitest + v8"
+    @printf '%-25s %-12s %s\n' "scripts" "(scripts test may output coverage)" "node --test"
+    @printf '%-25s %-12s %s\n' "contracts" "contracts/coverage" "cargo llvm-cov (HTML/lcov)"

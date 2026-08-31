@@ -210,4 +210,23 @@ The accompanying test suite in [`contracts/sharibo/src/test.rs`](sharibo/src/tes
 6. **State Persistence**:
    - `instance_ttl_extended_after_create_fund_claim`: Ensures that `extend_ttl` is executed on all write operations (`create_circle`, `fund`, `claim`) to prevent instance-storage archival issues.
 7. **Gas / CPU Benchmarking**:
-   - `cpu_instruction_benchmarks`: Benchmarks and prints the precise CPU instructions consumed by write operations (e.g., `create_circle`, `fund`, `claim`) and asserts that they remain safely under the 100M limit.
+  - `cpu_instruction_benchmarks`: Benchmarks and prints the precise CPU instructions consumed by write operations (e.g., `create_circle`, `fund`, `claim`) and asserts that they remain safely under the 100M limit.
+
+### Running Coverage (LLVM / Rust)
+
+You can generate coverage reports for the Rust contract using `cargo-llvm-cov`. Install it and then run the coverage collection from the `contracts/` directory:
+
+```bash
+# Install the tool (once)
+cargo install cargo-llvm-cov
+
+# From the repository root
+cd contracts
+
+# Run tests and produce coverage reports (HTML + lcov)
+cargo llvm-cov --workspace --tests --lcov --output-path coverage --html
+
+# Combined coverage will be written to `contracts/coverage/` (open the HTML report in a browser).
+```
+
+Note: `cargo-llvm-cov` depends on LLVM tooling available in your environment. See the `cargo-llvm-cov` documentation for platform-specific notes.
