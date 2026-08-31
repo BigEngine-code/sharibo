@@ -66,6 +66,13 @@ Every claim below was produced by running this repo against live Stellar testnet
 | Tampered proof **rejected**              | `Error(Contract, #5)` `InvalidProof` — the pairing check genuinely fails                                     |
 | Nullifier replay **rejected**            | `Error(Contract, #4)` `AlreadyClaimed` — reproduced every run by `npm run e2e`                               |
 
+**These are testnet artifacts.** Stellar testnet is wiped periodically (roughly quarterly); when
+that happens, the contract/token ids and transaction hashes above go stale all at once (the ids
+stop resolving, the transactions still exist in history but no longer describe the live
+deployment). If any of this doesn't check out, see
+[`docs/runbook-testnet-reset.md`](docs/runbook-testnet-reset.md) — it's the same table this repo's
+maintainers update after every reset.
+
 ## Verify it yourself in 60 seconds
 
 No toolchain needed — just `curl`.
