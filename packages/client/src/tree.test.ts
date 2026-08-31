@@ -93,7 +93,6 @@ test("proofOf throws for a leaf not in a tree that has zero occupied slots (empt
     },
   );
 });
-import { MerkleTree, ZERO_VALUE } from "./tree.js";
 import { FR_MODULUS } from "./identity.js";
 
 // ---- levels validation ----

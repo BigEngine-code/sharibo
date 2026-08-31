@@ -15,6 +15,9 @@ export default tseslint.config(
     languageOptions: {
       globals: globals.node,
     },
+    rules: {
+      "@typescript-eslint/no-unused-vars": "error",
+    },
   },
 
   // app: TypeScript + React, runs in the browser.
