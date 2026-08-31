@@ -13,6 +13,10 @@ use soroban_sdk::{
 /// Committed at circle creation time; every [`Self::claim`] proof is checked
 /// against this key. Encodes the trusted-setup output of the Semaphore-style
 /// circuit used by the off-chain prover.
+///
+/// **Cross-component invariant:** any change to this struct's wire format must
+/// be coordinated with the circuit public signals, contract `public_inputs`,
+/// and SDK encoding. See #344.
 #[contracttype]
 #[derive(Clone)]
 pub struct VerificationKey {
@@ -33,6 +37,10 @@ pub struct VerificationKey {
 ///
 /// The three group elements satisfy the standard pairing equation checked by
 /// [`Contract::verify_groth16`].
+///
+/// **Cross-component invariant:** any change to this struct's wire format must
+/// be coordinated with the circuit public signals, contract `public_inputs`,
+/// and SDK encoding. See #344.
 #[contracttype]
 #[derive(Clone)]
 pub struct Proof {
