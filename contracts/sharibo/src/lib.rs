@@ -428,14 +428,15 @@ impl Contract {
         }
 
         // effects
+        // Persist the round state and nullifier before any external token call so
+        // a hostile token cannot re-enter the same claim with a fresh nullifier or
+        // stale pot/round data while this call is in-flight.
         env.storage().persistent().set(&nullifier_key, &true);
         env.storage()
             .persistent()
             .extend_ttl(&nullifier_key, LEDGER_THRESHOLD, LEDGER_EXTEND_TO);
 
-        let token_client = token::Client::new(&env, &circle.token);
-        token_client.transfer(&env.current_contract_address(), &recipient, &circle.pot);
-
+        let payout = circle.pot;
         circle.pot = 0;
         circle.round += 1;
         circle.contributors = Vec::new(&env);
@@ -446,6 +447,9 @@ impl Contract {
         env.storage()
             .instance()
             .extend_ttl(LEDGER_THRESHOLD, LEDGER_EXTEND_TO);
+
+        let token_client = token::Client::new(&env, &circle.token);
+        token_client.transfer(&env.current_contract_address(), &recipient, &payout);
     }
 
     /// Look up a [`Circle`] by its assigned id.
@@ -554,16 +558,7 @@ impl Contract {
             panic_with_error!(&env, Error::CircleCancelled);
         }
 
-        // Refund every contributor for the current (stuck) round.
-        let token_client = token::Client::new(&env, &circle.token);
-        for contributor in circle.contributors.iter() {
-            token_client.transfer(
-                &env.current_contract_address(),
-                &contributor,
-                &circle.contribution,
-            );
-        }
-
+        let contributors = circle.contributors.clone();
         circle.pot = 0;
         circle.cancelled = true;
         circle.contributors = Vec::new(&env);
@@ -571,6 +566,19 @@ impl Contract {
         env.storage()
             .persistent()
             .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_EXTEND_TO);
+
+        // Refund every contributor for the current (stuck) round only after
+        // the circle's cancelled state has been persisted; otherwise a hostile
+        // token can call back into `cancel_circle` while the old state still reads
+        // as active and claimable.
+        let token_client = token::Client::new(&env, &circle.token);
+        for contributor in contributors.iter() {
+            token_client.transfer(
+                &env.current_contract_address(),
+                &contributor,
+                &circle.contribution,
+            );
+        }
     }
 
     // Binds a proof to (circle_id, round) with SHA-256 (a native, accelerated
