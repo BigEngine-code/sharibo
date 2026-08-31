@@ -51,3 +51,12 @@ When looking for issues to work on, start by filtering by the `good first issue`
 ## Setup trouble?
 
 Getting a fresh machine running and tripping on a toolchain issue (`circom`, `wasm32v1-none`, `stellar` vs `soroban`, friendbot limits, testnet resets, missing `circuits/build/`)? See [docs/troubleshooting.md](docs/troubleshooting.md) for symptom → cause → fix walkthroughs.
+
+## Pre-PR checklist
+
+Before opening a pull request, run the comprehensive local verification gate:
+
+- Run `just verify` from anywhere inside the repository. It runs TypeScript typechecking (client and app), ESLint, a best-effort dead-code check (`ts-prune`), all unit tests (app and SDK), `cargo test`, and `cargo clippy -- -D warnings`.
+- The recipe intentionally excludes `e2e` and the circuits *trusted setup* because those are slow and/or spend testnet friendbot funds.
+
+If `just verify` passes locally, it's the single documented answer to "did I break anything?" and a good signal your change is ready for review.
