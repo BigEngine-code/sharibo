@@ -126,7 +126,7 @@ const rules: ValidationRule[] = [
     validate: (v) => {
       if (!isNonEmpty(v)) return "is missing or empty";
       if (!isValidStrKey(v, "S"))
-        return `"${v}" is not a valid Stellar secret key (should start with 'S' and be 56 characters)`;
+        return "is not a valid Stellar secret key (should start with 'S' and be 56 characters)";
       return null;
     },
   },
