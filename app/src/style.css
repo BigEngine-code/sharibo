@@ -140,6 +140,47 @@ h2 {
   margin-top: 16px;
 }
 
+.noscript-banner {
+  margin: 24px auto;
+  max-width: 680px;
+  background: var(--accent);
+  border: var(--border);
+  box-shadow: var(--shadow);
+  padding: 18px 20px;
+  color: var(--ink);
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  line-height: 1.5;
+}
+
+.unsupported-browser {
+  max-width: 540px;
+}
+
+.unsupported-browser-list {
+  list-style: none;
+  margin: 20px 0 0;
+  padding: 0;
+  text-align: left;
+  display: grid;
+  gap: 10px;
+}
+
+.unsupported-browser-item {
+  background: #fff6d8;
+  border: 2px solid var(--ink);
+  padding: 10px 12px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+}
+
+.unsupported-browser-note {
+  margin-top: 16px;
+  background: #effff6;
+  border: 2px solid var(--ink);
+  padding: 12px 14px;
+  font-weight: 700;
+}
+
 .network-banner {
   font-family: "JetBrains Mono", monospace;
   font-size: 12px;

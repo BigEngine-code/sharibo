@@ -21,7 +21,17 @@ const es = {
   "landing.previousCircleLink": "tanda #{id} ↗",
   "landing.testnetFineprint": "Solo testnet. Las identidades de demostraci\u00f3n se generan de nuevo en tu navegador y nunca se reutilizan.",
   "circle.onChainLink": "tanda #{id} en cadena ↗",
-  "common.startNewCircle": "Iniciar una nueva tanda"
+  "common.startNewCircle": "Iniciar una nueva tanda",
+  "browser.unsupportedTitle": "Se requiere compatibilidad del navegador",
+  "browser.unsupportedIntro": "Sharibo genera la prueba en tu navegador, por lo que JavaScript es obligatorio.",
+  "browser.unsupportedDetails": "Este navegador falta una o m\u00e1s funciones necesarias para el flujo de prueba de conocimiento cero.",
+  "browser.unsupportedMissing": "Compatibilidad faltante:",
+  "browser.unsupportedSecureContext": "Abre esta app en HTTPS o localhost. HTTP normal en una IP de LAN no es compatible.",
+  "browser.unsupportedFooter": "Usa un navegador moderno que admita WebAssembly, BigInt y Web Crypto.",
+  "browser.capability.webassembly": "WebAssembly",
+  "browser.capability.bigint": "BigInt",
+  "browser.capability.cryptoSubtle": "Web Crypto (crypto.subtle)",
+  "browser.capability.secureContext": "Contexto seguro (HTTPS o localhost)"
 } as const;
 
 export default es;
