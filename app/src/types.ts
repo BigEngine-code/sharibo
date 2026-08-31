@@ -6,6 +6,8 @@ export interface Member {
   identity: Identity;
   funded: boolean;
   fundHash?: string;
+  ineligible?: boolean;
+  ineligibleReason?: string;
 }
 
 export interface ClaimResult {

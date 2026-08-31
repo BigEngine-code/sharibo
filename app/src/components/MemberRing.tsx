@@ -2,11 +2,13 @@
 // as "the one that claimed" — that's the point. From outside the ring, all
 // five remain equally plausible; only the demo operator (via the radio
 // picker below) ever knows which one actually did.
+import type { Member } from "../types.js";
+
 export function MemberRing({
   members,
   revealed,
 }: {
-  members: { funded: boolean }[];
+  members: Member[];
   revealed: boolean;
 }) {
   const radius = 100;
@@ -21,10 +23,11 @@ export function MemberRing({
           return (
             <div
               key={i}
-              className={`ring-node ${m.funded ? "funded" : ""}`}
+              className={`ring-node ${m.funded ? "funded" : ""} ${m.ineligible ? "ineligible" : ""}`}
               style={{ transform: `translate(${x}px, ${y}px)` }}
+              aria-label={`member ${i + 1}${m.ineligible ? ", ineligible: already claimed" : ""}`}
             >
-              {i + 1}
+              {m.ineligible ? "×" : i + 1}
             </div>
           );
         })}

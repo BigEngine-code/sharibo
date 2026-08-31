@@ -515,6 +515,37 @@ export default function App() {
       payoutHeadingRef.current?.focus();
     }
   }, [claimResult]);
+  
+  // When the claim step becomes available, pre-check each member's nullifier
+  // against `has_claimed` so we can mark ineligible members immediately
+  // (avoids generating a slow proof only to be rejected on-chain).
+  useEffect(() => {
+    let mounted = true;
+    async function checkEligibility() {
+      if (!fullyFunded || claimResult || !circleId || !admin) return;
+      try {
+        setBusy("Checking member eligibility…");
+        const client = await import("@sharibo/client");
+        const { computeExternalNullifier, computeNullifierHash, connect, hasClaimed } = client;
+        const external = await computeExternalNullifier(circleId, BigInt(round));
+        const adminClient = await connect(NETWORK, admin);
+        const results = await Promise.all(
+          members.map(async (m) => {
+            const nullifier = computeNullifierHash(m.identity.identityNullifier, external);
+            return await hasClaimed(adminClient, circleId, nullifier);
+          }),
+        );
+        if (!mounted) return;
+        setMembers((prev) => prev.map((m, i) => ({ ...m, ineligible: results[i], ineligibleReason: results[i] ? "Already claimed in this circle" : undefined })));
+      } catch (e) {
+        setError(toUiError(e));
+      } finally {
+        if (mounted) setBusy(null);
+      }
+    }
+    checkEligibility();
+    return () => { mounted = false; };
+  }, [fullyFunded, claimResult, circleId, round, admin]);
   // ────────────────────────────────────────────────────────────────────────
 
   // Every hook above must run on every render, so this check — which used to
@@ -576,6 +607,7 @@ export default function App() {
       identity: m.identity,
       funded: m.funded,
       fundHash: m.fundHash,
+      ineligible: m.ineligible ?? false,
     }));
     setMembers(loadedMembers);
     
@@ -618,6 +650,7 @@ export default function App() {
         keypair: Keypair.random(),
         identity: generateIdentity(),
         funded: false,
+        ineligible: false,
       }));
 
       const newTree = MerkleTree.create(
@@ -1059,15 +1092,16 @@ export default function App() {
               which one.
             </p>
             <div className="row">
-              {members.map((_, i) => (
+              {members.map((m, i) => (
                 <label key={i} className="radio">
                   <input
                     type="radio"
                     checked={claimantIndex === i}
                     onChange={() => setClaimantIndex(i)}
-                    disabled={!!busy}
+                    disabled={!!busy || !!m.ineligible}
+                    title={m.ineligible ? m.ineligibleReason ?? "Ineligible to claim" : undefined}
                   />
-                  member {i + 1}
+                  member {i + 1}{m.ineligible ? " (ineligible)" : ""}
                 </label>
               ))}
             </div>
