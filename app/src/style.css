@@ -566,6 +566,51 @@ a:focus-visible {
   background: white;
 }
 
+.offline-banner {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: #fff4e5;
+  border: 2px solid #f0a500;
+  color: #7a4f00;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  border-radius: 4px;
+}
+
+.connection-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  padding: 4px 8px;
+  border: 1px solid var(--border, #ddd);
+  border-radius: 999px;
+}
+
+.connection-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #c0392b;
+}
+
+.connection-status.is-online {
+  color: #1e7e34;
+}
+
+.connection-status.is-online .connection-dot {
+  background: #28a745;
+}
+
+.connection-status.is-offline {
+  color: #c0392b;
+}
+
+.connection-status.is-offline .connection-dot {
+  background: #c0392b;
+}
+
 
 .testnet-banner {
   display: flex;

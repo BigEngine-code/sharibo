@@ -23,21 +23,22 @@ import {
   TREE_LEVELS,
   type Identity,
   type ContractProof,
-  ContractError,
-  RpcError,
-  ProvingError,
-  InvalidInputError,
 } from "@sharibo/client";
 import { config, configError } from "./config";
 import { useI18n } from "./i18n";
 import {
   friendbotFund as fundWithFriendbot,
   FriendbotRetryableError,
-  FRIEND_BOT_RATE_LIMIT_MESSAGE,
 } from "./lib/friendbot";
 import { explorerTx } from "./lib/explorer";
 import { Toaster } from "./components/Toaster";
-import { isRetryableError, type Failure } from "./state/circleMachine";
+import { ConnectionStatus } from "./components/ConnectionStatus";
+import { useOnlineStatus } from "./hooks/useOnlineStatus";
+import {
+  diagnose,
+  toUiError,
+  type Failure,
+} from "./state/circleMachine";
 
 const BIGINT_MARKER = 'BIGINT::';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -96,18 +97,6 @@ const NAMES = [
   "paluwagan",
   "chit fund",
 ];
-
-function toUiError(error: unknown): string {
-  if (error instanceof FriendbotRetryableError) {
-    return FRIEND_BOT_RATE_LIMIT_MESSAGE;
-  }
-
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return "Something went wrong. Please retry.";
-}
 
 function explorerAccount(address: string): string {
   return `https://stellar.expert/explorer/testnet/account/${address}`;
@@ -432,6 +421,7 @@ function ClaimExplainer() {
 
 export default function App() {
   const { t } = useI18n();
+  const online = useOnlineStatus();
 
   if (configError.length > 0) {
     return <EnvSetupScreen errors={configError} />;
@@ -662,12 +652,12 @@ export default function App() {
       setPot(0n);
       setScreen("circle");
     } catch (e) {
-      const message = toUiError(e);
+      const { message, retryable } = await diagnose(e);
       setError(message);
       setFailure({
         step: "start",
         message,
-        retryable: isRetryableError(e),
+        retryable,
         retry: () => startCircle(),
       });
     } finally {
@@ -701,12 +691,12 @@ export default function App() {
       setPot(circle.pot);
       setRound(circle.round);
     } catch (e) {
-      const message = toUiError(e);
+      const { message, retryable } = await diagnose(e);
       setError(message);
       setFailure({
         step: "fund",
         message,
-        retryable: isRetryableError(e),
+        retryable,
         retry: () => fundMember(i),
       });
     } finally {
@@ -764,12 +754,12 @@ export default function App() {
       setPot(circle.pot);
       setRound(circle.round);
     } catch (e) {
-      const message = toUiError(e);
+      const { message, retryable } = await diagnose(e);
       setError(message);
       setFailure({
         step: "fund",
         message,
-        retryable: isRetryableError(e),
+        retryable,
         retry: () => fundWithFreighter(i),
       });
     } finally {
@@ -846,12 +836,12 @@ export default function App() {
       setPot(circle.pot);
       setRound(circle.round);
     } catch (e) {
-      const message = toUiError(e);
+      const { message, retryable } = await diagnose(e);
       setError(message);
       setFailure({
         step: "claim",
         message,
-        retryable: isRetryableError(e),
+        retryable,
         // If proving already succeeded, reuse the proof instead of paying the
         // ~10s proving cost again. Otherwise re-run the whole claim.
         retry: generated
@@ -913,12 +903,12 @@ export default function App() {
       setPot(circle.pot);
       setRound(circle.round);
     } catch (e) {
-      const message = toUiError(e);
+      const { message, retryable } = await diagnose(e);
       setError(message);
       setFailure({
         step: "claim",
         message,
-        retryable: isRetryableError(e),
+        retryable,
         retry: () => retryClaimWithProof(g),
       });
     } finally {
@@ -1008,8 +998,14 @@ export default function App() {
     return (
       <div className="page">
         <NetworkBanner />
+        {!online && (
+          <div className="offline-banner" role="status">
+            You are offline. Network actions are paused — reconnect to start or retry a circle.
+          </div>
+        )}
         <div className="card hero">
           <LanguageSwitcher className="language-switcher-hero" />
+          <ConnectionStatus online={online} />
           <div className="namewall">
             {NAMES.map((n) => (
               <span key={n} className="namewall-item">
@@ -1029,12 +1025,12 @@ export default function App() {
           </p>
           <button
             className="btn btn-primary"
-            disabled={!!busy}
+            disabled={!online || !!busy}
             onClick={startCircle}
           >
             {busy ?? "Launch a 5-member circle on testnet"}
           </button>
-          <Toaster failure={failure} busy={busy} onDismiss={() => setFailure(null)} />
+          <Toaster failure={failure} busy={busy} online={online} onDismiss={() => setFailure(null)} />
           {previousCircleId !== null && (
             <p className="fineprint">
               Your previous circle lives on at{" "}
@@ -1081,11 +1077,17 @@ export default function App() {
           than diffing individual text nodes, which is more reliable across ATs.
         */}
         <LiveRegion message={liveRegionMessage} />
+        {!online && (
+          <div className="offline-banner" role="status">
+            You are offline. Network actions are paused — reconnect to fund, claim, or retry.
+          </div>
+        )}
         <div className="row space-between">
           <h1 className="small" ref={circleHeadingRef} tabIndex={-1}>
             SHARIBO
           </h1>
           <div className="row">
+            <ConnectionStatus online={online} />
             <a className="link" href={explorerContract()} target="_blank" rel="noreferrer">
               circle #{circleId?.toString()} on-chain ↗
             </a>
@@ -1136,7 +1138,7 @@ export default function App() {
                 <div className="row">
                   <button
                     className="btn btn-small"
-                    disabled={!!busy || round > 0}
+                    disabled={!online || !!busy || round > 0}
                     onClick={() => fundMember(i)}
                   >
                     Fund {contributionXlm} XLM (Demo)
@@ -1144,7 +1146,7 @@ export default function App() {
                   {hasFreighter && (
                     <button
                       className="btn btn-small"
-                      disabled={!!busy || round > 0}
+                      disabled={!online || !!busy || round > 0}
                       onClick={() => fundWithFreighter(i)}
                     >
                       Fund with Freighter
@@ -1179,7 +1181,7 @@ export default function App() {
                 </label>
               ))}
             </div>
-            <button className="btn btn-primary" disabled={!!busy} onClick={doClaim}>
+            <button className="btn btn-primary" disabled={!online || !!busy} onClick={doClaim}>
               {claimStage ? CLAIM_STAGE_LABELS[claimStage] : "Generate proof & claim"}
             </button>
             <ClaimExplainer />
@@ -1223,7 +1225,7 @@ export default function App() {
             </p>
             <button
               className="btn btn-danger"
-              disabled={!!busy || (!!rejection && nullifierClaimed)}
+              disabled={!online || !!busy || (!!rejection && nullifierClaimed)}
               onClick={claimAgain}
               title={
                 rejection && nullifierClaimed

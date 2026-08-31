@@ -6,10 +6,12 @@ import type { Failure } from "../state/circleMachine.js";
 export function Toaster({
   failure,
   busy,
+  online,
   onDismiss,
 }: {
   failure: Failure | null;
   busy: boolean;
+  online: boolean;
   onDismiss: () => void;
 }) {
   if (!failure) return null;
@@ -22,7 +24,7 @@ export function Toaster({
           <button
             type="button"
             className="btn btn-primary btn-small"
-            disabled={busy}
+            disabled={!online || busy}
             onClick={() => failure.retry()}
           >
             Retry
