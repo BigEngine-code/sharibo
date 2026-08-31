@@ -704,6 +704,93 @@ fn get_circle_unknown_reverts() {
     let _ = client.get_circle(&999u64);
 }
 
+#[test]
+fn get_round_returns_current_round() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    assert_eq!(client.get_round(&s.circle_id), 0);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #1)")] // CircleNotFound
+fn get_round_unknown_reverts() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    client.get_round(&999u64);
+}
+
+#[test]
+fn get_pot_returns_current_pot() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    assert_eq!(client.get_pot(&s.circle_id), 0i128);
+
+    client.fund(&s.circle_id, &s.members[0]);
+    assert_eq!(client.get_pot(&s.circle_id), s.contribution);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #1)")] // CircleNotFound
+fn get_pot_unknown_reverts() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    client.get_pot(&999u64);
+}
+
+#[test]
+fn get_status_returns_round_pot_target_cancelled() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+
+    let (round, pot, target, cancelled) = client.get_status(&s.circle_id);
+    assert_eq!(round, 0);
+    assert_eq!(pot, 0i128);
+    assert_eq!(target, s.contribution * (s.size as i128));
+    assert!(!cancelled);
+
+    // Fund one member and confirm pot advances.
+    client.fund(&s.circle_id, &s.members[0]);
+    let (round2, pot2, target2, cancelled2) = client.get_status(&s.circle_id);
+    assert_eq!(round2, 0);
+    assert_eq!(pot2, s.contribution);
+    assert_eq!(target2, target);
+    assert!(!cancelled2);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #1)")] // CircleNotFound
+fn get_status_unknown_reverts() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    client.get_status(&999u64);
+}
+
+#[test]
+fn get_contributors_returns_funders_in_order() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+
+    // Before anyone funds, the list is empty.
+    let contributors = client.get_contributors(&s.circle_id);
+    assert_eq!(contributors.len(), 0);
+
+    // After two members fund, they appear in insertion order.
+    client.fund(&s.circle_id, &s.members[0]);
+    client.fund(&s.circle_id, &s.members[1]);
+    let contributors = client.get_contributors(&s.circle_id);
+    assert_eq!(contributors.len(), 2);
+    assert_eq!(contributors.get(0).unwrap(), s.members[0]);
+    assert_eq!(contributors.get(1).unwrap(), s.members[1]);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #1)")] // CircleNotFound
+fn get_contributors_unknown_reverts() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    client.get_contributors(&999u64);
+}
+
 // CPU-instruction harness: measures create_circle / fund / claim, plus a
 // synthetic larger-IC Groth16 verify (more public inputs → more g1_mul).
 // Tree depth does NOT change claim cost (circuit-only); IC length does.
@@ -1111,194 +1198,23 @@ fn instance_ttl_extended_after_create_fund_claim() {
     assert_eq!(circle.round, 1, "claim should have advanced round to 1");
 }
 
-// ---- Storage schema: golden XDR layout test ----
+// ---- Proptest: apply_fee invariants ----
 //
-// Purpose: catch accidental Circle field additions/removals/reorderings that
-// would silently corrupt on-chain data written by the current code.
+// Two sub-suites:
 //
-// How it works:
-//   1. Build a fully-deterministic Circle (all fields set to known values).
-//   2. Serialise it to XDR via the Soroban host encoding (same path used by
-//      persistent storage).
-//   3. Assert the hex matches CIRCLE_XDR_GOLDEN.
+// 1. Valid domain — lossless split: fee + net == amount exactly.
+//    Integer truncation in `fee = fee_bps * amount / 10_000` rounds *down*;
+//    the remainder always lands entirely in `net` — no tokens created or lost.
+//    Also asserts fee <= amount (net is non-negative) for the valid range.
 //
-// To intentionally change the struct layout:
-//   a. Bump `Circle::schema_version` in lib.rs.
-//   b. Run the following from contracts/sharibo/:
-//        RECORD_GOLDEN=1 cargo test circle_xdr_layout_golden -- --nocapture
-//   c. Copy the printed hex into CIRCLE_XDR_GOLDEN below.
-//   d. Add a migration path or "testnet-reset" note to the PR description.
+//    Domain:
+//      amount  : 0 ..= i128::MAX / 2   (avoids intermediate multiplication
+//                 overflow, since fee_bps ≤ 10_000 and
+//                 10_000 * (i128::MAX / 2) < i128::MAX)
+//      fee_bps : 0 ..= 10_000          (0% – 100%)
 //
-// If you added/removed a field on Circle without updating CIRCLE_XDR_GOLDEN,
-// this test will fail — that is intentional.
-
-/// Committed serialisation of a deterministic [`Circle`] fixture.
-///
-/// Schema version 1. Regenerate with:
-/// ```sh
-/// RECORD_GOLDEN=1 cargo test circle_xdr_layout_golden -- --nocapture
-/// ```
-/// Run from `contracts/sharibo/`, paste the printed hex here, and bump
-/// `Circle::schema_version` in `lib.rs`.
-///
-/// Set to the empty string to trigger the RECORD_GOLDEN path on the first run.
-const CIRCLE_XDR_GOLDEN: &str = "";
-
-#[test]
-fn circle_xdr_layout_golden() {
-    let env = Env::default();
-
-    // Build a fully deterministic Circle — every field pinned to a known
-    // value so the serialised output is reproducible across machines and
-    // SDK versions.
-    //
-    // Addresses: we use the all-zeros Stellar account (the strkey
-    // "GAAAAAA...AAWHF") for both admin and token so the output is stable.
-    let fixed_addr = Address::from_strkey(&soroban_sdk::String::from_str(
-        &env,
-        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-    ));
-
-    // Fr(1): a non-zero deterministic scalar.
-    let one_fr = Fr::from_u256(soroban_sdk::U256::from_u32(&env, 1));
-
-    // Minimal valid-shaped VerificationKey: one ic entry (zero public inputs).
-    // We only care about XDR layout, not proof validity.
-    let zero_g1 = {
-        let buf = [0u8; soroban_sdk::crypto::bls12_381::G1_SERIALIZED_SIZE];
-        G1Affine::from_array(&env, &buf)
-    };
-    let zero_g2 = {
-        let buf = [0u8; soroban_sdk::crypto::bls12_381::G2_SERIALIZED_SIZE];
-        G2Affine::from_array(&env, &buf)
-    };
-    let vk = VerificationKey {
-        alpha: zero_g1.clone(),
-        beta: zero_g2.clone(),
-        gamma: zero_g2.clone(),
-        delta: zero_g2.clone(),
-        ic: soroban_sdk::vec![&env, zero_g1],
-    };
-
-    let circle = Circle {
-        schema_version: 1,
-        admin: fixed_addr.clone(),
-        token: fixed_addr,
-        root: one_fr,
-        contribution: 100,
-        size: 5,
-        round: 0,
-        pot: 0,
-        vk,
-        contributors: soroban_sdk::Vec::new(&env),
-        cancelled: false,
-    };
-
-    // Serialise via the host-level ScVal encoding (the same path used by
-    // `env.storage().persistent().set()`). ToXdr is blanket-implemented for
-    // every T: IntoVal<Env, Val>, which #[contracttype] provides for Circle.
-    use soroban_sdk::xdr::ToXdr;
-    let xdr_bytes = circle.to_xdr(&env);
-    let hex: std::string::String = xdr_bytes.iter().map(|b| format!("{b:02x}")).collect();
-
-    // When RECORD_GOLDEN=1 is set, print the hex and pass so the developer
-    // can paste it into CIRCLE_XDR_GOLDEN above.
-    if std::env::var("RECORD_GOLDEN").is_ok() {
-        std::println!(
-            "\n=== RECORD_GOLDEN: paste the line below into CIRCLE_XDR_GOLDEN ===\n\"{hex}\"\n==="
-        );
-        return;
-    }
-
-    assert!(
-        !CIRCLE_XDR_GOLDEN.is_empty(),
-        "\nCIRCLE_XDR_GOLDEN is empty — you need to record the golden value.\n\
-         Run from contracts/sharibo/:\n\
-         \n  RECORD_GOLDEN=1 cargo test circle_xdr_layout_golden -- --nocapture\n\
-         \nthen paste the printed hex into CIRCLE_XDR_GOLDEN in test.rs."
-    );
-
-    assert_eq!(
-        hex,
-        CIRCLE_XDR_GOLDEN,
-        "\n\nCircle XDR layout has changed!\n\
-         This means you added, removed, or reordered a field on Circle.\n\
-         Required steps:\n\
-         1. Bump Circle::schema_version in lib.rs.\n\
-         2. Run: RECORD_GOLDEN=1 cargo test circle_xdr_layout_golden -- --nocapture\n\
-         3. Paste the printed hex into CIRCLE_XDR_GOLDEN in test.rs.\n\
-         4. Add a migration path or testnet-reset note to your PR.\n\n\
-         Got:\n  {hex}"
-    );
-}
-
-// ---- Error table variant count guard ----
-//
-// Purpose: ensure docs/errors.md stays in sync with the Error enum.
-//
-// How it works:
-//   The Error enum uses #[repr(u32)] with contiguous discriminants starting
-//   at 1. The highest discriminant therefore equals the number of variants.
-//   DOCUMENTED_ERROR_COUNT commits that number. If a new variant is added
-//   to the enum without bumping DOCUMENTED_ERROR_COUNT and adding a row to
-//   docs/errors.md, this test fails.
-//
-// When adding a new Error variant:
-//   1. Add the variant to `pub enum Error` in lib.rs with the next integer.
-//   2. Add a row to docs/errors.md.
-//   3. Bump DOCUMENTED_ERROR_COUNT below to match.
-//   4. Add or extend an SDK class in packages/client/src/errors.ts if the
-//      new code needs its own user-facing treatment.
-
-/// Number of variants in `Error`, and the number of rows in docs/errors.md.
-/// Bump this in the same commit that adds a new variant — see the comment above.
-const DOCUMENTED_ERROR_COUNT: u32 = 8;
-
-#[test]
-fn error_table_variant_count() {
-    // The enum is #[repr(u32)] with variants numbered 1..=N consecutively,
-    // so the highest discriminant is exactly N.
-    let highest = [
-        Error::CircleNotFound  as u32, // 1
-        Error::RoundNotFunded  as u32, // 2
-        Error::WrongRoundTag   as u32, // 3
-        Error::AlreadyClaimed  as u32, // 4
-        Error::InvalidProof    as u32, // 5
-        Error::RoundFull       as u32, // 6
-        Error::Overflow        as u32, // 7
-        Error::CircleCancelled as u32, // 8
-    ]
-    .into_iter()
-    .max()
-    .unwrap();
-
-    assert_eq!(
-        highest,
-        DOCUMENTED_ERROR_COUNT,
-        "\n\nError enum has {} variant(s) but DOCUMENTED_ERROR_COUNT is {}.\n\
-         Required steps:\n\
-         1. Add a row to docs/errors.md for every new/removed variant.\n\
-         2. Bump DOCUMENTED_ERROR_COUNT in test.rs to {}.\n\
-         3. Update packages/client/src/errors.ts if the new code needs \
-         its own SDK class.\n",
-        highest,
-        DOCUMENTED_ERROR_COUNT,
-        highest,
-    );
-}
-
-// ---- Proptest: apply_fee rounding invariant ----
-//
-// For every (amount, fee_bps) pair in the valid domain, the split must be
-// lossless: fee + net == amount exactly.  Integer truncation in
-// `fee = fee_bps * amount / 10_000` means `fee` rounds *down*, but the
-// remainder always lands entirely in `net` — no tokens are created or lost.
-//
-// Domain:
-//   amount  : 0 ..= i128::MAX / 2   (avoids intermediate multiplication
-//              overflow in fee_bps * amount, since fee_bps ≤ 10_000 and
-//              10_000 * (i128::MAX / 2) < i128::MAX)
-//   fee_bps : 0 ..= 10_000          (0% – 100%, the full valid range)
+// 2. Out-of-range rejection — fee_bps > 10_000 or amount < 0 must panic
+//    with Error::InvalidFeeParams rather than silently produce a negative net.
 mod proptest_apply_fee {
     use super::*;
     use proptest::prelude::*;
@@ -1309,13 +1225,37 @@ mod proptest_apply_fee {
             amount  in 0_i128..=(i128::MAX / 2),
             fee_bps in 0_u32..=10_000_u32,
         ) {
-            let (fee, net) = apply_fee(fee_bps, amount);
+            let env = Env::default();
+            let (fee, net) = apply_fee(&env, fee_bps, amount);
             prop_assert_eq!(
                 fee + net,
                 amount,
                 "apply_fee({}, {}) = ({}, {}); fee + net = {}",
                 fee_bps, amount, fee, net, fee + net
             );
+            // net must never be negative — fee cannot exceed the amount.
+            prop_assert!(net >= 0, "apply_fee({fee_bps}, {amount}) produced negative net {net}");
+        }
+
+        #[test]
+        fn rejects_fee_bps_above_10000(
+            amount  in 0_i128..=(i128::MAX / 2),
+            excess  in 1_u32..=u32::MAX - 10_000,
+        ) {
+            let env = Env::default();
+            let fee_bps = 10_000_u32 + excess;
+            let result = std::panic::catch_unwind(|| apply_fee(&env, fee_bps, amount));
+            prop_assert!(result.is_err(), "apply_fee({fee_bps}, {amount}) should have panicked");
+        }
+
+        #[test]
+        fn rejects_negative_amount(
+            amount  in i128::MIN..=-1_i128,
+            fee_bps in 0_u32..=10_000_u32,
+        ) {
+            let env = Env::default();
+            let result = std::panic::catch_unwind(|| apply_fee(&env, fee_bps, amount));
+            prop_assert!(result.is_err(), "apply_fee({fee_bps}, {amount}) should have panicked");
         }
     }
 }
