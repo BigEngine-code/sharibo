@@ -1,18 +1,305 @@
-import { useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
+import { Keypair } from "@stellar/stellar-sdk";
+import {
+  isConnected,
+  requestAccess,
+  isAllowed,
+  getAddress,
+  getNetworkDetails,
+  signTransaction as freighterSignTx
+} from "@stellar/freighter-api";
+import {
+  generateIdentity,
+  computeExternalNullifier,
+  MerkleTree,
+  generateProof,
+  verifyProofLocally,
+  verificationKeyToContractFormat,
+  connect,
+  createCircle,
+  fund,
+  claim,
+  getCircle,
+  hasClaimed,
+  TREE_LEVELS,
+  type Identity,
+  type ContractProof,
+  ContractError,
+  RpcError,
+  ProvingError,
+  InvalidInputError,
+} from "@sharibo/client";
+import { config, configError } from "./config";
 import { useI18n } from "./i18n";
 import { useCircleFlow } from "./hooks/useCircleFlow";
 import { usePoliteLiveRegion } from "./usePoliteLiveRegion";
 import { configError, NETWORK, CIRCLE_SIZE } from "./config";
 import { explorerContract } from "./lib/explorer";
 import {
-  Landing,
-  NetworkBanner,
-  Stepper,
-  MemberRing,
-  FundingList,
-  ClaimSection,
-  ResultCard,
-} from "./components/index";
+  friendbotFund as fundWithFriendbot,
+  FriendbotRetryableError,
+  FRIEND_BOT_RATE_LIMIT_MESSAGE,
+} from "./lib/friendbot";
+
+const BIGINT_MARKER = 'BIGINT::';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function replacer(key: string, value: any) {
+  if (typeof value === 'bigint') {
+    return BIGINT_MARKER + value.toString();
+  }
+  return value;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function reviver(key: string, value: any) {
+  if (typeof value === 'string' && value.startsWith(BIGINT_MARKER)) {
+    return BigInt(value.slice(BIGINT_MARKER.length));
+  }
+  return value;
+}
+
+const NETWORK = {
+  contractId: config.contractId,
+  rpcUrl: config.rpcUrl,
+  networkPassphrase: config.networkPassphrase,
+};
+const TOKEN = config.testTokenContractId;
+const LEVELS = TREE_LEVELS;
+const CIRCLE_SIZE = 5;
+const STROOPS_PER_XLM = 10_000_000n;
+const README_URL = "https://github.com/crackedstudio/sharibo#honest-limitations";
+
+const isTestnet = NETWORK.networkPassphrase.includes("Test SDF Network");
+const BANNER_TEXT = isTestnet ? "Stellar testnet — no real funds" : "";
+
+function TestnetBanner() {
+  if (!BANNER_TEXT) return null;
+  return (
+    <div className="testnet-banner">
+      <span>{BANNER_TEXT}</span>
+      <a className="banner-link" href={README_URL} target="_blank" rel="noreferrer">
+        honest limitations ↗
+      </a>
+    </div>
+  );
+}
+
+const NAMES = [
+  "ajo",
+  "esusu",
+  "tanda",
+  "cundina",
+  "susu",
+  "tontine",
+  "junta",
+  "pandero",
+  "consórcio",
+  "hui",
+  "paluwagan",
+  "chit fund",
+];
+
+function toUiError(error: unknown): string {
+  if (error instanceof FriendbotRetryableError) {
+    return FRIEND_BOT_RATE_LIMIT_MESSAGE;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "Something went wrong. Please retry.";
+}
+
+function explorerAccount(address: string): string {
+  return `https://stellar.expert/explorer/testnet/account/${address}`;
+}
+function explorerContract(): string {
+  return `https://stellar.expert/explorer/testnet/contract/${NETWORK.contractId}`;
+}
+function short(address: string): string {
+  return `${address.slice(0, 4)}…${address.slice(-4)}`;
+}
+
+// Every truncated value on screen (addresses, tx hashes) needs to be
+// pasteable in full somewhere else — a CLI call, an explorer search — so
+// this pairs with each `short(...)` display. Falls back to a prompt() (which
+// itself is trivially copyable) when the async Clipboard API isn't
+// available, e.g. non-secure contexts.
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(t);
+  }, [copied]);
+
+  async function handleCopy() {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard API unavailable");
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+    } catch {
+      window.prompt(`Clipboard unavailable — copy ${label} manually:`, value);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      className="copy-btn"
+      onClick={handleCopy}
+      aria-label={`Copy ${label}`}
+      title={`Copy ${label}`}
+    >
+      {copied ? "✓" : "📋"}
+    </button>
+  );
+}
+
+interface Member {
+  keypair: Keypair;
+  identity: Identity;
+  funded: boolean;
+  fundHash?: string;
+  freighterKey?: string;
+}
+
+interface ClaimResult {
+  recipient: string;
+  hash: string;
+  proofDurationMs: number;
+  verifyTimeMs: number;
+}
+
+// The visible stages of doClaim, in the order they actually occur. snarkjs's
+// fullProve is one opaque call, so "proving" covers witness computation +
+// proof generation together — it gets its own elapsed timer instead of a
+// substage breakdown, since we can't observe a finer boundary inside it.
+type ClaimStage = "artifacts" | "proving" | "verifying" | "funding" | "submitting";
+
+const CLAIM_STAGE_LABELS: Record<ClaimStage, string> = {
+  artifacts: "Fetching proving artifacts (wasm + zkey)…",
+  proving: "Proving…",
+  verifying: "Verifying proof locally…",
+  funding: "Funding a fresh, unlinked recipient…",
+  submitting: "Submitting the claim…",
+};
+
+const CLAIM_STAGES: ClaimStage[] = ["artifacts", "proving", "verifying", "funding", "submitting"];
+
+// So a claim never reads as a hung tab: each real substage of doClaim gets
+// its own line here (fullProve itself stays one opaque "proving" step, per
+// snarkjs, but that step gets a live elapsed-seconds counter + spinner so a
+// slow prove still visibly ticks rather than sitting static).
+function ClaimProgress({ stage, elapsedSeconds }: { stage: ClaimStage; elapsedSeconds: number }) {
+  const activeIndex = CLAIM_STAGES.indexOf(stage);
+  return (
+    <div className="claim-progress">
+      <div className="stepper">
+        {CLAIM_STAGES.map((s, i) => (
+          <div
+            key={s}
+            className={`step ${i < activeIndex ? "done" : i === activeIndex ? "active" : ""}`}
+          >
+            <span className="step-dot">{i < activeIndex ? "✓" : i + 1}</span>
+            {CLAIM_STAGE_LABELS[s]}
+          </div>
+        ))}
+      </div>
+      {stage === "proving" && (
+        <p className="techline">
+          <span className="spinner" aria-hidden="true" /> Groth16 · BLS12-381 · 1,452 constraints ·
+          proving locally in your browser, nothing sent anywhere until the proof is done ·{" "}
+          {elapsedSeconds}s elapsed
+        </p>
+      )}
+    </div>
+  );
+}
+
+function Stepper({ step }: { step: 0 | 1 | 2 | 3 }) {
+  const { t } = useI18n();
+  const labels = [t("step.create"), t("step.fund"), t("step.proveClaim"), t("step.unlinked")];
+  return (
+    // nav + ol give screen readers "step N of 4" list semantics without
+    // changing any visual output — CSS targets .stepper and .step as before.
+    <nav aria-label="Circle progress">
+      <ol className="stepper" style={{ listStyle: "none", margin: 0, padding: 0 }}>
+        {labels.map((label, i) => {
+          const state = i < step ? "done" : i === step ? "active" : "";
+          return (
+            <li
+              key={label}
+              className={`step ${state}`}
+              // aria-current="step" marks the single active step; completed
+              // and upcoming steps get no aria-current attribute at all.
+              {...(i === step ? { "aria-current": "step" as const } : {})}
+            >
+              {/* The dot (✓ / number) is decorative — the li text already
+                  conveys position, so hide the dot from the AT tree. */}
+              <span className="step-dot" aria-hidden="true">
+                {i < step ? "✓" : i + 1}
+              </span>
+              {label}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
+  );
+}
+
+function NetworkBanner() {
+  const isTestnet = NETWORK.networkPassphrase.toLowerCase().includes("test");
+  if (!isTestnet) return null;
+  return (
+    <div className="network-banner">
+      Stellar testnet — no real funds ·{" "}
+      <a
+        href="https://github.com/glorious21-coder/sharibo#honest-limitations"
+        target="_blank"
+        rel="noreferrer"
+      >
+        limitations ↗
+      </a>
+    </div>
+  );
+}
+
+// Purely presentational: after a claim, none of the 5 nodes are highlighted
+// as "the one that claimed" — that's the point. From outside the ring, all
+// five remain equally plausible; only the demo operator (via the radio
+// picker below) ever knows which one actually did.
+function useRingRadius(): number {
+  const [radius, setRadius] = useState(100);
+
+  useEffect(() => {
+    const read = () => {
+      const value = getComputedStyle(document.documentElement).getPropertyValue("--ring-radius");
+      setRadius(parseFloat(value) || 100);
+    };
+    read();
+    window.addEventListener("resize", read);
+    return () => window.removeEventListener("resize", read);
+  }, []);
+
+  return radius;
+}
+
+function MemberRing({ members, revealed }: { members: { funded: boolean }[]; revealed: boolean }) {
+  const radius = useRingRadius();
+  const fundedCount = members.filter((m) => m.funded).length;
+
+  // Build a concise, dynamic summary for assistive technology.
+  const ringLabel = revealed
+    ? `${members.length}-member circle — pot claimed. Payout recipient is unlinkable to any member.`
+    : `${members.length}-member circle, ${fundedCount} of ${members.length} funded, pot not yet claimed.`;
+
+  // id used to associate the post-claim caption with the figure via
+  // aria-describedby so VoiceOver reads it as supplementary description.
+  const captionId = "ring-caption";
 
 // ── Setup-error screen ──────────────────────────────────────────────────────
 
@@ -121,10 +408,294 @@ export default function App() {
 
   const payoutHeadingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
-    if (flow.claimResult) payoutHeadingRef.current?.focus();
-  }, [flow.claimResult]);
+    if (claimResult) {
+      payoutHeadingRef.current?.focus();
+    }
+  }, [claimResult]);
+  // ────────────────────────────────────────────────────────────────────────
 
-  // ── Live-region announcements ─────────────────────────────────────────────
+  // Every hook above must run on every render, so this check — which used to
+  // sit at the top of the component and return before any hooks ran — moved
+  // here instead. configError is computed once at module load, so this still
+  // reliably short-circuits into the setup screen; it just no longer skips
+  // hook calls to do it.
+  if (configError.length > 0) {
+    return <EnvSetupScreen errors={configError} />;
+  }
+
+  // Reset every piece of React state back to its initial value and return to
+  // the landing screen. The circle itself is never touched on-chain — it lives
+  // on forever; we just stop pointing the UI at it (and remember its id so the
+  // landing screen can link back to it). Confirm first only when a circle is
+  // mid-flow — funded but not yet claimed — so an accidental click can't throw
+  // away an in-progress round; a completed or untouched circle resets silently.
+  function resetToLanding() {
+    const midFlow = fundedCount > 0 && !claimResult;
+    if (midFlow) {
+      const ok = window.confirm(
+        "This circle is funded but hasn't claimed yet. Start over anyway?\n\n" +
+          "Your current circle stays on-chain — you just won't see it here.",
+      );
+      if (!ok) return;
+    }
+
+    setPreviousCircleId(circleId);
+    sessionStorage.removeItem("sharibo_demo_state");
+
+    setBusy(null);
+    setError(null);
+    setContributionXlm(10);
+    setAdmin(null);
+    setMembers([]);
+    setTree(null);
+    setCircleId(null);
+    setRound(0);
+    setPot(0n);
+    setClaimantIndex(0);
+    setProof(null);
+    setNullifierHash(null);
+    setClaimResult(null);
+    setIsProving(false);
+    setProvingElapsedMs(null);
+    setNullifierClaimed(false);
+    setRejection(null);
+    setClaimStage(null);
+    setProveElapsedSeconds(0);
+    setScreen("landing");
+  }
+
+  function loadState(parsed: any) {
+    setContributionXlm(parsed.contributionXlm);
+    setAdmin(Keypair.fromSecret(parsed.adminSecret));
+    
+    const loadedMembers = parsed.members.map((m: any) => ({
+      keypair: Keypair.fromSecret(m.secret),
+      identity: m.identity,
+      funded: m.funded,
+      fundHash: m.fundHash,
+    }));
+    setMembers(loadedMembers);
+    
+    const newTree = MerkleTree.create(
+      LEVELS,
+      loadedMembers.map((m: any) => m.identity.commitment)
+    );
+    setTree(newTree);
+
+    setCircleId(parsed.circleId);
+    setRound(parsed.round);
+    setPot(parsed.pot);
+    setClaimantIndex(parsed.claimantIndex);
+    setProof(parsed.proof);
+    setNullifierHash(parsed.nullifierHash);
+    setClaimResult(parsed.claimResult);
+    setRejection(parsed.rejection);
+    
+    setScreen("circle");
+    setResumePrompt(null);
+  }
+
+  async function startCircle() {
+    setError(null);
+    setBusy(
+      "Generating a fresh admin + 5 member identities and funding via friendbot…",
+    );
+    try {
+      const [{ Keypair }, client] = await Promise.all([
+        import("@stellar/stellar-sdk"),
+        import("@sharibo/client")
+      ]);
+      const { generateIdentity, MerkleTree, verificationKeyToContractFormat, connect, createCircle } = client;
+
+      setBusy("Generating a fresh admin + 5 member identities and funding via friendbot…");
+      const adminKp = Keypair.random();
+      await fundWithFriendbot(adminKp.publicKey());
+
+      const newMembers: Member[] = Array.from({ length: CIRCLE_SIZE }, () => ({
+        keypair: Keypair.random(),
+        identity: generateIdentity(),
+        funded: false,
+      }));
+
+      const newTree = MerkleTree.create(
+        LEVELS,
+        newMembers.map((m) => m.identity.commitment),
+      );
+
+      setBusy("Creating the circle on testnet…");
+      const vkJson = await fetch("/circuits/verification_key.json").then((r) =>
+        r.json(),
+      );
+      const vk = verificationKeyToContractFormat(vkJson);
+      const adminClient = await connect(NETWORK, adminKp);
+      const { result: newCircleId } = await createCircle(adminClient, {
+        admin: adminKp.publicKey(),
+        token: TOKEN,
+        root: newTree.root,
+        contribution,
+        size: CIRCLE_SIZE,
+        vk,
+      });
+
+      setAdmin(adminKp);
+      setMembers(newMembers);
+      setTree(newTree);
+      setCircleId(newCircleId);
+      setRound(0);
+      setPot(0n);
+      setScreen("circle");
+    } catch (e) {
+      setError(toUiError(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function fundMember(i: number) {
+    if (!admin || circleId === null) return;
+    setError(null);
+    setBusy(`Funding from member ${i + 1}…`);
+    try {
+      const [{ Keypair }, { connect, fund, getCircle }] = await Promise.all([
+        import("@stellar/stellar-sdk"),
+        import("@sharibo/client")
+      ]);
+      const m = members[i];
+      await fundWithFriendbot(m.keypair.publicKey());
+      const memberClient = await connect(NETWORK, m.keypair);
+      const { hash } = await fund(memberClient, {
+        circleId,
+        from: m.keypair.publicKey(),
+      });
+      setMembers((prev) =>
+        prev.map((mm, idx) =>
+          idx === i ? { ...mm, funded: true, fundHash: hash } : mm,
+        ),
+      );
+      const adminClient = await connect(NETWORK, admin);
+      const circle = await getCircle(adminClient, circleId);
+      setPot(circle.pot);
+      setRound(circle.round);
+    } catch (e) {
+      setError(toUiError(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function fundWithFreighter(i: number) {
+    if (!admin || circleId === null) return;
+    setError(null);
+    setBusy(`Funding from member ${i + 1} via Freighter…`);
+    try {
+      const allowedRes = await isAllowed();
+      if (!allowedRes.isAllowed) {
+        await requestAccess();
+      }
+
+      const networkRes = await getNetworkDetails();
+      if (networkRes.network !== "TESTNET") {
+        throw new Error("Freighter is not set to Testnet. Please switch your network in Freighter.");
+      }
+
+      const addressRes = await getAddress();
+      const pubKey = addressRes.address;
+      if (!pubKey) {
+        throw new Error("Could not get address from Freighter.");
+      }
+      
+      const freighterSigner = {
+        publicKey: pubKey,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        signTransaction: async (txXdr: string, opts?: any) => {
+          const signedRes = await freighterSignTx(txXdr, {
+            networkPassphrase: networkRes.networkPassphrase
+          });
+          if (signedRes.error) {
+            throw new Error(signedRes.error.toString());
+          }
+          return signedRes.signedTxXdr;
+        }
+      };
+
+      const memberClient = await connect(NETWORK, freighterSigner);
+      const { hash } = await fund(memberClient, {
+        circleId,
+        from: pubKey,
+      });
+
+      setMembers((prev) =>
+        prev.map((mm, idx) => (idx === i ? { ...mm, funded: true, fundHash: hash, freighterKey: pubKey } : mm)),
+      );
+
+      const adminClient = await connect(NETWORK, admin);
+      const circle = await getCircle(adminClient, circleId);
+      setPot(circle.pot);
+      setRound(circle.round);
+    } catch (e) {
+      setError(getErrorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function doClaim() {
+    if (!admin || !tree || circleId === null) return;
+    setError(null);
+    setClaimResult(null);
+    setRejection(null);
+    setBusy("Claiming…");
+    try {
+      const [{ Keypair }, { computeExternalNullifier, generateProof, verifyProofLocally, connect, claim, getCircle }] = await Promise.all([
+        import("@stellar/stellar-sdk"),
+        import("@sharibo/client")
+      ]);
+      const claimant = members[claimantIndex];
+      const merkleProof = tree.proof(claimantIndex);
+      const externalNullifier = await computeExternalNullifier(circleId, BigInt(round));
+
+      setClaimStage("artifacts");
+      const [wasm, zkey, vkJson] = await Promise.all([
+        fetch("/circuits/membership.wasm")
+          .then((r) => r.arrayBuffer())
+          .then((b) => new Uint8Array(b)),
+        fetch("/circuits/membership_final.zkey")
+          .then((r) => r.arrayBuffer())
+          .then((b) => new Uint8Array(b)),
+        fetch("/circuits/verification_key.json").then((r) => r.json()),
+      ]);
+
+      setClaimStage("proving");
+      setProveElapsedSeconds(0);
+      const proveTimer = setInterval(() => setProveElapsedSeconds((s) => s + 1), 1000);
+      let generated;
+      try {
+        generated = await generateProof(
+          {
+            identityNullifier: claimant.identity.identityNullifier,
+            identitySecret: claimant.identity.identitySecret,
+            pathElements: merkleProof.pathElements,
+            pathIndices: merkleProof.pathIndices,
+            root: tree.root,
+            externalNullifier,
+          },
+          wasm,
+          zkey,
+        );
+      } finally {
+        clearInterval(proveTimer);
+      }
+
+      setClaimStage("verifying");
+      const verifyTimeMs = await verifyProofLocally(
+        vkJson,
+        generated.publicSignals,
+        generated.snarkjsProof,
+      );
+
+      setClaimStage("funding");
+      const recipient = Keypair.random();
+      await fundWithFriendbot(recipient.publicKey());
 
   useEffect(() => {
     if (flow.busy) { announce(`Help: ${flow.busy}`); return; }
@@ -133,7 +704,15 @@ export default function App() {
     if (flow.fullyFunded) announce("Price update complete. The claim step is ready.");
   }, [announce, flow.busy, flow.claimResult, flow.error, flow.fullyFunded]);
 
-  // ── Env-error guard (must run after all hooks) ────────────────────────────
+      setProof(generated.proof);
+      setNullifierHash(generated.nullifierHash);
+      setClaimResult({
+        recipient: recipient.publicKey(),
+        hash,
+        proofDurationMs: generated.provingTimeMs,
+        verifyTimeMs,
+      });
+      setNullifierClaimed(await hasClaimed(adminClient, circleId, generated.nullifierHash));
 
   if (configError.length > 0) {
     return <EnvSetupScreen errors={configError} />;
@@ -200,13 +779,60 @@ export default function App() {
           round {flow.round}
         </p>
 
-        <FundingList
-          members={flow.members}
-          busy={flow.busy}
-          round={flow.round}
-          contributionXlm={flow.contributionXlm}
-          onFund={flow.fundMember}
-        />
+        <h2>Fund</h2>
+        <p className="token-notice">
+          Token:{" "}
+          <a
+            className="link"
+            href={`https://stellar.expert/explorer/testnet/contract/${TOKEN}`}
+            target="_blank"
+            rel="noreferrer"
+            title="Verify this token contract before funding"
+          >
+            <code>{TOKEN.slice(0, 6)}…{TOKEN.slice(-4)}</code> ↗
+          </a>{" "}
+          <CopyButton value={TOKEN} label="token contract address" />
+          <span className="token-notice-tip"> — verify this address before funding</span>
+        </p>
+        <div className="members">
+          {members.map((m, i) => (
+            <div key={i} className={`member ${m.funded ? "funded" : ""}`}>
+              <span className="member-addr">
+                member {i + 1} · {short(m.keypair.publicKey())}
+                <CopyButton value={m.keypair.publicKey()} label={`member ${i + 1} address`} />
+              </span>
+              {m.funded ? (
+                <a
+                  className="link"
+                  href={explorerTx(m.fundHash!)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  ✓ funded ↗
+                </a>
+              ) : (
+                <div className="row">
+                  <button
+                    className="btn btn-small"
+                    disabled={!!busy || round > 0}
+                    onClick={() => fundMember(i)}
+                  >
+                    Fund {contributionXlm} XLM (Demo)
+                  </button>
+                  {hasFreighter && (
+                    <button
+                      className="btn btn-small"
+                      disabled={!!busy || round > 0}
+                      onClick={() => fundWithFreighter(i)}
+                    >
+                      Fund with Freighter
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
 
         {flow.fullyFunded && !flow.claimResult && (
           <>
@@ -223,16 +849,88 @@ export default function App() {
           </>
         )}
 
-        {flow.claimResult && (
-          <ResultCard
-            claimResult={flow.claimResult}
-            rejection={flow.rejection}
-            busy={flow.busy}
-            nullifierClaimed={flow.nullifierClaimed}
-            circleId={flow.circleId}
-            onClaimAgain={flow.claimAgain}
-            onReset={flow.resetToLanding}
-          />
+        {claimResult && (
+          <div className="result">
+            <h2 ref={payoutHeadingRef} tabIndex={-1}>
+              Payout landed
+            </h2>
+            <p>
+              Fresh recipient <code>{short(claimResult.recipient)}</code>
+              <CopyButton value={claimResult.recipient} label="recipient address" />{" "}
+              <a href={explorerAccount(claimResult.recipient)} target="_blank" rel="noreferrer">
+                ↗
+              </a>{" "}
+              received the pot. It has never appeared anywhere else on this
+              circle.
+            </p>
+            <a
+              className="link"
+              href={explorerTx(claimResult.hash)}
+              target="_blank"
+              rel="noreferrer"
+            >
+              view claim transaction ↗
+            </a>
+            <CopyButton value={claimResult.hash} label="claim transaction hash" />
+            <p className="callout">
+              Compare the 5 funding transactions above to this claim — same
+              contract, no shared address, no visible link.
+            </p>
+            <p className="techline">
+              proof generated in {(claimResult.proofDurationMs / 1000).toFixed(1)}s ·
+              local verify {claimResult.verifyTimeMs.toFixed(0)}ms ✓
+            </p>
+            <button
+              className="btn btn-danger"
+              disabled={!!busy || (!!rejection && nullifierClaimed)}
+              onClick={claimAgain}
+              title={
+                rejection && nullifierClaimed
+                  ? "Nullifier already claimed (has_claimed)"
+                  : undefined
+              }
+            >
+              {busy ?? "Try to claim again with the same proof"}
+            </button>
+            {nullifierClaimed && !rejection && (
+              <p className="callout">
+                <code>has_claimed</code> is true for this nullifier — a replay will be rejected
+                on-chain.
+              </p>
+            )}
+            {rejection && (
+              <>
+                <div className="rejected">
+                  <strong>Rejected on-chain:</strong> {rejection}
+                </div>
+                <button
+                  className="btn btn-primary"
+                  disabled={!!busy}
+                  onClick={resetToLanding}
+                >
+                  Start a new circle
+                </button>
+              </>
+            )}
+            {rejection && (
+              <div className="new-circle-cta">
+                <button
+                  className="btn btn-primary"
+                  disabled={!!busy}
+                  onClick={resetToLanding}
+                >
+                  ↺ Start a new circle
+                </button>
+                <p className="fineprint">
+                  Circle #{circleId?.toString()} stays on-chain forever —{" "}
+                  <a className="link" href={explorerContract()} target="_blank" rel="noreferrer">
+                    view on explorer ↗
+                  </a>
+                  . Starting a new circle generates fresh identities and a brand-new on-chain record.
+                </p>
+              </div>
+            )}
+          </div>
         )}
 
         {flow.error && <p className="error">{flow.error}</p>}

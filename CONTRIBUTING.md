@@ -48,52 +48,32 @@ We use a set of topic labels to categorize issues and pull requests. These label
 
 When looking for issues to work on, start by filtering by the `good first issue` label. These issues are specifically marked as suitable for newcomers and provide a great way to get familiar with the codebase. Before you start working on an issue, leave a comment to claim it and let the maintainers know you're working on it. If you have questions about the issue or need clarification, ask them directly on the issue rather than in a pull request—this helps keep the PR focused on the implementation.
 
-## Dead-code check
+## SDK API Changes
 
-Sharibo uses [knip](https://knip.dev) to catch unused files, unused exports,
-and unused dependencies before they accumulate.  The check runs as part of the
-full test suite (`just test`) and can be run standalone:
+The SDK (`@sharibo/client`) has a committed snapshot of its public API surface in `packages/client/api-surface.json`. When you intentionally add, remove, or rename exported functions, types, or constants, the test `packages/client/src/api-surface.test.ts` will catch the mismatch.
 
-```bash
-npm run lint:dead
-# or: just lint-dead
-```
+### Updating the API Snapshot
 
-**Zero issues is the baseline.**  Adding an unreferenced module, export, or
-import will fail the check in CI.
+If your change is intentional (e.g., renaming a function, adding a new export):
 
-### Marking an intentional public export
+1. Make your code change and run the test:
+   ```bash
+   npm run test -- packages/client/src/api-surface.test.ts
+   ```
+   
+2. The test will fail with a diff showing what changed.
 
-`packages/client/src/index.ts` is the SDK barrel — every export it re-exports
-is public API and is automatically exempt from dead-code reporting because
-`includeEntryExports` is `false` for that workspace.
+3. Review the diff carefully to confirm it matches your intent.
 
-For any *other* symbol that knip flags but that you intentionally want to keep
-(e.g. a utility exported only for external consumers or for tests in a
-downstream package), add the `@public` JSDoc tag:
+4. Update `packages/client/api-surface.json` to match the new API:
+   ```bash
+   npm run test -- packages/client/src/api-surface.test.ts --reporter=json > /tmp/api.json
+   ```
+   Then copy the actual exports into `api-surface.json`.
 
-```ts
-/**
- * Shared field-element modulus — exported for downstream use.
- * @public
- */
-export const FR_MODULUS = 0x73eda753…n;
-```
+5. Commit both your code changes and the updated `api-surface.json` together. This makes it easy to see in the PR what the API change is.
 
-The `knip.jsonc` config at the repo root suppresses issues for any export
-tagged `@public`.  Use this sparingly — prefer wiring up the module properly
-over suppressing the warning.
-
-### Fixing a reported issue
-
-| Issue type | Typical fix |
-|---|---|
-| Unused file | Wire it up to an entry point, or delete it |
-| Unused export | Import it somewhere, delete it, or tag `@public` |
-| Unused dependency | Remove from `package.json`, or add to `ignoreDependencies` in `knip.jsonc` with a comment |
-
-See [knip.dev/guides/handling-issues](https://knip.dev/guides/handling-issues)
-for a full guide.
+If the test fails unexpectedly, it means you've inadvertently changed the public API. Consider whether that's the right fix, or if you should rename more carefully or preserve backward compatibility.
 
 ## Setup trouble?
 

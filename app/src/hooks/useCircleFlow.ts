@@ -5,6 +5,8 @@ import {
   computeExternalNullifier,
   MerkleTree,
   generateProof,
+  verifyProofLocally,
+  estimateClaimFee,
   verificationKeyToContractFormat,
   connect,
   createCircle,
@@ -13,11 +15,24 @@ import {
   getCircle,
   hasClaimed,
   type ContractProof,
+  type FeeEstimate,
+  TREE_LEVELS,
 } from "@sharibo/client";
-import { NETWORK, TOKEN, LEVELS, CIRCLE_SIZE, STROOPS_PER_XLM } from "../config.js";
+import { config } from "../config.js";
 import { friendbotFund } from "../lib/friendbot.js";
 import type { Member, ClaimResult } from "../types.js";
 import type { ClaimStage } from "../components/ClaimSection.js";
+
+// Derive constants from config (same as App.tsx does)
+const NETWORK = {
+  contractId: config.contractId,
+  rpcUrl: config.rpcUrl,
+  networkPassphrase: config.networkPassphrase,
+};
+const TOKEN = config.testTokenContractId;
+const LEVELS = TREE_LEVELS;
+const CIRCLE_SIZE = 5;
+const STROOPS_PER_XLM = 10_000_000n;
 
 // All the state and on-chain calls behind a single demo run: create a
 // circle, fund it from 5 members, prove + claim, then optionally replay the
@@ -42,10 +57,7 @@ export function useCircleFlow() {
   const [nullifierHash, setNullifierHash] = useState<bigint | null>(null);
   const [claimResult, setClaimResult] = useState<ClaimResult | null>(null);
   const [rejection, setRejection] = useState<string | null>(null);
-  const [claimStage, setClaimStage] = useState<ClaimStage | null>(null);
-  const [proveElapsedSeconds, setProveElapsedSeconds] = useState(0);
-  const [nullifierClaimed, setNullifierClaimed] = useState(false);
-
+  const [feeEstimate, setFeeEstimate] = useState<FeeEstimate | null>(null);
   // Survives a reset so the landing screen can point back at the circle you
   // just left — it keeps living on-chain even though the UI has moved on.
   const [previousCircleId, setPreviousCircleId] = useState<bigint | null>(null);
@@ -86,9 +98,7 @@ export function useCircleFlow() {
     setNullifierHash(null);
     setClaimResult(null);
     setRejection(null);
-    setClaimStage(null);
-    setProveElapsedSeconds(0);
-    setNullifierClaimed(false);
+    setFeeEstimate(null);
     setScreen("landing");
   }
 
@@ -168,51 +178,58 @@ export function useCircleFlow() {
     setError(null);
     setClaimResult(null);
     setRejection(null);
-    setNullifierClaimed(false);
-    setBusy("Claiming…");
+    setFeeEstimate(null);
+    setBusy("Proving… (a real Groth16 proof is being generated in your browser)");
     try {
       const claimant = members[claimantIndex];
       const merkleProof = tree.proof(claimantIndex);
       const externalNullifier = await computeExternalNullifier(circleId, BigInt(round));
 
-      setClaimStage("artifacts");
-      const [wasm, zkey] = await Promise.all([
-        fetch("/circuits/membership.wasm")
-          .then((r) => r.arrayBuffer())
-          .then((b) => new Uint8Array(b)),
-        fetch("/circuits/membership_final.zkey")
-          .then((r) => r.arrayBuffer())
-          .then((b) => new Uint8Array(b)),
+      // Fetch artifacts and VK in parallel.
+      const [wasm, zkey, vkJson] = await Promise.all([
+        fetch("/circuits/membership.wasm").then((r) => r.arrayBuffer()).then((b) => new Uint8Array(b)),
+        fetch("/circuits/membership_final.zkey").then((r) => r.arrayBuffer()).then((b) => new Uint8Array(b)),
+        fetch("/circuits/verification_key.json").then((r) => r.json()),
       ]);
 
-      setClaimStage("proving");
-      setProveElapsedSeconds(0);
-      const proveTimer = setInterval(() => setProveElapsedSeconds((s) => s + 1), 1000);
-      let generated;
-      try {
-        generated = await generateProof(
-          {
-            identityNullifier: claimant.identity.identityNullifier,
-            identitySecret: claimant.identity.identitySecret,
-            pathElements: merkleProof.pathElements,
-            pathIndices: merkleProof.pathIndices,
-            root: tree.root,
-            externalNullifier,
-          },
-          wasm,
-          zkey,
-        );
-      } finally {
-        clearInterval(proveTimer);
-      }
+      const generated = await generateProof(
+        {
+          identityNullifier: claimant.identity.identityNullifier,
+          identitySecret: claimant.identity.identitySecret,
+          pathElements: merkleProof.pathElements,
+          pathIndices: merkleProof.pathIndices,
+          root: tree.root,
+          externalNullifier,
+        },
+        wasm,
+        zkey,
+      );
 
-      setClaimStage("funding");
+      // Local verification catches a bad proof before any network call.
+      await verifyProofLocally(vkJson, generated.publicSignals, generated.snarkjsProof);
+
+      // Fund a fresh recipient before estimating — the estimate needs a valid
+      // recipient address in the simulated transaction.
+      setBusy("Funding a fresh, unlinked recipient…");
       const recipient = Keypair.random();
       await friendbotFund(recipient.publicKey());
 
-      setClaimStage("submitting");
+      // Dry-run simulation for the fee estimate. This is best-effort:
+      // if simulation fails we proceed without an estimate rather than
+      // blocking the claim.
+      setBusy("Estimating claim fee…");
       const adminClient = await connect(NETWORK, admin);
-      const { hash } = await claim(adminClient, {
+      const estimate = await estimateClaimFee(adminClient, {
+        circleId,
+        recipient: recipient.publicKey(),
+        nullifierHash: generated.nullifierHash,
+        externalNullifier: generated.externalNullifier,
+        proof: generated.proof,
+      });
+      setFeeEstimate(estimate);
+
+      setBusy("Submitting the claim…");
+      const { hash, feeCharged } = await claim(adminClient, {
         circleId,
         recipient: recipient.publicKey(),
         nullifierHash: generated.nullifierHash,
@@ -222,8 +239,12 @@ export function useCircleFlow() {
 
       setProof(generated.proof);
       setNullifierHash(generated.nullifierHash);
-      setClaimResult({ recipient: recipient.publicKey(), hash });
-      setNullifierClaimed(await hasClaimed(adminClient, circleId, generated.nullifierHash));
+      setClaimResult({
+        recipient: recipient.publicKey(),
+        hash,
+        feeCharged,
+        feeEstimate: estimate ?? undefined,
+      });
 
       const circle = await getCircle(adminClient, circleId);
       setPot(circle.pot);
@@ -297,6 +318,7 @@ export function useCircleFlow() {
     previousCircleId,
     fundedCount,
     fullyFunded,
+    feeEstimate,
     resetToLanding,
     startCircle,
     fundMember,
