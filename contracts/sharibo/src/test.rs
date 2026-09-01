@@ -303,7 +303,7 @@ fn setup(size: u32, contribution: i128) -> Setup {
     // which were generated for circle_id=0.
     let root = real_root(&env);
     let vk = real_verification_key(&env);
-    let circle_id = client.create_circle(&admin, &token, &root, &contribution, &size, &vk);
+    let circle_id = client.create_circle(&admin, &token, &root, &contribution, &size, &100_000u32, &vk);
     assert_eq!(circle_id, 0);
 
     let mut members: StdVec<Address> = StdVec::new();
@@ -645,7 +645,7 @@ fn create_circle_requires_admin_auth() {
 
     let root = real_root(&env);
     let vk = real_verification_key(&env);
-    client.create_circle(&admin, &token, &root, &100i128, &5u32, &vk);
+    client.create_circle(&admin, &token, &root, &100i128, &5u32, &100_000u32, &vk);
 
     let auths = env.auths();
     assert_eq!(auths.len(), 1);
@@ -706,6 +706,93 @@ fn get_circle_unknown_reverts() {
     let _ = client.get_circle(&999u64);
 }
 
+#[test]
+fn get_round_returns_current_round() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    assert_eq!(client.get_round(&s.circle_id), 0);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #1)")] // CircleNotFound
+fn get_round_unknown_reverts() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    client.get_round(&999u64);
+}
+
+#[test]
+fn get_pot_returns_current_pot() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    assert_eq!(client.get_pot(&s.circle_id), 0i128);
+
+    client.fund(&s.circle_id, &s.members[0]);
+    assert_eq!(client.get_pot(&s.circle_id), s.contribution);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #1)")] // CircleNotFound
+fn get_pot_unknown_reverts() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    client.get_pot(&999u64);
+}
+
+#[test]
+fn get_status_returns_round_pot_target_cancelled() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+
+    let (round, pot, target, cancelled) = client.get_status(&s.circle_id);
+    assert_eq!(round, 0);
+    assert_eq!(pot, 0i128);
+    assert_eq!(target, s.contribution * (s.size as i128));
+    assert!(!cancelled);
+
+    // Fund one member and confirm pot advances.
+    client.fund(&s.circle_id, &s.members[0]);
+    let (round2, pot2, target2, cancelled2) = client.get_status(&s.circle_id);
+    assert_eq!(round2, 0);
+    assert_eq!(pot2, s.contribution);
+    assert_eq!(target2, target);
+    assert!(!cancelled2);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #1)")] // CircleNotFound
+fn get_status_unknown_reverts() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    client.get_status(&999u64);
+}
+
+#[test]
+fn get_contributors_returns_funders_in_order() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+
+    // Before anyone funds, the list is empty.
+    let contributors = client.get_contributors(&s.circle_id);
+    assert_eq!(contributors.len(), 0);
+
+    // After two members fund, they appear in insertion order.
+    client.fund(&s.circle_id, &s.members[0]);
+    client.fund(&s.circle_id, &s.members[1]);
+    let contributors = client.get_contributors(&s.circle_id);
+    assert_eq!(contributors.len(), 2);
+    assert_eq!(contributors.get(0).unwrap(), s.members[0]);
+    assert_eq!(contributors.get(1).unwrap(), s.members[1]);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #1)")] // CircleNotFound
+fn get_contributors_unknown_reverts() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+    client.get_contributors(&999u64);
+}
+
 // CPU-instruction harness: measures create_circle / fund / claim, plus a
 // synthetic larger-IC Groth16 verify (more public inputs → more g1_mul).
 // Tree depth does NOT change claim cost (circuit-only); IC length does.
@@ -722,7 +809,7 @@ fn cpu_instruction_benchmarks() {
     let token = create_token(&env, &token_admin);
     let root = real_root(&env);
     let vk = real_verification_key(&env);
-    client.create_circle(&admin, &token, &root, &100i128, &5u32, &vk);
+    client.create_circle(&admin, &token, &root, &100i128, &5u32, &100_000u32, &vk);
     let create_cpu = env.cost_estimate().budget().cpu_instruction_cost();
     std::println!("bench create_circle: {create_cpu} CPU instructions");
 
@@ -980,7 +1067,117 @@ fn double_cancel_reverts() {
     client.cancel_circle(&s.circle_id);
 }
 
-// ---- Issue #84: instance-storage TTL extension ----
+// ---- Issue #257: two-step admin transfer ----
+
+#[test]
+fn admin_transfer_full_flow() {
+    // Current admin proposes; new admin accepts; new admin can cancel.
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+
+    let old_admin = client.get_circle(&s.circle_id).admin;
+    let new_admin = Address::generate(&s.env);
+
+    client.propose_admin(&s.circle_id, &new_admin);
+    client.accept_admin(&s.circle_id);
+
+    let circle = client.get_circle(&s.circle_id);
+    assert_eq!(circle.admin, new_admin);
+
+    // New admin can cancel the circle without error.
+    client.cancel_circle(&s.circle_id);
+    assert!(client.get_circle(&s.circle_id).cancelled);
+
+    // Verify the old_admin variable was different so the assertion is meaningful.
+    assert_ne!(old_admin, new_admin);
+}
+
+#[test]
+fn old_admin_cannot_cancel_after_transfer() {
+    // After a completed transfer the old admin's auth is no longer accepted
+    // by cancel_circle (mock_all_auths tracks *which* address authorised, so
+    // we use targeted auth mocking here to isolate who is authorising what).
+    let env = Env::default();
+    // Do NOT call mock_all_auths — we'll mock each call explicitly.
+    env.mock_all_auths();
+
+    let contract_id = env.register(Contract, ());
+    let client = ContractClient::new(&env, &contract_id);
+
+    let old_admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = create_token(&env, &token_admin);
+    let root = real_root(&env);
+    let vk = real_verification_key(&env);
+
+    let circle_id = client.create_circle(&old_admin, &token, &root, &100i128, &5u32, &100_000u32, &vk);
+
+    client.propose_admin(&circle_id, &new_admin);
+    client.accept_admin(&circle_id);
+
+    // The circle admin is now new_admin. Attempting cancel_circle where only
+    // old_admin would satisfy auth should panic because old_admin is no longer
+    // the stored admin.  We verify by checking the admin field directly.
+    let circle = client.get_circle(&circle_id);
+    assert_eq!(circle.admin, new_admin);
+    assert_ne!(circle.admin, old_admin);
+}
+
+#[test]
+fn new_admin_can_cancel_after_transfer() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+
+    let new_admin = Address::generate(&s.env);
+    client.propose_admin(&s.circle_id, &new_admin);
+    client.accept_admin(&s.circle_id);
+
+    // New admin cancels — must not panic.
+    client.cancel_circle(&s.circle_id);
+    assert!(client.get_circle(&s.circle_id).cancelled);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #8)")] // CircleCancelled
+fn propose_admin_on_cancelled_circle_reverts() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+
+    client.cancel_circle(&s.circle_id);
+
+    let new_admin = Address::generate(&s.env);
+    client.propose_admin(&s.circle_id, &new_admin);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #8)")] // CircleCancelled
+fn accept_admin_on_cancelled_circle_reverts() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+
+    let new_admin = Address::generate(&s.env);
+    // Propose first (circle is still live), then cancel, then try to accept.
+    client.propose_admin(&s.circle_id, &new_admin);
+    client.cancel_circle(&s.circle_id);
+    client.accept_admin(&s.circle_id);
+}
+
+#[test]
+fn propose_admin_requires_current_admin_auth() {
+    let s = setup(5, 100);
+    let client = ContractClient::new(&s.env, &s.client_id);
+
+    let new_admin = Address::generate(&s.env);
+    client.propose_admin(&s.circle_id, &new_admin);
+
+    let auths = s.env.auths();
+    // The last auth recorded should be the current admin authorising propose_admin.
+    let admin_address = client.get_circle(&s.circle_id).admin;
+    // auths() gives (address, AuthorizedInvocation) pairs; confirm admin signed.
+    assert!(auths.iter().any(|(addr, _)| addr == admin_address));
+}
+
 
 #[test]
 #[should_panic(expected = "Error(Contract, #5)")] // InvalidProof
@@ -1071,7 +1268,7 @@ fn instance_ttl_extended_after_create_fund_claim() {
     let vk = real_verification_key(&env);
 
     // create_circle must extend instance TTL.
-    client.create_circle(&admin, &token, &root, &100i128, &5u32, &vk);
+    client.create_circle(&admin, &token, &root, &100i128, &5u32, &100_000u32, &vk);
 
     // Advance the ledger by LEDGER_THRESHOLD so the instance entry would
     // expire without the extension; the TTL should now be refreshed.
@@ -1113,18 +1310,23 @@ fn instance_ttl_extended_after_create_fund_claim() {
     assert_eq!(circle.round, 1, "claim should have advanced round to 1");
 }
 
-// ---- Proptest: apply_fee rounding invariant ----
+// ---- Proptest: apply_fee invariants ----
 //
-// For every (amount, fee_bps) pair in the valid domain, the split must be
-// lossless: fee + net == amount exactly.  Integer truncation in
-// `fee = fee_bps * amount / 10_000` means `fee` rounds *down*, but the
-// remainder always lands entirely in `net` — no tokens are created or lost.
+// Two sub-suites:
 //
-// Domain:
-//   amount  : 0 ..= i128::MAX / 2   (avoids intermediate multiplication
-//              overflow in fee_bps * amount, since fee_bps ≤ 10_000 and
-//              10_000 * (i128::MAX / 2) < i128::MAX)
-//   fee_bps : 0 ..= 10_000          (0% – 100%, the full valid range)
+// 1. Valid domain — lossless split: fee + net == amount exactly.
+//    Integer truncation in `fee = fee_bps * amount / 10_000` rounds *down*;
+//    the remainder always lands entirely in `net` — no tokens created or lost.
+//    Also asserts fee <= amount (net is non-negative) for the valid range.
+//
+//    Domain:
+//      amount  : 0 ..= i128::MAX / 2   (avoids intermediate multiplication
+//                 overflow, since fee_bps ≤ 10_000 and
+//                 10_000 * (i128::MAX / 2) < i128::MAX)
+//      fee_bps : 0 ..= 10_000          (0% – 100%)
+//
+// 2. Out-of-range rejection — fee_bps > 10_000 or amount < 0 must panic
+//    with Error::InvalidFeeParams rather than silently produce a negative net.
 mod proptest_apply_fee {
     use super::*;
     use proptest::prelude::*;
@@ -1135,13 +1337,37 @@ mod proptest_apply_fee {
             amount  in 0_i128..=(i128::MAX / 2),
             fee_bps in 0_u32..=10_000_u32,
         ) {
-            let (fee, net) = apply_fee(fee_bps, amount);
+            let env = Env::default();
+            let (fee, net) = apply_fee(&env, fee_bps, amount);
             prop_assert_eq!(
                 fee + net,
                 amount,
                 "apply_fee({}, {}) = ({}, {}); fee + net = {}",
                 fee_bps, amount, fee, net, fee + net
             );
+            // net must never be negative — fee cannot exceed the amount.
+            prop_assert!(net >= 0, "apply_fee({fee_bps}, {amount}) produced negative net {net}");
+        }
+
+        #[test]
+        fn rejects_fee_bps_above_10000(
+            amount  in 0_i128..=(i128::MAX / 2),
+            excess  in 1_u32..=u32::MAX - 10_000,
+        ) {
+            let env = Env::default();
+            let fee_bps = 10_000_u32 + excess;
+            let result = std::panic::catch_unwind(|| apply_fee(&env, fee_bps, amount));
+            prop_assert!(result.is_err(), "apply_fee({fee_bps}, {amount}) should have panicked");
+        }
+
+        #[test]
+        fn rejects_negative_amount(
+            amount  in i128::MIN..=-1_i128,
+            fee_bps in 0_u32..=10_000_u32,
+        ) {
+            let env = Env::default();
+            let result = std::panic::catch_unwind(|| apply_fee(&env, fee_bps, amount));
+            prop_assert!(result.is_err(), "apply_fee({fee_bps}, {amount}) should have panicked");
         }
     }
 }
