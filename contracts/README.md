@@ -191,6 +191,19 @@ Below is the documentation for all public contract methods.
 * **Preconditions**:
   * The circle associated with `circle_id` must exist.
 
+### Events
+
+Every state-changing entrypoint emits a contract event so off-chain observers can react without polling `get_circle`.
+
+| Entrypoint | Topics | Data |
+| --- | --- | --- |
+| `create_circle` | `("circle", "created", circle_id)` | `(admin, token, contribution, size)` |
+| `fund` | `("circle", "funded", circle_id)` | `(from, new_pot, target)` |
+| `claim` | `("circle", "claimed", circle_id)` | `(round, amount, recipient)` |
+| `cancel_circle` | `("circle", "cancelled", circle_id)` | `(refunded_count, refunded_total)` |
+
+The `claim` event deliberately omits the nullifier hash: publishing it would give observers a linkability handle for correlating anonymized payouts.
+
 ---
 
 ## 5. Error Code Reference
