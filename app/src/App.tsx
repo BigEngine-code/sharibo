@@ -13,6 +13,7 @@ import {
   computeExternalNullifier,
   MerkleTree,
   generateProof,
+  verifyProofLocally,
   verificationKeyToContractFormat,
   connect,
   createCircle,
@@ -165,22 +166,24 @@ interface ClaimResult {
   recipient: string;
   hash: string;
   proofDurationMs: number;
+  verifyTimeMs: number;
 }
 
 // The visible stages of doClaim, in the order they actually occur. snarkjs's
 // fullProve is one opaque call, so "proving" covers witness computation +
 // proof generation together — it gets its own elapsed timer instead of a
 // substage breakdown, since we can't observe a finer boundary inside it.
-type ClaimStage = "artifacts" | "proving" | "funding" | "submitting";
+type ClaimStage = "artifacts" | "proving" | "verifying" | "funding" | "submitting";
 
 const CLAIM_STAGE_LABELS: Record<ClaimStage, string> = {
   artifacts: "Fetching proving artifacts (wasm + zkey)…",
   proving: "Proving…",
+  verifying: "Verifying proof locally…",
   funding: "Funding a fresh, unlinked recipient…",
   submitting: "Submitting the claim…",
 };
 
-const CLAIM_STAGES: ClaimStage[] = ["artifacts", "proving", "funding", "submitting"];
+const CLAIM_STAGES: ClaimStage[] = ["artifacts", "proving", "verifying", "funding", "submitting"];
 
 // So a claim never reads as a hung tab: each real substage of doClaim gets
 // its own line here (fullProve itself stays one opaque "proving" step, per
@@ -749,7 +752,7 @@ export default function App() {
     setRejection(null);
     setBusy("Claiming…");
     try {
-      const [{ Keypair }, { computeExternalNullifier, generateProof, connect, claim, getCircle }] = await Promise.all([
+      const [{ Keypair }, { computeExternalNullifier, generateProof, verifyProofLocally, connect, claim, getCircle }] = await Promise.all([
         import("@stellar/stellar-sdk"),
         import("@sharibo/client")
       ]);
@@ -758,13 +761,14 @@ export default function App() {
       const externalNullifier = await computeExternalNullifier(circleId, BigInt(round));
 
       setClaimStage("artifacts");
-      const [wasm, zkey] = await Promise.all([
+      const [wasm, zkey, vkJson] = await Promise.all([
         fetch("/circuits/membership.wasm")
           .then((r) => r.arrayBuffer())
           .then((b) => new Uint8Array(b)),
         fetch("/circuits/membership_final.zkey")
           .then((r) => r.arrayBuffer())
           .then((b) => new Uint8Array(b)),
+        fetch("/circuits/verification_key.json").then((r) => r.json()),
       ]);
 
       setClaimStage("proving");
@@ -788,6 +792,13 @@ export default function App() {
         clearInterval(proveTimer);
       }
 
+      setClaimStage("verifying");
+      const verifyTimeMs = await verifyProofLocally(
+        vkJson,
+        generated.publicSignals,
+        generated.snarkjsProof,
+      );
+
       setClaimStage("funding");
       const recipient = Keypair.random();
       await fundWithFriendbot(recipient.publicKey());
@@ -804,7 +815,12 @@ export default function App() {
 
       setProof(generated.proof);
       setNullifierHash(generated.nullifierHash);
-      setClaimResult({ recipient: recipient.publicKey(), hash, proofDurationMs });
+      setClaimResult({
+        recipient: recipient.publicKey(),
+        hash,
+        proofDurationMs: generated.provingTimeMs,
+        verifyTimeMs,
+      });
       setNullifierClaimed(await hasClaimed(adminClient, circleId, generated.nullifierHash));
 
       const circle = await getCircle(adminClient, circleId);
@@ -1126,6 +1142,10 @@ export default function App() {
             <p className="callout">
               Compare the 5 funding transactions above to this claim — same
               contract, no shared address, no visible link.
+            </p>
+            <p className="techline">
+              proof generated in {(claimResult.proofDurationMs / 1000).toFixed(1)}s ·
+              local verify {claimResult.verifyTimeMs.toFixed(0)}ms ✓
             </p>
             <button
               className="btn btn-danger"
