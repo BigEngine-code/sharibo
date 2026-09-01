@@ -1,3 +1,20 @@
+/**
+ * Sharibo SDK error classes.
+ *
+ * See docs/errors.md for the full mapping between on-chain contract error
+ * codes, these classes, user-facing messages, likely causes, and remedies.
+ *
+ * ## Class hierarchy
+ *
+ * ```
+ * ShariboError
+ * ├── ContractError      — on-chain revert; .code matches docs/errors.md table
+ * ├── InvalidInputError  — bad argument caught client-side before any RPC call
+ * ├── ProvingError       — snarkjs / witness generation failure
+ * └── RpcError           — network or RPC transport failure
+ * ```
+ */
+
 export class ShariboError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {
     super(message, options);
@@ -24,6 +41,26 @@ export class RpcError extends ShariboError {
   }
 }
 
+/**
+ * Thrown when the Soroban contract reverts with a typed error code.
+ *
+ * `code` matches the discriminant of `pub enum Error` in
+ * `contracts/sharibo/src/lib.rs`. Use the constants below for readable
+ * comparisons. Full semantics for each code are in `docs/errors.md`.
+ *
+ * @example
+ * ```ts
+ * import { ContractError, ErrorCode } from "@sharibo/client";
+ *
+ * try {
+ *   await claim(client, args);
+ * } catch (err) {
+ *   if (err instanceof ContractError) {
+ *     if (err.code === ErrorCode.AlreadyClaimed) { ... }
+ *   }
+ * }
+ * ```
+ */
 export class ContractError extends ShariboError {
   readonly code?: number;
 
