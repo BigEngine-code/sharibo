@@ -140,45 +140,18 @@ h2 {
   margin-top: 16px;
 }
 
-.noscript-banner {
-  margin: 24px auto;
-  max-width: 680px;
-  background: var(--accent);
-  border: var(--border);
-  box-shadow: var(--shadow);
-  padding: 18px 20px;
-  color: var(--ink);
-  font-family: "Space Grotesk", system-ui, sans-serif;
-  line-height: 1.5;
+.token-notice {
+  font-size: 13px;
+  color: #444;
+  margin: 4px 0 12px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
 }
-
-.unsupported-browser {
-  max-width: 540px;
-}
-
-.unsupported-browser-list {
-  list-style: none;
-  margin: 20px 0 0;
-  padding: 0;
-  text-align: left;
-  display: grid;
-  gap: 10px;
-}
-
-.unsupported-browser-item {
-  background: #fff6d8;
-  border: 2px solid var(--ink);
-  padding: 10px 12px;
-  font-family: "JetBrains Mono", monospace;
+.token-notice-tip {
+  color: #888;
   font-size: 12px;
-}
-
-.unsupported-browser-note {
-  margin-top: 16px;
-  background: #effff6;
-  border: 2px solid var(--ink);
-  padding: 12px 14px;
-  font-weight: 700;
 }
 
 .network-banner {
@@ -611,155 +584,10 @@ code {
   padding: 2px 4px;
 }
 
-<<<<<<< HEAD
-/* ── Mobile (< --bp-md) ─────────────────────────────────────────────── */
-@media (max-width: 767px) {
-  :root {
-    --ring-size: 180px;
-    --ring-radius: 80px;
-    --ring-node-size: 36px;
-    --ring-center-size: 52px;
-    --ring-recipient-offset: -136px;
-    --ring-margin-y: 24px;
-  }
-
-  .page {
-    padding: 16px 12px;
-    align-items: flex-start;
-  }
-
-  .card {
-    padding: 20px 16px;
-  }
-
-  h1 {
-    font-size: 40px;
-  }
-  h1.small {
-    font-size: 24px;
-  }
-
-  .row.space-between {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 12px;
-  }
-
-  .card-header-actions {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 8px;
-  }
-
-  .card-header-actions .link {
-    word-break: break-word;
-  }
-
-  .stepper {
-    font-size: 9px;
-    gap: 2px;
-  }
-  .step {
-    padding: 8px 4px;
-    min-height: var(--touch-min);
-    justify-content: center;
-  }
-  .step-dot {
-    display: none;
-  }
-
-  .member {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-    padding: 12px;
-  }
-  .member-addr {
-    font-size: 12px;
-    word-break: break-all;
-  }
-  .member .btn-small,
-  .member .link {
-    align-self: stretch;
-    text-align: center;
-    min-height: var(--touch-min);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 10px 16px;
-  }
-
-  .btn-small {
-    min-height: var(--touch-min);
-    padding: 10px 16px;
-  }
-
-  .radio-group {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 8px;
-  }
-  .radio {
-    min-height: var(--touch-min);
-    padding: 8px 12px;
-    border: 2px solid var(--ink);
-    background: #fafafa;
-    gap: 10px;
-  }
-  .radio input[type="radio"] {
-    width: 20px;
-    height: 20px;
-    flex-shrink: 0;
-  }
-
-  .ring-caption {
-    font-size: 12px;
-    padding: 8px;
-  }
-}
-
-/* ── Small phones (< --bp-sm) ───────────────────────────────────────── */
-@media (max-width: 374px) {
-  :root {
-    --ring-size: 160px;
-    --ring-radius: 70px;
-    --ring-node-size: 32px;
-    --ring-center-size: 48px;
-    --ring-recipient-offset: -119px;
-    --ring-margin-y: 20px;
-  }
-
-  .page {
-    padding: 12px 8px;
-  }
-
-  .card {
-    padding: 16px 12px;
-  }
-
-  h1 {
-    font-size: 32px;
-  }
-  h1.small {
-    font-size: 22px;
-  }
-
-  .tagline {
-    font-size: 16px;
-  }
-
-  .stepper {
-    flex-wrap: wrap;
-  }
-  .step {
-    flex: 1 1 calc(50% - 2px);
-    font-size: 8px;
-=======
 @media (prefers-reduced-motion: reduce) {
   .btn,
   .pot-bar,
   .ring-node {
     transition: none !important;
->>>>>>> 2e9a849 (Add prefers-reduced-motion media query to disable animations)
   }
 }
