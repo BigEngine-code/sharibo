@@ -5,7 +5,7 @@ extern crate std;
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype,
     crypto::bls12_381::{Fr, G1Affine, G2Affine},
-    panic_with_error, token, vec, Address, Bytes, Env, Vec,
+    panic_with_error, symbol_short, token, vec, Address, Bytes, Env, Vec,
 };
 
 /// Groth16 verification key over BLS12-381.
@@ -273,6 +273,15 @@ impl Contract {
             .instance()
             .extend_ttl(LEDGER_THRESHOLD, LEDGER_EXTEND_TO);
 
+        env.events().publish(
+            (symbol_short!("circle"), symbol_short!("created"), circle_id),
+            (
+                circle.admin.clone(),
+                circle.token.clone(),
+                circle.contribution,
+                circle.size,
+            ),
+        );
         circle_id
     }
 
@@ -337,7 +346,7 @@ impl Contract {
             .pot
             .checked_add(circle.contribution)
             .unwrap_or_else(|| panic_with_error!(&env, Error::Overflow));
-        circle.contributors.push_back(from);
+        circle.contributors.push_back(from.clone());
         env.storage().persistent().set(&key, &circle);
         env.storage()
             .persistent()
@@ -345,6 +354,10 @@ impl Contract {
         env.storage()
             .instance()
             .extend_ttl(LEDGER_THRESHOLD, LEDGER_EXTEND_TO);
+        env.events().publish(
+            (symbol_short!("circle"), symbol_short!("funded"), circle_id),
+            (from, circle.pot, target),
+        );
     }
 
     /// Zero-knowledge payout: transfer the full round pot to `recipient`
@@ -463,6 +476,8 @@ impl Contract {
         }
 
         // effects
+        let claimed_round = circle.round;
+        let amount = circle.pot;
         env.storage().persistent().set(&nullifier_key, &true);
         env.storage()
             .persistent()
@@ -481,6 +496,10 @@ impl Contract {
         env.storage()
             .instance()
             .extend_ttl(LEDGER_THRESHOLD, LEDGER_EXTEND_TO);
+        env.events().publish(
+            (symbol_short!("circle"), symbol_short!("claimed"), circle_id),
+            (claimed_round, amount, recipient),
+        );
     }
 
     /// Look up a [`Circle`] by its assigned id.
@@ -668,6 +687,8 @@ impl Contract {
         }
 
         // Refund every contributor for the current (stuck) round.
+        let refunded_count = circle.contributors.len();
+        let refunded_total = circle.pot;
         let token_client = token::Client::new(&env, &circle.token);
         for contributor in circle.contributors.iter() {
             token_client.transfer(
@@ -684,6 +705,10 @@ impl Contract {
         env.storage()
             .persistent()
             .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_EXTEND_TO);
+        env.events().publish(
+            (symbol_short!("circle"), symbol_short!("cancelled"), circle_id),
+            (refunded_count, refunded_total),
+        );
     }
 
     // Binds a proof to (circle_id, round) with SHA-256 (a native, accelerated
