@@ -44,6 +44,30 @@ The compiled WASM artifact will be generated at `target/wasm32v1-none/release/sh
 
 To execute the test suite, run the following command from the `contracts/` directory:
 
+## Storage lifetime
+
+Every write entrypoint (`create_circle`, `fund`, `claim`, `cancel_circle`) calls `extend_ttl` on all touched persistent and instance entries. The two constants governing this behaviour are defined and justified in [`contracts/sharibo/src/lib.rs`](sharibo/src/lib.rs):
+
+| Constant | Value | Wall-clock equivalent |
+| --- | --- | --- |
+| `LEDGER_THRESHOLD` | 100 ledgers | ≈ 8 minutes |
+| `LEDGER_EXTEND_TO` | 500,000 ledgers | ≈ 29 days |
+
+The Soroban network maximum for persistent entry TTL is **535,679 ledgers (≈ 30 days)** ([Stellar CLI docs](https://developers.stellar.org/docs/tools/cli/cookbook/extend-contract-wasm)). `LEDGER_EXTEND_TO` is set below that ceiling intentionally, giving a small safety margin while keeping circles live for as long as the network allows.
+
+**What this means in practice**: as long as any participant calls `fund`, `claim`, or `cancel_circle` at least once every 29 days, the circle's storage entry is refreshed and the circle stays accessible indefinitely.
+
+**What to do if a circle goes dormant**: if no write has occurred for longer than the TTL window, the persistent entry will be archived. Before interacting with the circle again, an operator must restore it:
+
+```bash
+stellar contract restore \
+  --source <admin-or-any-account> \
+  --network mainnet \
+  --id <contract-id>
+```
+
+After a successful `RestoreFootprintOp` the circle's full state (including `round`, `pot`, and `contributors`) is restored with the values it had when it was archived. No data is lost; the circle can then be used normally and the next write will re-extend the TTL to another 29-day window.
+
 `NextCircleId` lives in **instance storage** (`env.storage().instance()`). Soroban instance entries have a TTL measured in ledgers; once a TTL lapses the entry is _archived_ (removed from the live state) and can be restored later via `RestoreFootprintOp`.
 
 **What happens on testnet when instance storage is archived and restored?** After a successful `RestoreFootprintOp` the entry reappears with its last-written value intact — the counter does _not_ reset. The risk is the gap between archival and restoration: any `create_circle` call during that gap would reinitialise the counter to `0` (the `unwrap_or(0)` default), silently overwriting circle 0.
@@ -171,18 +195,24 @@ Below is the documentation for all public contract methods.
 
 ## 5. Error Code Reference
 
-When a transaction reverts, Soroban returns a typed contract error of the form `Error(Contract, #Code)`. Below is the complete table of error codes defined in the contract:
+When a transaction reverts, Soroban returns a typed contract error of the form `Error(Contract, #Code)`. The canonical mapping — covering all eight current codes with SDK class, user-facing message, likely cause, and remedy — is in **[`docs/errors.md`](../docs/errors.md)**.
 
-| Code | Error Name | Trigger / Cause | What the Caller Should Do |
-| :---: | :--- | :--- | :--- |
-| **1** | `CircleNotFound` | The specified `circle_id` does not exist in persistent storage. | Verify that the circle ID is correct and was successfully created. |
-| **2** | `RoundNotFunded` | `claim` was called on a circle whose pot has not yet reached the required target size (`contribution * size`). | Ensure that the required number of contributors have successfully called `fund` for this round. |
-| **3** | `WrongRoundTag` | The presented `external_nullifier` does not match the expected SHA-256 round tag (`SHA256(circle_id, round) mod r`) of the current round. | Re-generate the proof with the correct round tag matching the circle's current round number. |
-| **4** | `AlreadyClaimed` | The `nullifier_hash` presented in `claim` has already been recorded in persistent storage as claimed. | Do not attempt to reuse a spent nullifier. Each member may only claim once per circle/round. |
-| **5** | `InvalidProof` | The Groth16 pairing check failed, or the public signal order/values did not match the proof statement. | Verify that the zero-knowledge proof was correctly generated, utilizing the correct secret, nullifier, path elements, and verification key. |
-| **6** | `RoundFull` | `fund` was called on a circle whose pot is already fully funded. | Wait for the current round to be claimed and advanced before attempting to fund the next round. |
-| **7** | `Overflow` | Checked arithmetic failed during contribution calculation or pot addition. | Avoid using absurdly large contribution amounts or circle sizes that overflow integer capacities. |
-| **8** | `CircleCancelled` | `fund`, `claim`, or `cancel_circle` was called on a circle that has already been cancelled. | Do not interact with a cancelled circle. Any funds were already refunded to the contributors. |
+Quick reference:
+
+| Code | Error Name | Raised by |
+| :---: | :--- | :--- |
+| **1** | `CircleNotFound` | `fund`, `claim`, `get_circle`, `cancel_circle` |
+| **2** | `RoundNotFunded` | `claim` |
+| **3** | `WrongRoundTag` | `claim` |
+| **4** | `AlreadyClaimed` | `claim` |
+| **5** | `InvalidProof` | `claim` |
+| **6** | `RoundFull` | `fund` |
+| **7** | `Overflow` | `fund`, `claim` |
+| **8** | `CircleCancelled` | `fund`, `claim`, `cancel_circle` |
+
+See [`docs/errors.md`](../docs/errors.md) for the full table including SDK class, user-facing message, likely cause, and what the caller should do.
+
+The variant count is enforced by the `error_table_variant_count` test in `contracts/sharibo/src/test.rs` — adding a ninth variant without updating `docs/errors.md` and `DOCUMENTED_ERROR_COUNT` will fail that test.
 
 ---
 
