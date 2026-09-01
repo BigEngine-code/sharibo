@@ -31,6 +31,8 @@ MAX_CIRCLE_SIZE
 generateProof
 verificationKeyToContractFormat
 validateCircuitInput
+verifyProofLocally
+estimateClaimFee
 
 // Contract client
 connect
@@ -63,9 +65,12 @@ MerkleProof
 CircuitInput
 ContractProof
 ContractVerificationKey
+GenerateProofResult
+ProofResult
 ShariboNetworkConfig
 ShariboClient
 ShariboSigner
+FeeEstimate
 TxResult
 CircleView
 ```
@@ -75,6 +80,28 @@ CircleView
 `@sharibo/client/internal` exposes non-public helpers for deep integration work
 (see `src/internal.ts`). It imports nothing eagerly into the main entrypoint, so
 `ArtifactPrefetchProgress` and `FR_MODULUS` no longer reach plain consumers.
+
+## Requirements
+
+- **Node ≥ 20** (the repo's `.nvmrc` pins Node 20; older versions are untested)
+- **Web Crypto API** — `globalThis.crypto` must be available. Node 18+ exposes this
+  as a built-in global; browsers have had it for years. No polyfill is needed.
+
+## Node vs browser entry points
+
+The package ships a conditional `exports` map:
+
+| Condition | Entry point | Side effects |
+|-----------|-------------|--------------|
+| `browser` | `src/index.browser.ts` | Mounts the "Preparing prover…" DOM toast; starts background artifact pre-fetch |
+| `default` (Node, tests) | `src/index.ts` | None — safe to import in scripts, tests, and CI |
+
+Bundlers that honour the `browser` exports condition (Vite, webpack) resolve to the
+browser entry automatically. Node and test runners get the side-effect-free default.
+
+If you need the background pre-fetch in a browser app that imports the package
+directly (without a bundler resolving the `browser` condition), call
+`installIndicatorAndPrefetch()` explicitly after import.
 
 ## Retry Semantics
 

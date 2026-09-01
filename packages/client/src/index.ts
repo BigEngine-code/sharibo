@@ -35,11 +35,14 @@ export {
   generateProof,
   verificationKeyToContractFormat,
   validateCircuitInput,
+  verifyProofLocally,
 } from "./prove.js";
 export type {
   CircuitInput,
   ContractProof,
   ContractVerificationKey,
+  GenerateProofResult,
+  ProofResult,
 } from "./prove.js";
 
 // ── Contract client ───────────────────────────────────────────────────
@@ -57,11 +60,13 @@ export {
   hasClaimed,
   cancelCircle,
   explorerTxUrl,
+  estimateClaimFee,
 } from "./contract.js";
 export type {
   ShariboNetworkConfig,
   ShariboClient,
   ShariboSigner,
+  FeeEstimate,
   TxResult,
   CircleView,
 } from "./contract.js";

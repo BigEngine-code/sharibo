@@ -1,5 +1,6 @@
 import { Client as ContractClient, basicNodeSigner } from "@stellar/stellar-sdk/contract";
 import { Keypair } from "@stellar/stellar-sdk";
+import { Api } from "@stellar/stellar-sdk/rpc";
 import type { ContractProof, ContractVerificationKey } from "./prove.js";
 import { RpcError } from "./errors.js";
 
@@ -19,11 +20,12 @@ export interface ShariboNetworkConfig {
 /**
  * A Sharibo contract client with dynamically attached methods.
  *
- * The contract's methods are attached to the Client at runtime from the
- * on-chain contract spec (see `@stellar/stellar-sdk`'s `contract.Client.from`),
- * so they aren't visible to TypeScript's static checker — hence `any` here
- * rather than a hand-rolled or codegen'd interface. Keeps this SDK working
- * against whatever the deployed contract's real spec is.
+ * The contract's methods (create_circle/fund/claim/get_circle/has_claimed)
+ * are attached to the Client at runtime from the on-chain contract spec (see
+ * @stellar/stellar-sdk's `contract.Client.from`), so they aren't visible to
+ * TypeScript's static checker — hence `any` here rather than a hand-rolled
+ * or codegen'd interface. Keeps this SDK working against whatever the
+ * deployed contract's real spec is, rather than a copy that can drift.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ShariboClient = any;
@@ -36,36 +38,58 @@ export interface ShariboSigner {
   signAuthEntry?: (entryXdr: string, opts?: any) => Promise<string>;
 }
 
-// System fields used by the wrapper functions below; expanded for clarity.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SentTx = any;
+/**
+ * Pre-flight fee estimate from a dry-run simulation.
+ *
+ * All values are in stroops (1 XLM = 10,000,000 stroops).
+ *
+ * @property minResourceFee - The minimum fee the network requires to cover
+ *   resource usage (CPU, memory, I/O) as reported by the simulation. For a
+ *   claim this is dominated by the BLS12-381 pairing check.
+ * @property totalFee - The full fee encoded in the assembled transaction
+ *   (base inclusion fee + minResourceFee). This is what the account will
+ *   actually be charged if the transaction is accepted.
+ */
+export interface FeeEstimate {
+  /** Minimum resource fee in stroops, as reported by simulation. */
+  minResourceFee: bigint;
+  /** Total fee (base + resource) encoded in the assembled transaction, in stroops. */
+  totalFee: bigint;
+}
 
-// Retry simulator/preparation steps (which are safe to retry) up to 3 times
-// with exponential backoff + jitter, but never re-attempt after
-// signAndSend. See README "Retry Semantics".
-const RETRY_ATTEMPTS = 3;
-const BASE_DELAY_MS = 500;
-// eslint-disable-next-line no-control-regex
-const TRANSIENT = /(429|5\d\d|timeout|rate\s?limit)/i;
+// ── withRetry ────────────────────────────────────────────────────────────────
+// Retries the simulation/preparation phase of a contract call on transient
+// errors (429 / 503 / timeouts). The submit phase is never retried — once a
+// transaction is signed and sent, retrying could cause a double-spend.
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const RETRY_DELAYS_MS = [500, 1000, 2000];
+
+function isTransient(err: unknown): boolean {
+  const msg = String(err instanceof Error ? err.message : err);
+  return (
+    msg.includes("429") ||
+    msg.includes("503") ||
+    msg.includes("timeout") ||
+    msg.includes("ECONNRESET") ||
+    msg.includes("Too Many Requests")
+  );
+}
+
 async function withRetry<T = any>(fn: () => Promise<T>): Promise<T> {
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt++) {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
     try {
       return await fn();
     } catch (err) {
-      lastError = err;
-      const message =
-        err instanceof Error ? err.message : String(err);
-      const transient = err instanceof RpcError || TRANSIENT.test(message);
-      if (attempt === RETRY_ATTEMPTS || !transient) break;
-      const jitter = Math.random() * 250;
-      const delayMs = BASE_DELAY_MS * 2 ** (attempt - 1) + jitter;
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      lastErr = err;
+      if (attempt < RETRY_DELAYS_MS.length && isTransient(err)) {
+        await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
+        continue;
+      }
+      throw err;
     }
   }
-  throw lastError;
+  throw lastErr;
 }
 
 export async function connect(
@@ -129,10 +153,9 @@ export function explorerTxUrl(hash: string, networkPassphrase: string): string {
   return `https://${subdomain}stellar.expert/explorer/tx/${hash}`;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function populateTxResult<T>(
   result: T,
-  sent: SentTx,
+  sent: { sendTransactionResponse: { hash: string }; getTransactionResponse?: { ledger?: number; feeCharged?: string } },
 ): TxResult<T> {
   return {
     result,
@@ -143,10 +166,63 @@ function populateTxResult<T>(
 }
 
 /**
+ * Estimates the fee for a claim transaction by running a dry-run simulation.
+ *
+ * The claim is the most expensive operation in Sharibo because it includes
+ * a BLS12-381 pairing check. This lets the UI show the cost before the user
+ * signs anything.
+ *
+ * @param client - The Sharibo contract client (connected with the signer that
+ *   will submit the transaction — the fee is account-specific).
+ * @param args - The same arguments you would pass to `claim()`.
+ * @returns A fee estimate in stroops, or null if simulation fails.
+ */
+export async function estimateClaimFee(
+  client: ShariboClient,
+  args: {
+    circleId: bigint;
+    recipient: string;
+    nullifierHash: bigint;
+    externalNullifier: bigint;
+    proof: ContractProof;
+  },
+): Promise<FeeEstimate | null> {
+  try {
+    const tx = await withRetry(() =>
+      client.claim({
+        circle_id: args.circleId,
+        recipient: args.recipient,
+        nullifier_hash: args.nullifierHash,
+        external_nullifier: args.externalNullifier,
+        proof: args.proof,
+      }),
+    );
+    // tx has already been simulated by the SDK at this point.
+    const sim = tx.simulation as Api.SimulateTransactionResponse | undefined;
+    if (!sim || !Api.isSimulationSuccess(sim)) return null;
+
+    const minResourceFee = BigInt(sim.minResourceFee);
+    // tx.built is the assembled Transaction; its .fee is total stroops as a string.
+    const totalFee = tx.built ? BigInt(tx.built.fee) : minResourceFee;
+    return { minResourceFee, totalFee };
+  } catch {
+    // Simulation can fail (e.g. circle underfunded, wrong round) — don't
+    // surface that as an error here; the actual claim() call will report it.
+    return null;
+  }
+}
+
+/**
  * Creates a new Sharibo circle.
  *
  * @param client - The Sharibo contract client.
- * @param args - Circle creation parameters (admin, token, root, contribution, size, vk).
+ * @param args - Circle creation parameters.
+ * @param args.admin - The admin address for the circle.
+ * @param args.token - The token address for contributions.
+ * @param args.root - The Merkle tree root of identity commitments.
+ * @param args.contribution - The required contribution amount per participant.
+ * @param args.size - The maximum number of participants.
+ * @param args.vk - The verification key for the zero-knowledge proof circuit.
  * @returns The circle ID and transaction hash.
  */
 export async function createCircle(
@@ -176,7 +252,9 @@ export async function createCircle(
  * Funds a circle with a contribution.
  *
  * @param client - The Sharibo contract client.
- * @param args - Funding parameters (`circleId`, `from`).
+ * @param args - Funding parameters.
+ * @param args.circleId - The ID of the circle to fund.
+ * @param args.from - The address sending the contribution.
  * @returns The transaction hash.
  */
 export async function fund(
@@ -192,8 +270,12 @@ export async function fund(
  * Claims a reward from a circle using a zero-knowledge proof.
  *
  * @param client - The Sharibo contract client.
- * @param args - Claim parameters (`circleId`, `recipient`, `nullifierHash`,
- *   `externalNullifier`, `proof`).
+ * @param args - Claim parameters.
+ * @param args.circleId - The ID of the circle to claim from.
+ * @param args.recipient - The address to receive the reward.
+ * @param args.nullifierHash - The nullifier hash to prevent double-claiming.
+ * @param args.externalNullifier - The external nullifier binding to circle and round.
+ * @param args.proof - The Groth16 zero-knowledge proof.
  * @returns The transaction hash.
  */
 export async function claim(
@@ -253,7 +335,7 @@ export async function getCircle(client: ShariboClient, circleId: bigint): Promis
   return sent.result;
 }
 
-/** Pure read: the current count of circles ever created (0 if none yet). */
+/** Pure read: the current count of circles ever created. 0 if none yet. */
 export async function getCircleCount(client: ShariboClient): Promise<bigint> {
   const tx = await client.get_circle_count();
   const sent = await tx.signAndSend({ force: true });
