@@ -1024,6 +1024,20 @@ export default function App() {
         </p>
 
         <h2>Fund</h2>
+        <p className="token-notice">
+          Token:{" "}
+          <a
+            className="link"
+            href={`https://stellar.expert/explorer/testnet/contract/${TOKEN}`}
+            target="_blank"
+            rel="noreferrer"
+            title="Verify this token contract before funding"
+          >
+            <code>{TOKEN.slice(0, 6)}…{TOKEN.slice(-4)}</code> ↗
+          </a>{" "}
+          <CopyButton value={TOKEN} label="token contract address" />
+          <span className="token-notice-tip"> — verify this address before funding</span>
+        </p>
         <div className="members">
           {members.map((m, i) => (
             <div key={i} className={`member ${m.funded ? "funded" : ""}`}>

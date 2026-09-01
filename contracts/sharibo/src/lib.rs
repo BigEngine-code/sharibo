@@ -51,14 +51,64 @@ pub struct Proof {
 /// full, one member can claim the entire pot per round using a ZK proof that
 /// they are in the ring, with their nullifier preventing double-claims
 /// across rounds.
+///
+/// # Storage schema versioning
+///
+/// `schema_version` is always the **first field** so that a future migration
+/// helper can read it without needing to decode the full struct. The rule is:
+///
+/// - Every field addition or removal **must** bump `schema_version`.
+/// - A bump requires either a migration function (reading the old layout,
+///   writing the new one) or an explicit "testnet-reset" note in the release
+///   commit message.
+/// - A golden-XDR test in `test.rs` (`circle_xdr_layout_golden`) will fail if
+///   the serialised layout changes without a deliberate version bump, making
+///   accidental breakage impossible to land unnoticed.
+///
+/// Current version: **1** (initial versioned struct).
 #[contracttype]
 #[derive(Clone)]
 pub struct Circle {
+    /// Schema version for this stored struct. Must be the first field.
+    /// Increment whenever a field is added, removed, or reordered, and
+    /// provide a migration path or explicit testnet-reset note.
+    /// Current value: 1.
+    pub schema_version: u32,
     /// Owner of the circle. Required to call [`Contract::cancel_circle`];
     /// does **not** gate funding or claiming — those are permissionless
     /// (fund) / zero-knowledge (claim).
     pub admin: Address,
     /// SAC token contract used for contributions and payouts.
+    ///
+    /// # Trust assumption
+    ///
+    /// This address is stored at circle creation and **never validated
+    /// on-chain**. Every subsequent [`Contract::fund`] and
+    /// [`Contract::claim`] call invokes `token::Client::transfer` against
+    /// it unconditionally. A hostile token contract at this address can:
+    ///
+    /// - **Refuse specific transfers** — e.g. selectively block the payout
+    ///   in `claim` while accepting `fund` deposits, permanently stranding
+    ///   the pot.
+    /// - **Charge a transfer fee (fee-on-transfer)** — report a successful
+    ///   transfer but credit the recipient less than the nominal amount.
+    ///   Because `claim` requires `pot == contribution * size` *exactly*,
+    ///   even a 1-stroop fee causes every `fund` to land short of the
+    ///   target and `claim` will never succeed, bricking the circle.
+    /// - **Re-enter the contract** — call back into `fund`, `claim`, or
+    ///   `cancel_circle` during a transfer. The contract holds no
+    ///   reentrancy lock; correctness depends on the token not doing this.
+    ///   (Soroban's host executes contracts in a single-threaded
+    ///   call-stack, so reentrancy is detectable but not prevented.)
+    /// - **Silently succeed without moving value** — `transfer` returns
+    ///   `()` and the contract has no way to verify the actual balance
+    ///   delta; a token that lies about transfers can drain the accounting
+    ///   without moving tokens.
+    ///
+    /// **Mitigation**: members must verify the token address out of band
+    /// before funding. The demo pins the native XLM Stellar Asset Contract
+    /// (SAC), which is the only token whose behaviour the contract assumes.
+    /// See `docs/threat-model.md` §"Token contract trust".
     pub token: Address,
     /// Merkle root of the member-commitment tree. Committed at creation
     /// and used as a public input to every [`Self::claim`] proof; binds
@@ -112,6 +162,11 @@ pub enum DataKey {
 ///
 /// All panics use `panic_with_error!` so the discriminant is surfaced to
 /// on-chain callers and off-chain simulations.
+///
+/// The variant count is pinned by the `error_table_variant_count` test in
+/// `test.rs`. Adding a variant here requires bumping `DOCUMENTED_ERROR_COUNT`
+/// in that test and adding a row to `docs/errors.md`. See that file for the
+/// full mapping to SDK classes, user-facing messages, and remedies.
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
@@ -133,10 +188,45 @@ pub enum Error {
     Overflow = 7,
     /// `cancel_circle` or `fund`/`claim` called on a cancelled circle.
     CircleCancelled = 8,
+    /// `apply_fee` called with `fee_bps > 10_000` or `amount < 0`.
+    InvalidFeeParams = 9,
 }
 
+/// Minimum remaining TTL (in ledgers) that triggers a `extend_ttl` call.
+///
+/// Every write entrypoint (`create_circle`, `fund`, `claim`, `cancel_circle`)
+/// calls `extend_ttl(LEDGER_THRESHOLD, LEDGER_EXTEND_TO)`. The Soroban host
+/// only performs the extension when the entry's current TTL has fallen below
+/// `LEDGER_THRESHOLD`; if it is already higher, the call is a no-op. Setting
+/// this to 100 ledgers (≈ 8 minutes at ~5 s/ledger) means that any write
+/// performed in the last few minutes of a circle's live window will refresh it
+/// to the full `LEDGER_EXTEND_TO` budget.
 const LEDGER_THRESHOLD: u32 = 100;
+
+/// TTL (in ledgers) that persistent and instance entries are extended to on
+/// each write.
+///
+/// 500,000 ledgers × 5 s/ledger ≈ **29 days** of activity-triggered liveness.
+///
+/// The Soroban network cap for persistent entry TTL is **535,679 ledgers**
+/// (≈ 30 days; see <https://developers.stellar.org/docs/tools/cli/cookbook/extend-contract-wasm>).
+/// `LEDGER_EXTEND_TO` is intentionally set just below that ceiling to leave a
+/// small safety margin while still giving circles close to the maximum window.
+///
+/// If a circle goes dormant (no `fund`, `claim`, or `cancel_circle` call) for
+/// longer than this window, its persistent entry will be archived. An operator
+/// must then submit a `RestoreFootprintOp` (via `stellar contract restore`)
+/// before any further interaction is possible. See `contracts/README.md §Storage
+/// lifetime` for the runbook.
 const LEDGER_EXTEND_TO: u32 = 500_000;
+
+// Compile-time sanity check: the threshold at which we re-extend must be
+// strictly less than the target we extend to, or the extension can never
+// make progress.
+const _: () = assert!(
+    LEDGER_THRESHOLD < LEDGER_EXTEND_TO,
+    "LEDGER_THRESHOLD must be strictly less than LEDGER_EXTEND_TO",
+);
 
 /// Sharibo contract: permissionless Semaphore-style contribution circles on
 /// Soroban.
@@ -168,7 +258,9 @@ impl Contract {
     ///
     /// * `admin` — circle owner; can cancel. Stored in [`Circle::admin`].
     /// * `token` — SAC token address for contributions/payouts. Stored in
-    ///   [`Circle::token`].
+    ///   [`Circle::token`]. Accepted without validation — see
+    ///   [`Circle::token`] for the full list of trust assumptions members
+    ///   must verify before funding.
     /// * `root` — Merkle root of the Semaphore commitment tree; binds who
     ///   is eligible to claim. Stored in [`Circle::root`].
     /// * `contribution` — fixed amount each [`Self::fund`] deposits.
@@ -209,6 +301,7 @@ impl Contract {
             .unwrap_or(0);
 
         let circle = Circle {
+            schema_version: 1,
             admin,
             token,
             root,
@@ -276,15 +369,7 @@ impl Contract {
         from.require_auth();
 
         let key = DataKey::Circle(circle_id);
-        let mut circle: Circle = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or_else(|| panic_with_error!(&env, Error::CircleNotFound));
-
-        if circle.cancelled {
-            panic_with_error!(&env, Error::CircleCancelled);
-        }
+        let mut circle = load_active_circle(&env, circle_id);
 
         let target = pot_target(&env, &circle);
         if circle.pot >= target {
@@ -388,15 +473,7 @@ impl Contract {
         proof: Proof,
     ) {
         let key = DataKey::Circle(circle_id);
-        let mut circle: Circle = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or_else(|| panic_with_error!(&env, Error::CircleNotFound));
-
-        if circle.cancelled {
-            panic_with_error!(&env, Error::CircleCancelled);
-        }
+        let mut circle = load_active_circle(&env, circle_id);
 
         // 1. round must be fully funded
         if circle.pot != pot_target(&env, &circle) {
@@ -467,10 +544,7 @@ impl Contract {
     ///
     /// * [`Error::CircleNotFound`] — no circle stored at `circle_id`.
     pub fn get_circle(env: Env, circle_id: u64) -> Circle {
-        env.storage()
-            .persistent()
-            .get(&DataKey::Circle(circle_id))
-            .unwrap_or_else(|| panic_with_error!(&env, Error::CircleNotFound))
+        load_circle(&env, circle_id)
     }
 
     /// Pure read: the current count of circles ever created (i.e. the next
@@ -480,6 +554,84 @@ impl Contract {
             .instance()
             .get(&DataKey::NextCircleId)
             .unwrap_or(0)
+    }
+
+    /// Pure read: the current round number for `circle_id`.
+    ///
+    /// Cheaper than [`Self::get_circle`] for callers that only need to track
+    /// round advancement (e.g. polling the proof's external_nullifier binding).
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::CircleNotFound`] — `circle_id` does not exist.
+    pub fn get_round(env: Env, circle_id: u64) -> u32 {
+        let circle: Circle = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Circle(circle_id))
+            .unwrap_or_else(|| panic_with_error!(&env, Error::CircleNotFound));
+        circle.round
+    }
+
+    /// Pure read: the current pot balance (in token stroops) for `circle_id`.
+    ///
+    /// Cheaper than [`Self::get_circle`] for UI polling that only needs the
+    /// funding-progress bar.
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::CircleNotFound`] — `circle_id` does not exist.
+    pub fn get_pot(env: Env, circle_id: u64) -> i128 {
+        let circle: Circle = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Circle(circle_id))
+            .unwrap_or_else(|| panic_with_error!(&env, Error::CircleNotFound));
+        circle.pot
+    }
+
+    /// Pure read: compact status tuple `(round, pot, target, cancelled)`.
+    ///
+    /// Returns everything the app's polling loop needs in one RPC call,
+    /// without deserializing the embedded [`VerificationKey`]:
+    ///
+    /// * `round` — current round number.
+    /// * `pot` — tokens deposited so far in this round.
+    /// * `target` — `contribution * size`; pot must equal this for a claim.
+    /// * `cancelled` — whether the circle has been permanently closed.
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::CircleNotFound`] — `circle_id` does not exist.
+    /// * [`Error::Overflow`] — `contribution * size` overflows `i128`
+    ///   (absurd parameters set at circle creation).
+    pub fn get_status(env: Env, circle_id: u64) -> (u32, i128, i128, bool) {
+        let circle: Circle = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Circle(circle_id))
+            .unwrap_or_else(|| panic_with_error!(&env, Error::CircleNotFound));
+        let target = pot_target(&env, &circle);
+        (circle.round, circle.pot, target, circle.cancelled)
+    }
+
+    /// Pure read: the ordered list of addresses that have funded the
+    /// **current** round of `circle_id`.
+    ///
+    /// Intended for the cancel/refund UI — callers can display the contributors
+    /// and let the admin verify who will be refunded before calling
+    /// [`Self::cancel_circle`].
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::CircleNotFound`] — `circle_id` does not exist.
+    pub fn get_contributors(env: Env, circle_id: u64) -> Vec<Address> {
+        let circle: Circle = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Circle(circle_id))
+            .unwrap_or_else(|| panic_with_error!(&env, Error::CircleNotFound));
+        circle.contributors
     }
 
     /// Pure read: whether `nullifier_hash` has already been used to claim in
@@ -542,17 +694,9 @@ impl Contract {
     /// * [`Error::CircleCancelled`] — circle was already cancelled.
     pub fn cancel_circle(env: Env, circle_id: u64) {
         let key = DataKey::Circle(circle_id);
-        let mut circle: Circle = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or_else(|| panic_with_error!(&env, Error::CircleNotFound));
+        let mut circle = load_active_circle(&env, circle_id);
 
         circle.admin.require_auth();
-
-        if circle.cancelled {
-            panic_with_error!(&env, Error::CircleCancelled);
-        }
 
         // Refund every contributor for the current (stuck) round.
         let token_client = token::Client::new(&env, &circle.token);
@@ -630,6 +774,31 @@ impl Contract {
     }
 }
 
+/// Load a [`Circle`] from persistent storage, or revert with
+/// [`Error::CircleNotFound`].
+///
+/// This is the single authoritative source of that error; no call site should
+/// open-code the storage lookup.
+fn load_circle(env: &Env, circle_id: u64) -> Circle {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Circle(circle_id))
+        .unwrap_or_else(|| panic_with_error!(env, Error::CircleNotFound))
+}
+
+/// Load a [`Circle`] and additionally reject it if it has been cancelled,
+/// reverting with [`Error::CircleCancelled`].
+///
+/// Used by every entrypoint that must not operate on a closed circle:
+/// [`Contract::fund`], [`Contract::claim`], and [`Contract::cancel_circle`].
+fn load_active_circle(env: &Env, circle_id: u64) -> Circle {
+    let circle = load_circle(env, circle_id);
+    if circle.cancelled {
+        panic_with_error!(env, Error::CircleCancelled);
+    }
+    circle
+}
+
 /// `contribution * size` for the current round, or [`Error::Overflow`].
 fn pot_target(env: &Env, circle: &Circle) -> i128 {
     circle
@@ -665,16 +834,22 @@ fn pot_target(env: &Env, circle: &Circle) -> i128 {
 /// # Arguments
 ///
 /// * `fee_bps` — fee in basis points; must be in `0..=10_000` (i.e.
-///   0 % – 100 %). Values outside this range are accepted without
-///   error but may produce surprising results (e.g. `fee_bps > 10_000`
-///   gives `fee > amount`).
-/// * `amount` — gross token amount to split. Must be non-negative for
-///   the round-trip invariant `fee + net == amount` to hold.
+///   0 % – 100 %). Values outside this range are **rejected** with
+///   [`Error::InvalidFeeParams`] — they are never silently accepted.
+/// * `amount` — gross token amount to split. Must be non-negative;
+///   negative values are **rejected** with [`Error::InvalidFeeParams`].
 ///
 /// # Returns
 ///
 /// `(fee, net)` where `fee + net == amount`.
-pub fn apply_fee(fee_bps: u32, amount: i128) -> (i128, i128) {
+///
+/// # Errors
+///
+/// * [`Error::InvalidFeeParams`] — `fee_bps > 10_000` or `amount < 0`.
+pub fn apply_fee(env: &Env, fee_bps: u32, amount: i128) -> (i128, i128) {
+    if fee_bps > 10_000 || amount < 0 {
+        panic_with_error!(env, Error::InvalidFeeParams);
+    }
     // Split to avoid overflow: amount = q * 10_000 + r, so
     //   fee_bps * amount = fee_bps * q * 10_000 + fee_bps * r
     // Dividing by 10_000:
