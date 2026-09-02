@@ -36,6 +36,60 @@ export interface ShariboSigner {
   signAuthEntry?: (entryXdr: string, opts?: any) => Promise<string>;
 }
 
+/**
+ * Pre-flight fee estimate from a dry-run simulation.
+ *
+ * All values are in stroops (1 XLM = 10,000,000 stroops).
+ *
+ * @property minResourceFee - The minimum fee the network requires to cover
+ *   resource usage (CPU, memory, I/O) as reported by the simulation. For a
+ *   claim this is dominated by the BLS12-381 pairing check.
+ * @property totalFee - The full fee encoded in the assembled transaction
+ *   (base inclusion fee + minResourceFee). This is what the account will
+ *   actually be charged if the transaction is accepted.
+ */
+export interface FeeEstimate {
+  /** Minimum resource fee in stroops, as reported by simulation. */
+  minResourceFee: bigint;
+  /** Total fee (base + resource) encoded in the assembled transaction, in stroops. */
+  totalFee: bigint;
+}
+
+// ── withRetry ────────────────────────────────────────────────────────────────
+// Retries the simulation/preparation phase of a contract call on transient
+// errors (429 / 503 / timeouts). The submit phase is never retried — once a
+// transaction is signed and sent, retrying could cause a double-spend.
+
+const RETRY_DELAYS_MS = [500, 1000, 2000];
+
+function isTransient(err: unknown): boolean {
+  const msg = String(err instanceof Error ? err.message : err);
+  return (
+    msg.includes("429") ||
+    msg.includes("503") ||
+    msg.includes("timeout") ||
+    msg.includes("ECONNRESET") ||
+    msg.includes("Too Many Requests")
+  );
+}
+
+async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (attempt < RETRY_DELAYS_MS.length && isTransient(err)) {
+        await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
+}
+
 export async function connect(
   config: ShariboNetworkConfig,
   keypairOrSigner: Keypair | ShariboSigner,
@@ -107,6 +161,53 @@ function populateTxResult<T>(
     ledger: sent.getTransactionResponse?.ledger,
     feeCharged: sent.getTransactionResponse?.feeCharged,
   };
+}
+
+/**
+ * Estimates the fee for a claim transaction by running a dry-run simulation.
+ *
+ * The claim is the most expensive operation in Sharibo because it includes
+ * a BLS12-381 pairing check. This lets the UI show the cost before the user
+ * signs anything.
+ *
+ * @param client - The Sharibo contract client (connected with the signer that
+ *   will submit the transaction — the fee is account-specific).
+ * @param args - The same arguments you would pass to `claim()`.
+ * @returns A fee estimate in stroops, or null if simulation fails.
+ */
+export async function estimateClaimFee(
+  client: ShariboClient,
+  args: {
+    circleId: bigint;
+    recipient: string;
+    nullifierHash: bigint;
+    externalNullifier: bigint;
+    proof: ContractProof;
+  },
+): Promise<FeeEstimate | null> {
+  try {
+    const tx = await withRetry(() =>
+      client.claim({
+        circle_id: args.circleId,
+        recipient: args.recipient,
+        nullifier_hash: args.nullifierHash,
+        external_nullifier: args.externalNullifier,
+        proof: args.proof,
+      }),
+    );
+    // tx has already been simulated by the SDK at this point.
+    const sim = tx.simulation as Api.SimulateTransactionResponse | undefined;
+    if (!sim || !Api.isSimulationSuccess(sim)) return null;
+
+    const minResourceFee = BigInt(sim.minResourceFee);
+    // tx.built is the assembled Transaction; its .fee is total stroops as a string.
+    const totalFee = tx.built ? BigInt(tx.built.fee) : minResourceFee;
+    return { minResourceFee, totalFee };
+  } catch {
+    // Simulation can fail (e.g. circle underfunded, wrong round) — don't
+    // surface that as an error here; the actual claim() call will report it.
+    return null;
+  }
 }
 
 /**
