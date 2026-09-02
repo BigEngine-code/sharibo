@@ -34,8 +34,12 @@ interface I18nContextValue {
 const I18nContext = createContext<I18nContextValue | null>(null);
 
 function chooseInitialLocale(): LocaleCode {
-  const stored = localStorage.getItem("sharibo.locale");
-  if (stored && dictionaries[stored]) return stored;
+  try {
+    const stored = localStorage.getItem("sharibo.locale");
+    if (stored && dictionaries[stored]) return stored;
+  } catch (e) {
+    // Ignore localStorage errors (e.g., privacy modes)
+  }
 
   const browser = navigator.language.toLowerCase();
   const exact = localeCodes.find((code) => code.toLowerCase() === browser);
@@ -48,6 +52,12 @@ function chooseInitialLocale(): LocaleCode {
   return fallbackLocale;
 }
 
+function applyLocale(code: LocaleCode) {
+  document.documentElement.lang = code;
+  const rtlLocales = new Set(["ar", "he", "fa", "ur", "ps", "yi", "ug"]);
+  document.documentElement.dir = rtlLocales.has(code.split("-")[0].toLowerCase()) ? "rtl" : "ltr";
+}
+
 function interpolate(template: string, vars?: Record<string, string | number>): string {
   if (!vars) return template;
   return template.replace(/\{([a-zA-Z0-9_]+)\}/g, (_, key: string) => {
@@ -57,12 +67,21 @@ function interpolate(template: string, vars?: Record<string, string | number>): 
 }
 
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<LocaleCode>(() => chooseInitialLocale());
+  const [locale, setLocaleState] = useState<LocaleCode>(() => {
+    const initial = chooseInitialLocale();
+    applyLocale(initial);
+    return initial;
+  });
 
   const setLocale = (next: LocaleCode) => {
     if (!dictionaries[next]) return;
     setLocaleState(next);
-    localStorage.setItem("sharibo.locale", next);
+    try {
+      localStorage.setItem("sharibo.locale", next);
+    } catch (e) {
+      // Ignore localStorage errors
+    }
+    applyLocale(next);
   };
 
   const value = useMemo<I18nContextValue>(() => {
