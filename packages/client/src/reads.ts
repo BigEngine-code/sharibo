@@ -1,7 +1,5 @@
 import type { ShariboClient } from "./connect.js";
-
-// @ts-ignore
-declare const withRetry: any;
+import { withRetry } from "./connect.js";
 
 /**
  * A view of a Sharibo circle's state.

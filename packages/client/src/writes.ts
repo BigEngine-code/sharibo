@@ -1,8 +1,7 @@
+import { Api } from "@stellar/stellar-sdk/rpc";
 import type { ContractProof, ContractVerificationKey } from "./prove.js";
 import type { ShariboClient } from "./connect.js";
-
-// @ts-ignore
-declare const withRetry: any;
+import { withRetry } from "./connect.js";
 
 /**
  * Result of a contract transaction.
@@ -117,4 +116,70 @@ export async function claim(
   }));
   const sent = await tx.signAndSend();
   return populateTxResult(undefined, sent);
+}
+
+/**
+ * Pre-flight fee estimate from a dry-run simulation.
+ *
+ * All values are in stroops (1 XLM = 10,000,000 stroops).
+ *
+ * @property minResourceFee - The minimum fee the network requires to cover
+ *   resource usage (CPU, memory, I/O) as reported by the simulation. For a
+ *   claim this is dominated by the BLS12-381 pairing check.
+ * @property totalFee - The full fee encoded in the assembled transaction
+ *   (base inclusion fee + minResourceFee). This is what the account will
+ *   actually be charged if the transaction is accepted.
+ */
+export interface FeeEstimate {
+  /** Minimum resource fee in stroops, as reported by simulation. */
+  minResourceFee: bigint;
+  /** Total fee (base + resource) encoded in the assembled transaction, in stroops. */
+  totalFee: bigint;
+}
+
+/**
+ * Estimates the fee for a claim transaction by running a dry-run simulation.
+ *
+ * The claim is the most expensive operation in Sharibo because it includes
+ * a BLS12-381 pairing check. This lets the UI show the cost before the user
+ * signs anything.
+ *
+ * @param client - The Sharibo contract client (connected with the signer that
+ *   will submit the transaction — the fee is account-specific).
+ * @param args - The same arguments you would pass to `claim()`.
+ * @returns A fee estimate in stroops, or null if simulation fails.
+ */
+export async function estimateClaimFee(
+  client: ShariboClient,
+  args: {
+    circleId: bigint;
+    recipient: string;
+    nullifierHash: bigint;
+    externalNullifier: bigint;
+    proof: ContractProof;
+  },
+): Promise<FeeEstimate | null> {
+  try {
+    const tx = await withRetry(() =>
+      client.claim({
+        circle_id: args.circleId,
+        recipient: args.recipient,
+        nullifier_hash: args.nullifierHash,
+        external_nullifier: args.externalNullifier,
+        proof: args.proof,
+      }),
+    );
+    // tx has already been simulated by the SDK at this point.
+    const sim = tx.simulation as Api.SimulateTransactionResponse | undefined;
+    if (!sim || !Api.isSimulationSuccess(sim)) return null;
+
+    const minResourceFee = BigInt(sim.minResourceFee);
+    // tx.built is the assembled Transaction; its .fee is total stroops as a string.
+    const totalFee = tx.built ? BigInt(tx.built.fee) : minResourceFee;
+    return { minResourceFee, totalFee };
+  } catch {
+    // Simulation can fail (e.g. circle underfunded, wrong round) — don't
+    // surface that as an error here; the actual claim() call will report it.
+    return null;
+  }
 }

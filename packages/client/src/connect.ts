@@ -65,3 +65,38 @@ export async function connect(
     signAuthEntry,
   });
 }
+
+// ── withRetry ────────────────────────────────────────────────────────────────
+// Retries the simulation/preparation phase of a contract call on transient
+// errors (429 / 503 / timeouts). The submit phase is never retried — once a
+// transaction is signed and sent, retrying could cause a double-spend.
+
+const RETRY_DELAYS_MS = [500, 1000, 2000];
+
+export function isTransient(err: unknown): boolean {
+  const msg = String(err instanceof Error ? err.message : err);
+  return (
+    msg.includes("429") ||
+    msg.includes("503") ||
+    msg.includes("timeout") ||
+    msg.includes("ECONNRESET") ||
+    msg.includes("Too Many Requests")
+  );
+}
+
+export async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (attempt < RETRY_DELAYS_MS.length && isTransient(err)) {
+        await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
+}
