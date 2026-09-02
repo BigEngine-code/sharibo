@@ -1,11 +1,14 @@
 import { groth16 } from "snarkjs";
 import {
+  getArtifacts,
   prefetchMembershipArtifacts,
   type ProverArtifacts,
-} from "./artifacts";
+} from "./artifacts.js";
 import { ProvingError, InvalidInputError } from "./errors.js";
 import { TREE_LEVELS } from "./config.js";
 import { FR_MODULUS } from "./identity.js";
+
+export { getArtifacts };
 
 /**
  * The structured circuit input for the membership proof.
@@ -61,15 +64,6 @@ export interface GenerateProofResult {
   root: bigint;
   externalNullifier: bigint;
   provingTimeMs: number;
-}
-
-let artifactPromise: Promise<ProverArtifacts> | undefined;
-
-function getArtifacts(): Promise<ProverArtifacts> {
-  if (!artifactPromise) {
-    artifactPromise = prefetchMembershipArtifacts();
-  }
-  return artifactPromise;
 }
 
 /**

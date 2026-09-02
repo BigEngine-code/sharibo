@@ -6,7 +6,7 @@
  * undefined and no network access. This guards against regressions where
  * a browser-only side-effect creeps back into the default entry point.
  */
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 
 test("package imports cleanly in Node with document undefined", async () => {
@@ -30,6 +30,8 @@ test("package imports cleanly in Node with document undefined", async () => {
   assert.strictEqual(typeof mod.validateCircuitInput, "function", "validateCircuitInput");
   assert.strictEqual(typeof mod.verifyProofLocally, "function", "verifyProofLocally");
   assert.strictEqual(typeof mod.verificationKeyToContractFormat, "function", "vkFormat");
+  assert.strictEqual(typeof mod.configureArtifacts, "function", "configureArtifacts");
+  assert.strictEqual(typeof mod.getArtifacts, "function", "getArtifacts");
 });
 
 test("prefetchMembershipArtifacts is exported but not auto-called at import time", async () => {

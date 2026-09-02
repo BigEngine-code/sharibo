@@ -162,3 +162,32 @@ export const getCircle = vi.fn(
     pot: 0n,
   }),
 );
+
+// ── Artifacts ─────────────────────────────────────────────────────────────────
+
+export const MEMBERSHIP_WASM_URL = "/circuits/membership.wasm";
+export const MEMBERSHIP_ZKEY_URL = "/circuits/membership_final.zkey";
+
+export const configureArtifacts = vi.fn();
+export const getArtifactsConfig = vi.fn(() => ({
+  wasmUrl: MEMBERSHIP_WASM_URL,
+  zkeyUrl: MEMBERSHIP_ZKEY_URL,
+}));
+export const resetArtifactsConfig = vi.fn();
+export const getArtifacts = vi.fn(async () => ({
+  wasm: new Uint8Array(10),
+  zkey: new Uint8Array(10),
+}));
+export const prefetchMembershipArtifacts = vi.fn(async () => ({
+  wasm: new Uint8Array(10),
+  zkey: new Uint8Array(10),
+}));
+export const getArtifactPrefetchProgress = vi.fn(() => ({
+  status: "ready" as const,
+  loaded: 0,
+  total: null,
+  fraction: 1,
+}));
+export const subscribeToArtifactPrefetch = vi.fn(() => () => {});
+export const installIndicatorAndPrefetch = vi.fn();
+

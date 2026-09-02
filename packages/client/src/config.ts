@@ -1,1 +1,2 @@
-export { TREE_LEVELS, MAX_CIRCLE_SIZE } from "./tree.js";
+export const TREE_LEVELS = 4;
+export const MAX_CIRCLE_SIZE = 16;

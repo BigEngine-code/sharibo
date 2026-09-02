@@ -12,6 +12,16 @@ import App from "./App";
 // Activate the manual mock at <root>/__mocks__/@sharibo/client.ts.
 vi.mock("@sharibo/client");
 
+vi.mock("./config", () => ({
+  config: {
+    contractId: "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    rpcUrl: "https://soroban-testnet.stellar.org",
+    networkPassphrase: "Test SDF Network ; September 2015",
+    testTokenContractId: "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  },
+  configError: [],
+}));
+
 // Also mock @stellar/stellar-sdk's Keypair so `Keypair.random()` and
 // `friendbotFund` (which calls `fetch`) don't hit the network.
 vi.mock("@stellar/stellar-sdk", async (importOriginal) => {

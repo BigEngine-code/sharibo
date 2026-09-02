@@ -1,4 +1,6 @@
 import { poseidon, FR_MODULUS } from "./identity.js";
+import { InvalidInputError } from "./errors.js";
+import { TREE_LEVELS, MAX_CIRCLE_SIZE } from "./config.js";
 
 /**
  * Fixed placeholder for unused leaves when padding the tree out to full capacity (2**levels).
@@ -149,5 +151,23 @@ export class MerkleTree {
     }
 
     return { root: this.root, pathElements, pathIndices };
+  }
+
+  /**
+   * Generates a Merkle proof for a given leaf value.
+   *
+   * @param leaf - The leaf value (identity commitment) to generate a proof for.
+   * @returns A MerkleProof containing root, pathElements, and pathIndices.
+   * @throws {InvalidInputError} If the leaf is not in the tree.
+   */
+  proofOf(leaf: bigint): MerkleProof {
+    const idx = this.indexOf(leaf);
+    if (idx === -1) {
+      const hex = "0x" + leaf.toString(16).slice(0, 10) + "…";
+      throw new InvalidInputError(
+        `leaf ${hex} not found in this tree (${2 ** this.levels} slots, ${this.leaves.length} occupied)`,
+      );
+    }
+    return this.proof(idx);
   }
 }

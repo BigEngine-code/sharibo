@@ -19,9 +19,19 @@ import { Buffer } from "buffer";
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { configureArtifacts } from "@sharibo/client";
 import App from "./App.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
 import "./style.css";
+
+const baseUrl = import.meta.env.BASE_URL.endsWith("/")
+  ? import.meta.env.BASE_URL
+  : `${import.meta.env.BASE_URL}/`;
+
+configureArtifacts({
+  wasmUrl: `${baseUrl}circuits/membership.wasm`,
+  zkeyUrl: `${baseUrl}circuits/membership_final.zkey`,
+});
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

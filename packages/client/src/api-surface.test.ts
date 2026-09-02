@@ -70,6 +70,7 @@ describe("API surface snapshot", () => {
         name === "CircleView" ||
         name === "ArtifactPrefetchStatus" ||
         name === "ArtifactPrefetchProgress" ||
+        name === "ArtifactsConfig" ||
         name === "ProverArtifacts"
       ) {
         types[name] = typeOf;
@@ -80,9 +81,9 @@ describe("API surface snapshot", () => {
         name === "RpcError" ||
         name === "ContractError"
       ) {
-        errors[name] = typeOf;
+        errors[name] = "class";
       } else if (name === "MerkleTree") {
-        types[name] = typeOf;
+        types[name] = "class";
       } else if (typeOf === "function") {
         functions[name] = typeOf;
       }

@@ -44,6 +44,8 @@ import {
   getCircle,
   TREE_LEVELS,
   ContractError,
+  configureArtifacts,
+  getArtifacts,
 } from "@sharibo/client";
 import { checkContractDeployed } from "./testnet-health.js";
 
@@ -327,7 +329,7 @@ async function main() {
         m.keypair,
       ),
       30_000,
-      "createCircle",
+      `connect(member ${i})`,
     );
     verbose(`funding from member ${i}...`);
     await withTimeout(
@@ -335,8 +337,10 @@ async function main() {
       30_000,
       `fund(member ${i})`,
     );
-    console.log("   pot fully funded:", fundedCircle.pot.toString(), "stroops");
-  });
+    console.log(`   [${i + 1}/${CIRCLE_SIZE}] funded from`, m.keypair.publicKey());
+  }
+  const fundedCircle = await getCircle(adminClient, circleId);
+  console.log("   pot fully funded:", fundedCircle.pot.toString(), "stroops");
 
   console.log("\n4. Generating a real ZK proof for member", CLAIMANT_INDEX, "...");
   const externalNullifier = await computeExternalNullifier(circleId, 0n);
@@ -346,34 +350,39 @@ async function main() {
     "circuits",
     "build",
   );
-  verbose("generating proof with wasm + zkey from", circuitsBuildDir);
-  const { proof, nullifierHash, root, externalNullifier: provenExternalNullifier } =
-    await timed("proof generation", () =>
-      generateProof(
-        {
-          identityNullifier: claimant.identity.identityNullifier,
-          identitySecret: claimant.identity.identitySecret,
-          pathElements: merkleProof.pathElements,
-          pathIndices: merkleProof.pathIndices,
-          root: tree.root,
-          externalNullifier,
-        },
-        path.join(circuitsBuildDir, "membership_js", "membership.wasm"),
-        path.join(circuitsBuildDir, "membership_final.zkey"),
-      ),
-    );
+  configureArtifacts({
+    wasmUrl: path.join(circuitsBuildDir, "membership_js", "membership.wasm"),
+    zkeyUrl: path.join(circuitsBuildDir, "membership_final.zkey"),
+    fetchImpl: async (url) => {
+      const filePath = typeof url === "string" ? url : url.toString();
+      const data = readFileSync(filePath);
+      return new Response(data, {
+        status: 200,
+        headers: { "content-length": data.byteLength.toString() },
+      });
+    },
+  });
+
+  const { proof, nullifierHash } = await step("generate real ZK proof", async () => {
+    const claimant = members[CLAIMANT_INDEX];
+    const merkleProof = tree.proof(CLAIMANT_INDEX);
+    verbose("loading circuit artifacts via configured fetchImpl...");
+    const artifacts = await getArtifacts();
+    verbose("generating proof with loaded artifacts...");
     const { proof, nullifierHash, root, externalNullifier: provenExternalNullifier } =
-      await generateProof(
-        {
-          identityNullifier: claimant.identity.identityNullifier,
-          identitySecret: claimant.identity.identitySecret,
-          pathElements: merkleProof.pathElements,
-          pathIndices: merkleProof.pathIndices,
-          root: tree.root,
-          externalNullifier,
-        },
-        path.join(circuitsBuildDir, "membership_js", "membership.wasm"),
-        path.join(circuitsBuildDir, "membership_final.zkey"),
+      await timed("proof generation", () =>
+        generateProof(
+          {
+            identityNullifier: claimant.identity.identityNullifier,
+            identitySecret: claimant.identity.identitySecret,
+            pathElements: merkleProof.pathElements,
+            pathIndices: merkleProof.pathIndices,
+            root: tree.root,
+            externalNullifier,
+          },
+          artifacts.wasm,
+          artifacts.zkey,
+        ),
       );
     assert(root === tree.root, "proof's public root must match the circle's root");
     assert(

@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, createElement, useContext, useMemo, useState, type ReactNode } from "react";
 
 type Dictionary = Record<string, string>;
 
@@ -82,13 +82,23 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     };
   }, [locale]);
 
-  return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
+  return createElement(I18nContext.Provider, { value }, children);
 }
 
 export function useI18n(): I18nContextValue {
   const ctx = useContext(I18nContext);
   if (!ctx) {
-    throw new Error("useI18n must be used inside I18nProvider");
+    const dicts = loadDictionaries();
+    const fallback = dicts[fallbackLocale] ?? {};
+    return {
+      locale: fallbackLocale,
+      locales: localeCodes,
+      setLocale: () => {},
+      t: (key: string, vars?: Record<string, string | number>) => {
+        const template = fallback[key] ?? key;
+        return interpolate(template, vars);
+      },
+    };
   }
   return ctx;
 }

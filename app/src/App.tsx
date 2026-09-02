@@ -31,6 +31,7 @@ import {
 } from "@sharibo/client";
 import { config, configError } from "./config";
 import { useI18n } from "./i18n";
+import { usePoliteLiveRegion } from "./usePoliteLiveRegion";
 import {
   friendbotFund as fundWithFriendbot,
   FriendbotRetryableError,
@@ -65,7 +66,7 @@ const CIRCLE_SIZE = 5;
 const STROOPS_PER_XLM = 10_000_000n;
 const README_URL = "https://github.com/crackedstudio/sharibo#honest-limitations";
 
-const isTestnet = NETWORK.networkPassphrase.includes("Test SDF Network");
+const isTestnet = Boolean(NETWORK.networkPassphrase?.includes("Test SDF Network"));
 const BANNER_TEXT = isTestnet ? "Stellar testnet — no real funds" : "";
 
 function TestnetBanner() {
@@ -244,6 +245,28 @@ function Stepper({ step }: { step: 0 | 1 | 2 | 3 }) {
         })}
       </ol>
     </nav>
+  );
+}
+
+function LanguageSwitcher({ className }: { className?: string }) {
+  const { locale, locales, setLocale, t } = useI18n();
+
+  return (
+    <div className={`language-switcher ${className ?? ""}`.trim()}>
+      <label htmlFor="language-select">{t("lang.label")}</label>
+      <select
+        id="language-select"
+        value={locale}
+        onChange={(e) => setLocale(e.target.value)}
+        aria-label={t("lang.label")}
+      >
+        {locales.map((code) => (
+          <option key={code} value={code}>
+            {t(`lang.${code}`)}
+          </option>
+        ))}
+      </select>
+    </div>
   );
 }
 
@@ -629,7 +652,10 @@ export default function App() {
       );
 
       setBusy("Creating the circle on testnet…");
-      const vkJson = await fetch("/circuits/verification_key.json").then((r) =>
+      const baseUrl = import.meta.env.BASE_URL.endsWith("/")
+        ? import.meta.env.BASE_URL
+        : `${import.meta.env.BASE_URL}/`;
+      const vkJson = await fetch(`${baseUrl}circuits/verification_key.json`).then((r) =>
         r.json(),
       );
       const vk = verificationKeyToContractFormat(vkJson);
@@ -752,7 +778,7 @@ export default function App() {
     setRejection(null);
     setBusy("Claiming…");
     try {
-      const [{ Keypair }, { computeExternalNullifier, generateProof, verifyProofLocally, connect, claim, getCircle }] = await Promise.all([
+      const [{ Keypair }, { computeExternalNullifier, generateProof, verifyProofLocally, connect, claim, getCircle, getArtifacts }] = await Promise.all([
         import("@stellar/stellar-sdk"),
         import("@sharibo/client")
       ]);
@@ -761,14 +787,12 @@ export default function App() {
       const externalNullifier = await computeExternalNullifier(circleId, BigInt(round));
 
       setClaimStage("artifacts");
-      const [wasm, zkey, vkJson] = await Promise.all([
-        fetch("/circuits/membership.wasm")
-          .then((r) => r.arrayBuffer())
-          .then((b) => new Uint8Array(b)),
-        fetch("/circuits/membership_final.zkey")
-          .then((r) => r.arrayBuffer())
-          .then((b) => new Uint8Array(b)),
-        fetch("/circuits/verification_key.json").then((r) => r.json()),
+      const baseUrl = import.meta.env.BASE_URL.endsWith("/")
+        ? import.meta.env.BASE_URL
+        : `${import.meta.env.BASE_URL}/`;
+      const [{ wasm, zkey }, vkJson] = await Promise.all([
+        getArtifacts(),
+        fetch(`${baseUrl}circuits/verification_key.json`).then((r) => r.json()),
       ]);
 
       setClaimStage("proving");
@@ -886,30 +910,6 @@ export default function App() {
       }
       setBusy(null);
     }
-  }
-
-  if (resumePrompt && screen === "landing") {
-    return (
-      <div className="page">
-        <div className="card hero">
-          <h1>Resume Circle #{resumePrompt.circleId.toString()}?</h1>
-          <p className="sub">
-            It looks like you refreshed the page while a circle was active. Do you want to resume?
-          </p>
-          <div className="row" style={{ marginTop: '2rem', justifyContent: 'center', gap: '1rem' }}>
-            <button className="btn btn-primary" onClick={() => loadState(resumePrompt)}>
-              Resume Circle
-            </button>
-            <button className="btn btn-danger" onClick={() => {
-              sessionStorage.removeItem("sharibo_demo_state");
-              setResumePrompt(null);
-            }}>
-              Discard
-            </button>
-          </div>
-        </div>
-      </div>
-    );
   }
 
   if (screen === "landing") {
