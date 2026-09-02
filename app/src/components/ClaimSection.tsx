@@ -1,5 +1,15 @@
+import type { FeeEstimate } from "@sharibo/client";
 import type { Member } from "../types.js";
 import styles from "./ClaimSection.module.css";
+
+const STROOPS_PER_XLM = 10_000_000n;
+
+/** Format a stroop amount as a human-readable XLM string, e.g. "0.0123456 XLM". */
+function formatXlm(stroops: bigint): string {
+  const whole = stroops / STROOPS_PER_XLM;
+  const frac = stroops % STROOPS_PER_XLM;
+  return `${whole}.${frac.toString().padStart(7, "0")} XLM`;
+}
 
 export function ClaimSection({
   members,
@@ -7,12 +17,14 @@ export function ClaimSection({
   onSelectClaimant,
   busy,
   onClaim,
+  feeEstimate,
 }: {
   members: Member[];
   claimantIndex: number;
   onSelectClaimant: (i: number) => void;
   busy: string | null;
   onClaim: () => void;
+  feeEstimate?: FeeEstimate | null;
 }) {
   return (
     <>
