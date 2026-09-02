@@ -43,3 +43,5 @@ app:
 # Run everything except e2e (which spends testnet friendbot quota)
 all: circuits contract client app
     @echo 'All recipes completed (e2e skipped — uses testnet funds/friendbot quota)'
+bench-contract:
+	WRITE_BENCHMARKS=1 cargo test -p sharibo cpu_instruction_benchmarks -- --nocapture
