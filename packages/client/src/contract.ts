@@ -1,5 +1,6 @@
 import { Client as ContractClient, basicNodeSigner } from "@stellar/stellar-sdk/contract";
 import { Keypair, StrKey } from "@stellar/stellar-sdk";
+import { Api } from "@stellar/stellar-sdk/rpc";
 import type { ContractProof, ContractVerificationKey } from "./prove.js";
 import { ContractError, RpcError } from "./errors.js";
 import { withRetry, DEFAULT_RETRY_POLICY, type RetryPolicy } from "./retry.js";
@@ -136,6 +137,53 @@ function populateTxResult<T>(
     ledger: sent.getTransactionResponse?.ledger,
     feeCharged: sent.getTransactionResponse?.feeCharged,
   };
+}
+
+/**
+ * Estimates the fee for a claim transaction by running a dry-run simulation.
+ *
+ * The claim is the most expensive operation in Sharibo because it includes
+ * a BLS12-381 pairing check. This lets the UI show the cost before the user
+ * signs anything.
+ *
+ * @param client - The Sharibo contract client (connected with the signer that
+ *   will submit the transaction — the fee is account-specific).
+ * @param args - The same arguments you would pass to `claim()`.
+ * @returns A fee estimate in stroops, or null if simulation fails.
+ */
+export async function estimateClaimFee(
+  client: ShariboClient,
+  args: {
+    circleId: bigint;
+    recipient: string;
+    nullifierHash: bigint;
+    externalNullifier: bigint;
+    proof: ContractProof;
+  },
+): Promise<FeeEstimate | null> {
+  try {
+    const tx = await withRetry(() =>
+      client.claim({
+        circle_id: args.circleId,
+        recipient: args.recipient,
+        nullifier_hash: args.nullifierHash,
+        external_nullifier: args.externalNullifier,
+        proof: args.proof,
+      }),
+    );
+    // tx has already been simulated by the SDK at this point.
+    const sim = tx.simulation as Api.SimulateTransactionResponse | undefined;
+    if (!sim || !Api.isSimulationSuccess(sim)) return null;
+
+    const minResourceFee = BigInt(sim.minResourceFee);
+    // tx.built is the assembled Transaction; its .fee is total stroops as a string.
+    const totalFee = tx.built ? BigInt(tx.built.fee) : minResourceFee;
+    return { minResourceFee, totalFee };
+  } catch {
+    // Simulation can fail (e.g. circle underfunded, wrong round) — don't
+    // surface that as an error here; the actual claim() call will report it.
+    return null;
+  }
 }
 
 /**
