@@ -6,9 +6,13 @@ import {
   computeExternalNullifier,
   MerkleTree,
   generateProof,
+  verifyProofLocally,
+  estimateClaimFee,
   verificationKeyToContractFormat,
   TREE_LEVELS,
   type ContractProof,
+  type FeeEstimate,
+  TREE_LEVELS,
 } from "@sharibo/client";
 import { NETWORK, TOKEN } from "../config.js";
 import { friendbotFund } from "../lib/friendbot.js";
@@ -43,6 +47,7 @@ export function useCircleFlow() {
   const [nullifierHash, setNullifierHash] = useState<bigint | null>(null);
   const [claimResult, setClaimResult] = useState<ClaimResult | null>(null);
   const [rejection, setRejection] = useState<string | null>(null);
+  const [feeEstimate, setFeeEstimate] = useState<FeeEstimate | null>(null);
   // Survives a reset so the landing screen can point back at the circle you
   // just left — it keeps living on-chain even though the UI has moved on.
   const [previousCircleId, setPreviousCircleId] = useState<bigint | null>(null);
@@ -83,6 +88,7 @@ export function useCircleFlow() {
     setNullifierHash(null);
     setClaimResult(null);
     setRejection(null);
+    setFeeEstimate(null);
     setScreen("landing");
   }
 
@@ -162,11 +168,20 @@ export function useCircleFlow() {
     setError(null);
     setClaimResult(null);
     setRejection(null);
+    setFeeEstimate(null);
     setBusy("Proving… (a real Groth16 proof is being generated in your browser)");
     try {
       const claimant = members[claimantIndex];
       const merkleProof = tree.proof(claimantIndex);
       const externalNullifier = await computeExternalNullifier(circleId, BigInt(round));
+
+      // Fetch artifacts and VK in parallel.
+      const [wasm, zkey, vkJson] = await Promise.all([
+        fetch("/circuits/membership.wasm").then((r) => r.arrayBuffer()).then((b) => new Uint8Array(b)),
+        fetch("/circuits/membership_final.zkey").then((r) => r.arrayBuffer()).then((b) => new Uint8Array(b)),
+        fetch("/circuits/verification_key.json").then((r) => r.json()),
+      ]);
+
       const generated = await generateProof(
         {
           identityNullifier: claimant.identity.identityNullifier,
@@ -176,11 +191,16 @@ export function useCircleFlow() {
           root: tree.root,
           externalNullifier,
         },
-        "/circuits/membership.wasm",
-        "/circuits/membership_final.zkey",
+        wasm,
+        zkey,
       );
 
-      setBusy("Submitting the claim and generating a fresh, unlinked recipient…");
+      // Local verification catches a bad proof before any network call.
+      await verifyProofLocally(vkJson, generated.publicSignals, generated.snarkjsProof);
+
+      // Fund a fresh recipient before estimating — the estimate needs a valid
+      // recipient address in the simulated transaction.
+      setBusy("Funding a fresh, unlinked recipient…");
       const recipient = Keypair.random();
       await friendbotFund(recipient.publicKey());
 
@@ -195,7 +215,12 @@ export function useCircleFlow() {
 
       setProof(generated.proof);
       setNullifierHash(generated.nullifierHash);
-      setClaimResult({ recipient: recipient.publicKey(), hash });
+      setClaimResult({
+        recipient: recipient.publicKey(),
+        hash,
+        feeCharged,
+        feeEstimate: estimate ?? undefined,
+      });
 
       const circle = await adminSdk.getCircle(circleId);
       setPot(circle.pot);
@@ -265,6 +290,7 @@ export function useCircleFlow() {
     previousCircleId,
     fundedCount,
     fullyFunded,
+    feeEstimate,
     resetToLanding,
     startCircle,
     fundMember,
