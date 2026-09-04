@@ -18,6 +18,7 @@ Scope: `contracts/sharibo/src/lib.rs`, `circuits/membership.template.circom`, `p
 |---|---|---|
 | **Outside chain observer** | Reads Horizon/RPC only, no keys, no circle membership. | Full public ledger state: `Circle` fields (`root`, `contribution`, `size`, `round`, `pot`, `contributors`), every `fund`/`claim` transaction's arguments and source account, event logs. Cannot see any member's `identityNullifier`/`identitySecret` or the mapping from a leaf to a real-world identity. |
 | **Circle member** | Holds a valid `(identityNullifier, identitySecret)` leaf in the circle's tree. | Everything an outside observer sees, plus the ability to generate a real proof for their own leaf. Cannot forge a proof for another member's leaf (Merkle + Groth16 soundness) or replay their own proof into a later round (nullifier binding, see below). |
+| **Mempool observer / front-runner** | Reads pending (unfinalized) transactions from the mempool; no keys, no circle membership. | Everything an outside chain observer sees, plus the full `claim` argument list — `(circle_id, recipient, nullifier_hash, external_nullifier, proof)` — for any pending claim. Can copy that tuple and resubmit it with a different `recipient`; if it lands first, the pot is paid to the attacker's address. This is the attack documented in [Known attack: payout redirection](#known-attack-payout-redirection-recipient-front-running). |
 | **Circle admin** | Calls `create_circle`; address stored in `Circle.admin`. | Chooses `root`, `contribution`, `size`, and `vk` at creation time (`lib.rs:85-133`) — these are never revalidated by the contract afterward. Cannot block `fund` (only `from.require_auth()` is checked) or `claim` (no admin auth check at all — see `docs/adr/001-upgradeability.md:38-44`). Can call `cancel_circle` (`lib.rs:281-312`), which refunds the current round's contributors and permanently closes the circle. |
 | **Contract deployer** | Deploys the Soroban WASM under the contract ID published in the README. | Controls the bytecode at deployment time only. `lib.rs` exposes no upgrade entry point, so post-deployment the deployer has no more power than any other observer (`docs/adr/001-upgradeability.md`, Decision §1). There is currently no published reproducible-build check, so a user must trust that the deployed WASM matches this repository's `contracts/sharibo/src/lib.rs` — this is a supply-chain gap, not a runtime one. |
 | **Trusted-setup runner** | Ran the Powers-of-Tau + Groth16 setup that produced `circuits/verification_key.json` (`circuits/SETUP_TRANSCRIPT.md`, single contributor, 2025-07-01 entry). | If the setup's toxic waste was not destroyed, this party can construct a valid-looking proof for *any* circle using that vk without holding a real leaf in the tree at all — a full break of the membership property for those circles. This is the reason the setup is called out as single-party and non-production in [SECURITY.md](../SECURITY.md) and the README. |
@@ -67,12 +68,28 @@ Scope: `contracts/sharibo/src/lib.rs`, `circuits/membership.template.circom`, `p
 - Unlinkability is a property of *how the demo uses* an unconstrained field, not a property the proof cryptographically guarantees. Nothing stops a future caller from passing a `recipient` that *is* a known funder, which would (correctly) not break anything, but also means the contract itself enforces no unlinkability — only the client's choice to mint a fresh address does.
 - The relayer/observer risk described under "No double claim" above applies here too: whoever submits the transaction sees the plaintext `recipient` before it lands on-chain.
 
+## Known attack: payout redirection (recipient front-running)
+
+**What it is.** `recipient` is a plain contract argument (`lib.rs:186`), not a circuit input — nothing in the proof or its public signals commits to the payout address (compare the circuit's signal list, `circuits/membership.template.circom:79-96`, which has no recipient signal). The tuple `(nullifier_hash, external_nullifier, proof)` therefore verifies for *any* `recipient`; see the limits under "No double claim" above for the same observation from the replay side.
+
+**Concrete attack.** An observer of the mempool — or a careless or malicious relayer — sees a pending `claim(circle_id, recipient, nullifier_hash, external_nullifier, proof)`:
+
+1. Copy the proof and the public inputs (`nullifier_hash`, `external_nullifier`) verbatim — all of them are public and appear in the transaction itself.
+2. Submit the identical tuple with their own `recipient` address.
+3. If their transaction finalizes first, the contract's nullifier check (`lib.rs:213-217`) marks the nullifier used and pays the pot to *their* address; the original claimant's transaction then fails with `AlreadyClaimed` (`lib.rs:231`). The front-runner wins the race.
+
+**Impact.** Payout hijacking: the legitimate claimant loses the pot. It is not a privacy break — the attacker learns nothing about *which member* claimed.
+
+**Current mitigation (honest).** Sharibo is **testnet-only, using native testnet XLM — there are no real funds at stake**. Demo circles are small (five members) and every claim is relayed through the admin's client (`scripts/e2e.ts:201`, `app/src/App.tsx:424,464`), so in practice the party holding the admin key sees the tuple before broadcast — the exact delivery path where this risk surfaces first — even though `claim` itself has no auth check (`lib.rs:183-249`) and would accept submission from any account.
+
+**Fix (tracked separately).** Binding the recipient into the proof — for example adding a `recipientHash` public input to the membership circuit (issue [#266](https://github.com/crackedstudio/sharibo/issues/266)) — is a substantial change: circuit + trusted setup + contract + redeploy. The implementation is tracked in issue [#246](https://github.com/crackedstudio/sharibo/issues/246). Until it lands, this limitation is stated here plainly rather than left for a reader to discover; do not evaluate Sharibo for real-funds use based on the current proof.
+
 ## Property → code → test matrix
 
 | Property | Enforcing code | Test evidence | Known limit |
 |---|---|---|---|
 | Membership | `membership.template.circom:21-70,99-110`; `lib.rs:339-368` | `membership.test.js:74,86,92,116`; `test.rs:194,232` | vk not pinned on-chain; single-party setup |
-| No double claim | `lib.rs:213-217,231` | `test.rs:284,548` | recipient not bound to proof (front-run/hijack risk) |
+| No double claim | `lib.rs:213-217,231` | `test.rs:284,548` | recipient not bound to proof — front-run/hijack risk (see [Known attack](#known-attack-payout-redirection-recipient-front-running), issue #246) |
 | Round binding | `identity.ts:63-90`; `lib.rs:207-211,325-331` | `test.rs:328`; `membership.test.js:98` | binding is on-chain equality, not an in-circuit constraint |
 | Unlinkability | `lib.rs:236-237` (unconstrained `recipient`) | `scripts/e2e.ts` fresh-recipient assertions | funding side is fully public; admin relays the claim tx in the demo |
 | Token contract trust | `lib.rs:82` (`Circle.token` stored unvalidated) | none — accepted design risk | hostile token can refuse transfers, charge fees, or reenter; mitigation is out-of-band address verification by members |
