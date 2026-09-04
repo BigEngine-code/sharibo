@@ -266,6 +266,46 @@ fn round_reuse_nullifier_hash_round1(env: &Env) -> Fr {
     fr_from_dec_str(env, "49427450209661096950044132594013152139023072336714402456973658706693457893626")
 }
 
+#[contract]
+struct ReentrantToken;
+
+#[contracttype]
+#[derive(Clone)]
+pub struct ReentryConfig {
+    sharibo: Address,
+    circle_id: u64,
+    recipient: Address,
+    nullifier_hash: Fr,
+    external_nullifier: Fr,
+    proof: Proof,
+}
+
+#[contractimpl]
+impl ReentrantToken {
+    pub fn set_config(env: Env, config: ReentryConfig) {
+        env.storage().persistent().set(&"reentry_config", &config);
+    }
+
+    pub fn transfer(env: Env, from: Address, to: Address, amount: i128) {
+        let config: ReentryConfig = env
+            .storage()
+            .persistent()
+            .get(&"reentry_config")
+            .unwrap();
+
+        let sharibo = ContractClient::new(&env, &config.sharibo);
+        if from == config.sharibo && to == config.recipient && amount > 0 {
+            sharibo.claim(
+                &config.circle_id,
+                &config.recipient,
+                &config.nullifier_hash,
+                &config.external_nullifier,
+                &config.proof,
+            );
+        }
+    }
+}
+
 fn create_token(env: &Env, admin: &Address) -> Address {
     env.register_stellar_asset_contract_v2(admin.clone())
         .address()
@@ -650,6 +690,61 @@ fn claim_immediately_after_round_advance_reverts() {
     client.claim(
         &s.circle_id,
         &recipient2,
+        &nullifier_hash,
+        &external_nullifier,
+        &proof,
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")] // WrongRoundTag
+fn claim_reverts_when_token_reenters_with_stale_round() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(Contract, ());
+    let client = ContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let reentrant_token = env.register(ReentrantToken, ());
+    let reentrant_client = ReentrantTokenClient::new(&env, &reentrant_token);
+    let root = real_root(&env);
+    let vk = real_verification_key(&env);
+
+    let circle_id = client.create_circle(&admin, &reentrant_token, &root, &100i128, &5u32, &vk);
+    let token_admin_client = token::StellarAssetClient::new(&env, &reentrant_token);
+    let _ = token_admin_client;
+
+    let member = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let nullifier_hash = real_nullifier_hash(&env);
+    let proof = real_valid_proof(&env);
+    let external_nullifier = real_external_nullifier_round0(&env);
+
+    reentrant_client.set_config(&ReentryConfig {
+        sharibo: contract_id.clone(),
+        circle_id,
+        recipient: recipient.clone(),
+        nullifier_hash: nullifier_hash.clone(),
+        external_nullifier: external_nullifier.clone(),
+        proof: proof.clone(),
+    });
+
+    let member_client = token::Client::new(&env, &reentrant_token);
+    let _ = member_client;
+    let _ = token_admin;
+
+    // The reentrant token will call back into claim as soon as the outer call
+    // performs its token transfer. Because the round was already advanced and
+    // the nullifier was persisted before the transfer, the reentrant attempt sees
+    // the wrong round tag and reverts.
+    client.fund(&circle_id, &member);
+    // fund() itself uses the same hostile token; it does not re-enter because the
+    // transfer is from the funder to the contract, not from the contract to a
+    // recipient.
+    client.claim(
+        &circle_id,
+        &recipient,
         &nullifier_hash,
         &external_nullifier,
         &proof,

@@ -542,9 +542,11 @@ impl Contract {
         }
 
         // effects
-        let token_client = token::Client::new(&env, &circle.token);
-        token_client.transfer(&env.current_contract_address(), &recipient, &circle.pot);
-
+        // Persist the round state and the nullifier (embedded in the Circle
+        // struct since issue #254) before any external token call, so a hostile
+        // token cannot re-enter the same claim with a fresh nullifier or stale
+        // pot/round data while this call is in-flight.
+        let payout = circle.pot;
         circle.pot = 0;
         circle.round += 1;
         circle.contributors = Vec::new(&env);
@@ -557,6 +559,9 @@ impl Contract {
         env.storage()
             .instance()
             .extend_ttl(LEDGER_THRESHOLD, LEDGER_EXTEND_TO);
+
+        let token_client = token::Client::new(&env, &circle.token);
+        token_client.transfer(&env.current_contract_address(), &recipient, &payout);
     }
 
     /// Look up a [`Circle`] by its assigned id.
@@ -885,9 +890,25 @@ impl Contract {
 
         circle.admin.require_auth();
 
-        // Refund every contributor for the current (stuck) round.
+        if circle.cancelled {
+            panic_with_error!(&env, Error::CircleCancelled);
+        }
+
+        let contributors = circle.contributors.clone();
+        circle.pot = 0;
+        circle.cancelled = true;
+        circle.contributors = Vec::new(&env);
+        env.storage().persistent().set(&key, &circle);
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_EXTEND_TO);
+
+        // Refund every contributor for the current (stuck) round only after
+        // the circle's cancelled state has been persisted; otherwise a hostile
+        // token can call back into `cancel_circle` while the old state still reads
+        // as active and claimable.
         let token_client = token::Client::new(&env, &circle.token);
-        for contributor in circle.contributors.iter() {
+        for contributor in contributors.iter() {
             // Defence in depth: a contributor address equal to the contract
             // itself would silently absorb the refund with no recovery path.
             // This can only arise from a future bug in `fund`; reject it here
@@ -901,14 +922,6 @@ impl Contract {
                 &circle.contribution,
             );
         }
-
-        circle.pot = 0;
-        circle.cancelled = true;
-        circle.contributors = Vec::new(&env);
-        env.storage().persistent().set(&key, &circle);
-        env.storage()
-            .persistent()
-            .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_EXTEND_TO);
     }
 
     // Binds a proof to (circle_id, round) with SHA-256 (a native, accelerated
