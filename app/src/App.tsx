@@ -19,6 +19,7 @@ import {
   createCircle,
   fund,
   claim,
+  cancelCircle,
   getCircle,
   hasClaimed,
   TREE_LEVELS,
@@ -43,8 +44,9 @@ import {
 } from "@sharibo/client";
 import { config, configError } from "./config";
 import { useI18n } from "./i18n";
-import { usePoliteLiveRegion } from "./usePoliteLiveRegion";
+import { usePoliteLiveRegion, LiveRegion } from "./usePoliteLiveRegion";
 import { ArtifactProgress } from "./components/ArtifactProgress.js";
+import { explorerTx, short, explorerAccount, explorerContract } from "./lib/explorer";
 import {
   friendbotFund as fundWithFriendbot,
   FriendbotRetryableError,
@@ -172,15 +174,6 @@ function getErrorMessage(error: unknown): string {
   return describeError(error);
 }
 
-function explorerAccount(address: string): string {
-  return `https://stellar.expert/explorer/testnet/account/${address}`;
-}
-function explorerContract(): string {
-  return `https://stellar.expert/explorer/testnet/contract/${NETWORK.contractId}`;
-}
-function short(address: string): string {
-  return `${address.slice(0, 4)}…${address.slice(-4)}`;
-}
 
 // Every truncated value on screen (addresses, tx hashes) needs to be
 // pasteable in full somewhere else — a CLI call, an explorer search — so
@@ -535,6 +528,7 @@ export default function App() {
   const [round, setRound] = useState(0);
   const [pot, setPot] = useState(0n);
   const [onChainContributors, setOnChainContributors] = useState<string[]>([]);
+  const [cancelled, setCancelled] = useState(false);
   const [claimantIndex, setClaimantIndex] = useState(0);
   const [proof, setProof] = useState<ContractProof | null>(null);
   const [nullifierHash, setNullifierHash] = useState<bigint | null>(null);
@@ -576,19 +570,20 @@ export default function App() {
   const syncFundingState = useCallback(async () => {
     if (!admin || circleId === null) return;
     try {
-      const { connect, getCircleStatus } = await import("@sharibo/client");
+      const { connect, getCircle } = await import("@sharibo/client");
       const adminClient = await connect(NETWORK, admin);
-      const status = await getCircleStatus(adminClient, circleId);
+      const circle = await getCircle(adminClient, circleId);
       
-      setPot(status.pot);
-      setOnChainContributors(status.contributors);
+      setPot(circle.pot);
+      setOnChainContributors(circle.contributors);
+      setCancelled(circle.cancelled);
       
       // Update member funded status based on on-chain contributors
       setMembers((prev) =>
         prev.map((m) => {
           const hasFunded =
-            status.contributors.includes(m.keypair.publicKey()) ||
-            Boolean(m.freighterKey && status.contributors.includes(m.freighterKey));
+            circle.contributors.includes(m.keypair.publicKey()) ||
+            Boolean(m.freighterKey && circle.contributors.includes(m.freighterKey));
           return { ...m, funded: hasFunded, pending: false };
         })
       );
@@ -735,6 +730,8 @@ export default function App() {
     setCircleId(null);
     setRound(0);
     setPot(0n);
+    setCancelled(false);
+    setOnChainContributors([]);
     setClaimantIndex(0);
     setProof(null);
     setNullifierHash(null);
@@ -1095,6 +1092,34 @@ export default function App() {
     }
   }
 
+  async function doCancelCircle() {
+    if (!admin || circleId === null) return;
+    setError(null);
+    
+    const refundCount = onChainContributors.length;
+    const refundTotal = (Number(pot) / 1e7).toFixed(1);
+    
+    const confirmed = window.confirm(
+      t("cancel.confirmation", { count: refundCount, total: refundTotal })
+    );
+    
+    if (!confirmed) return;
+    
+    setBusy(t("cancel.busy"));
+    try {
+      const { connect, cancelCircle } = await import("@sharibo/client");
+      const adminClient = await connect(NETWORK, admin);
+      await cancelCircle(adminClient, { circleId });
+      
+      // Sync with on-chain state after cancellation
+      await syncFundingState();
+    } catch (e) {
+      setError(toUiError(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   if (resumePrompt && screen === "landing") {
     return (
       <div className="page">
@@ -1180,7 +1205,7 @@ export default function App() {
     );
   }
 
-  const step: 0 | 1 | 2 | 3 = flow.claimResult ? 3 : flow.fullyFunded ? 2 : 1;
+  const step: 0 | 1 | 2 | 3 = claimResult ? 3 : fullyFunded ? 2 : 1;
 
   return (
     <div className="page">
@@ -1203,13 +1228,13 @@ export default function App() {
           </h1>
           <div className="row">
             <a className="link" href={explorerContract()} target="_blank" rel="noreferrer">
-              circle #{flow.circleId?.toString()} on-chain ↗
+              circle #{circleId?.toString()} on-chain ↗
             </a>
             <button
               className="btn btn-small"
-              disabled={!!flow.busy}
-              onClick={flow.resetToLanding}
-              title={`Start over. Your current circle (#${flow.circleId?.toString()}) keeps living on-chain.`}
+              disabled={!!busy}
+              onClick={resetToLanding}
+              title={`Start over. Your current circle (#${circleId?.toString()}) keeps living on-chain.`}
             >
               {t("common.startNewCircle")}
             </button>
@@ -1218,17 +1243,39 @@ export default function App() {
 
         <Stepper step={step} />
 
-        <MemberRing members={flow.members} revealed={!!flow.claimResult} />
+        <MemberRing members={members.map(m => ({ funded: m.funded, pending: m.pending }))} revealed={!!claimResult} />
 
         <div className="pot-bar-wrap">
           <div
             className="pot-bar"
-            style={{ width: `${(flow.fundedCount / CIRCLE_SIZE) * 100}%` }}
+            style={{ width: `${(fundedCount / CIRCLE_SIZE) * 100}%` }}
           />
         </div>
         <p className="pot-label">
-          pot: {formatXlm(flow.pot)} / {formatXlm(xlmToStroops(flow.contributionXlm) * BigInt(CIRCLE_SIZE))} XLM · round {flow.round}
+          pot: {(Number(pot) / 1e7).toFixed(1)} / {contributionXlm * CIRCLE_SIZE} XLM ·
+          round {round}
+          {cancelled && ` · ${t("cancel.cancelled")}`}
         </p>
+
+        {cancelled && (
+          <div className="callout" style={{ backgroundColor: "var(--color-warning-bg)", color: "var(--color-warning-text)" }}>
+            <strong>{t("cancel.cancelled")}</strong>
+            <p>{t("cancel.cancelledMessage")}</p>
+          </div>
+        )}
+
+        {!cancelled && admin && (
+          <div className="row" style={{ justifyContent: "flex-end", marginTop: "1rem" }}>
+            <button
+              className="btn btn-danger btn-small"
+              disabled={!!busy || onChainContributors.length === 0}
+              onClick={doCancelCircle}
+              title="Cancel this circle and refund all contributors"
+            >
+              {t("cancel.title")}
+            </button>
+          </div>
+        )}
 
         <h2>Fund</h2>
         <p className="token-notice">

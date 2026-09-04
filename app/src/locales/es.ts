@@ -31,7 +31,14 @@ const es = {
   "browser.capability.webassembly": "WebAssembly",
   "browser.capability.bigint": "BigInt",
   "browser.capability.cryptoSubtle": "Web Crypto (crypto.subtle)",
-  "browser.capability.secureContext": "Contexto seguro (HTTPS o localhost)"
+  "browser.capability.secureContext": "Contexto seguro (HTTPS o localhost)",
+  "cancel.title": "Cancelar Tanda",
+  "cancel.confirmation": "¿Cancelar esta tanda?\n\nEsto reembolsará {count} contribuidor(es) un total de {total} XLM.\n\nEsta acción es irreversible. La tanda se cerrará permanentemente.",
+  "cancel.busy": "Cancelando tanda y reembolsando contribuidores…",
+  "cancel.cancelled": "Tanda Cancelada",
+  "cancel.cancelledMessage": "Esta tanda ha sido cancelada y todos los contribuidores han sido reembolsados.",
+  "cancel.refundInfo": "Los siguientes contribuidores serán reembolsados si la tanda es cancelada:",
+  "cancel.willBeRefunded": "→ será reembolsado"
 } as const;
 
 export default es;

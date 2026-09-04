@@ -184,5 +184,14 @@ export const getCircle = vi.fn(
     size: 5,
     round: 0,
     pot: 0n,
+    contributors: [],
+    cancelled: false,
+  }),
+);
+
+export const cancelCircle = vi.fn(
+  async (_client: SharaboClient, _args: unknown): Promise<TxResult<void>> => ({
+    result: undefined,
+    hash: "mockCancelHash",
   }),
 );

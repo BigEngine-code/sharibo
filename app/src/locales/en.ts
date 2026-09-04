@@ -31,7 +31,14 @@ const en = {
   "browser.capability.webassembly": "WebAssembly",
   "browser.capability.bigint": "BigInt",
   "browser.capability.cryptoSubtle": "Web Crypto (crypto.subtle)",
-  "browser.capability.secureContext": "Secure context (HTTPS or localhost)"
+  "browser.capability.secureContext": "Secure context (HTTPS or localhost)",
+  "cancel.title": "Cancel Circle",
+  "cancel.confirmation": "Cancel this circle?\n\nThis will refund {count} contributor(s) a total of {total} XLM.\n\nThis action is irreversible. The circle will be permanently closed.",
+  "cancel.busy": "Cancelling circle and refunding contributors…",
+  "cancel.cancelled": "Circle Cancelled",
+  "cancel.cancelledMessage": "This circle has been cancelled and all contributors have been refunded.",
+  "cancel.refundInfo": "The following contributors will be refunded if the circle is cancelled:",
+  "cancel.willBeRefunded": "→ will be refunded"
 } as const;
 
 export default en;
