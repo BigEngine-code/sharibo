@@ -10,34 +10,75 @@ export function MemberRing({
   revealed: boolean;
 }) {
   const radius = 100;
+  const center = 170;
+
   return (
     <div className="ring-wrap">
-      <div className="ring">
-        <div className="ring-center">{revealed ? "✓" : "pot"}</div>
+      <svg
+        className="ring"
+        viewBox="0 0 340 340"
+        width="100%"
+        role="img"
+        aria-label="Member ring"
+      >
+        <circle
+          cx={center}
+          cy={center}
+          r={radius}
+          fill="none"
+          className="ring-circle"
+        />
+
+        <text
+          x={center}
+          y={center}
+          textAnchor="middle"
+          dominantBaseline="middle"
+          className="ring-center"
+        >
+          {revealed ? "✓" : "pot"}
+        </text>
+
         {members.map((m, i) => {
           const angle = (i / members.length) * 2 * Math.PI - Math.PI / 2;
-          const x = Math.round(Math.cos(angle) * radius);
-          const y = Math.round(Math.sin(angle) * radius);
+          const x = center + Math.cos(angle) * radius;
+          const y = center + Math.sin(angle) * radius;
+
           return (
-            <div
-              key={i}
-              className={`ring-node ${m.funded ? "funded" : ""}`}
-              style={{ transform: `translate(${x}px, ${y}px)` }}
-            >
-              {i + 1}
-            </div>
+            <g key={i} className={`ring-node ${m.funded ? "funded" : ""}`}>
+              <circle cx={x} cy={y} r="20" />
+              <text
+                x={x}
+                y={y}
+                textAnchor="middle"
+                dominantBaseline="middle"
+              >
+                {i + 1}
+              </text>
+            </g>
           );
         })}
+
         {revealed && (
-          <div className="ring-node ring-recipient" style={{ transform: "translate(0px, -170px)" }}>
-            ?
-          </div>
+          <g className="ring-node ring-recipient">
+            <circle cx={center} cy="0" r="20" />
+            <text
+              x={center}
+              y="0"
+              textAnchor="middle"
+              dominantBaseline="middle"
+            >
+              ?
+            </text>
+          </g>
         )}
-      </div>
+      </svg>
+
       {revealed && (
         <p className="ring-caption">
-          Payout landed on the address above — cryptographically, it could be tied to <em>any</em>{" "}
-          of the 5 members in the ring. An outside observer cannot tell which.
+          Payout landed on the address above — cryptographically, it could be
+          tied to <em>any</em> of the 5 members in the ring. An outside
+          observer cannot tell which.
         </p>
       )}
     </div>
