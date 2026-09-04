@@ -38,7 +38,9 @@ const en = {
   "cancel.cancelled": "Circle Cancelled",
   "cancel.cancelledMessage": "This circle has been cancelled and all contributors have been refunded.",
   "cancel.refundInfo": "The following contributors will be refunded if the circle is cancelled:",
-  "cancel.willBeRefunded": "→ will be refunded"
+  "cancel.willBeRefunded": "→ will be refunded",
+  "wallet.networkMismatch": "Network mismatch: Your Freighter wallet is on {walletNetwork} but this app expects {appNetwork}. Please open Freighter, click the network selector in the upper right, and switch to {appNetwork}.",
+  "wallet.unknownNetwork": "Unknown network configuration. Please verify your Freighter settings."
 } as const;
 
 export default en;

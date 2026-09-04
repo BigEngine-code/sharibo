@@ -38,7 +38,9 @@ const es = {
   "cancel.cancelled": "Tanda Cancelada",
   "cancel.cancelledMessage": "Esta tanda ha sido cancelada y todos los contribuidores han sido reembolsados.",
   "cancel.refundInfo": "Los siguientes contribuidores serán reembolsados si la tanda es cancelada:",
-  "cancel.willBeRefunded": "→ será reembolsado"
+  "cancel.willBeRefunded": "→ será reembolsado",
+  "wallet.networkMismatch": "Desajuste de red: Tu billetera Freighter está en {walletNetwork} pero esta app espera {appNetwork}. Por favor abre Freighter, haz clic en el selector de red en la esquina superior derecha, y cambia a {appNetwork}.",
+  "wallet.unknownNetwork": "Configuración de red desconocida. Por favor verifica tu configuración de Freighter."
 } as const;
 
 export default es;
