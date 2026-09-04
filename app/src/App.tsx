@@ -47,6 +47,9 @@ import { useI18n } from "./i18n";
 import { usePoliteLiveRegion, LiveRegion } from "./usePoliteLiveRegion";
 import { ArtifactProgress } from "./components/ArtifactProgress.js";
 import { explorerTx, short, explorerAccount, explorerContract } from "./lib/explorer";
+import type { CirclePhase } from "./hooks/useCircleFlow";
+import { MemberRingSkeleton } from "./components/MemberRing";
+import { FundingListSkeleton } from "./components/FundingList";
 import {
   friendbotFund as fundWithFriendbot,
   FriendbotRetryableError,
@@ -91,6 +94,25 @@ function TestnetBanner() {
       <a className={styles.bannerLink} href={README_URL} target="_blank" rel="noreferrer">
         honest limitations ↗
       </a>
+    </div>
+  );
+}
+
+function LanguageSwitcher({ className = "" }: { className?: string }) {
+  const { locale, locales, setLocale } = useI18n();
+  return (
+    <div className={`language-switcher ${className}`}>
+      <select
+        value={locale}
+        onChange={(e) => setLocale(e.target.value)}
+        aria-label="Language"
+      >
+        {locales.map((code) => (
+          <option key={code} value={code}>
+            {code}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
@@ -401,28 +423,6 @@ function MemberRing({ members, revealed }: { members: { funded: boolean; pending
   );
 }
 
-function LanguageSwitcher({ className }: { className?: string }) {
-  const { locale, locales, setLocale, t } = useI18n();
-
-  return (
-    <div className={`language-switcher ${className ?? ""}`.trim()}>
-      <label htmlFor="language-select">{t("lang.label")}</label>
-      <select
-        id="language-select"
-        value={locale}
-        onChange={(e) => setLocale(e.target.value)}
-        aria-label={t("lang.label")}
-      >
-        {locales.map((code) => (
-          <option key={code} value={code}>
-            {t(`lang.${code}`)}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
 function EnvSetupScreen({ errors }: { errors: string[] }) {
   const { t } = useI18n();
 
@@ -502,6 +502,7 @@ export default function App() {
   }
 
   const [screen, setScreen] = useState<"landing" | "circle">("landing");
+  const [circlePhase, setCirclePhase] = useState<CirclePhase>("idle");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [events, setEvents] = useState<any[]>([]);
@@ -606,6 +607,11 @@ export default function App() {
       return;
     }
 
+    if (circlePhase === "loading") {
+      announce("Loading circle data…");
+      return;
+    }
+
     if (claimResult) {
       announce("Price update complete. The claim result is ready.");
       return;
@@ -619,7 +625,7 @@ export default function App() {
     if (fullyFunded) {
       announce("Price update complete. The claim step is ready.");
     }
-  }, [announce, busy, claimResult, error, fullyFunded]);
+  }, [announce, busy, circlePhase, claimResult, error, fullyFunded]);
 
   // ── Focus management ────────────────────────────────────────────────────
   // When a screen or major section appears, move keyboard focus to its
@@ -713,6 +719,7 @@ export default function App() {
 
     setBusy(null);
     setError(null);
+    setCirclePhase("idle");
     setContributionXlm(10);
     setAdmin(null);
     setMembers([]);
@@ -736,6 +743,7 @@ export default function App() {
   }
 
   function loadState(parsed: any) {
+    setCirclePhase("loading");
     setContributionXlm(parsed.contributionXlm);
     setAdmin(Keypair.fromSecret(parsed.adminSecret));
     
@@ -769,10 +777,12 @@ export default function App() {
     
     // Sync from on-chain after loading state
     setTimeout(() => syncFundingState(), 100);
+    setCirclePhase("ready");
   }
 
   async function startCircle() {
     setError(null);
+    setCirclePhase("loading");
     setBusy(
       "Generating a fresh admin + 5 member identities and funding via friendbot…",
     );
@@ -821,8 +831,10 @@ export default function App() {
       setRound(0);
       setPot(0n);
       setScreen("circle");
+      setCirclePhase("ready");
     } catch (e) {
       setError(toUiError(e));
+      setCirclePhase("error");
     } finally {
       setBusy(null);
     }
@@ -1252,19 +1264,32 @@ export default function App() {
 
         <Stepper step={step} />
 
-        <MemberRing members={members.map(m => ({ funded: m.funded, pending: m.pending }))} revealed={!!claimResult} />
+        {circlePhase === "loading" ? (
+          <>
+            <MemberRingSkeleton />
+            <div className="pot-bar-wrap" aria-hidden="true">
+              <div className="skeleton skeleton-bar" />
+            </div>
+            <p className="pot-label" aria-hidden="true">
+              <span className="skeleton skeleton-label" />
+            </p>
+            <FundingListSkeleton />
+          </>
+        ) : (
+          <>
+            <MemberRing members={members.map(m => ({ funded: m.funded, pending: m.pending }))} revealed={!!claimResult} />
 
-        <div className={styles.potBarWrap}>
-          <div
-            className="pot-bar"
-            style={{ width: `${(fundedCount / CIRCLE_SIZE) * 100}%` }}
-          />
-        </div>
-        <p className="pot-label">
-          pot: {(Number(pot) / 1e7).toFixed(1)} / {contributionXlm * CIRCLE_SIZE} XLM ·
-          round {round}
-          {cancelled && ` · ${t("cancel.cancelled")}`}
-        </p>
+            <div className={styles.potBarWrap}>
+              <div
+                className="pot-bar"
+                style={{ width: `${(fundedCount / CIRCLE_SIZE) * 100}%` }}
+              />
+            </div>
+            <p className="pot-label">
+              pot: {(Number(pot) / 1e7).toFixed(1)} / {contributionXlm * CIRCLE_SIZE} XLM ·
+              round {round}
+              {cancelled && ` · ${t("cancel.cancelled")}`}
+            </p>
 
         {cancelled && (
           <div className="callout" style={{ backgroundColor: "var(--color-warning-bg)", color: "var(--color-warning-text)" }}>
@@ -1325,9 +1350,11 @@ export default function App() {
                   )}
                 </div>
               )}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          </>
+        )}
 
         {fullyFunded && !claimResult && (
           <>
@@ -1362,7 +1389,7 @@ export default function App() {
                 {/* Constraint count: update this AND circuits/README.md if the circuit changes. */}
                 Groth16 · BLS12-381 · 1,452 constraints · proving locally in your browser, nothing
                 sent anywhere until the proof is done
-                {isProving && provingSeconds !== null ? ` · proving… ${provingSeconds}s` : ""}
+                {isProving && proveElapsedSeconds !== null ? ` · proving… ${proveElapsedSeconds}s` : ""}
               </p>
             )}
           </>
@@ -1452,7 +1479,7 @@ export default function App() {
           </div>
         )}
 
-        {flow.error && <p className={styles.error}>{flow.error}</p>}
+        {error && <p className="error">{error}</p>}
       </div>
     </div>
   );

@@ -90,3 +90,26 @@ export function MemberRing({
     </div>
   );
 }
+
+export function MemberRingSkeleton() {
+  const radius = 100;
+  return (
+    <div className="ring-wrap" aria-hidden="true">
+      <div className="ring">
+        <div className="skeleton skeleton-ring-center" />
+        {Array.from({ length: 5 }, (_, i) => {
+          const angle = (i / 5) * 2 * Math.PI - Math.PI / 2;
+          const x = Math.round(Math.cos(angle) * radius);
+          const y = Math.round(Math.sin(angle) * radius);
+          return (
+            <div
+              key={i}
+              className="skeleton skeleton-ring-node"
+              style={{ transform: `translate(${x}px, ${y}px)` }}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}

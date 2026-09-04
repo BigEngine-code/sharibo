@@ -22,6 +22,10 @@ import { config } from "../config.js";
 import { friendbotFund } from "../lib/friendbot.js";
 import type { Member, ClaimResult } from "../types.js";
 
+/** Where the circle view is in its on-chain load cycle, so the UI can show
+ *  skeletons instead of an empty ring while the first read is in flight. */
+export type CirclePhase = "idle" | "loading" | "ready" | "error";
+
 // Derive constants from config (same as App.tsx does)
 const NETWORK = {
   contractId: config.contractId,
@@ -40,6 +44,7 @@ const CIRCLE_SIZE = 5;
 // into screens.
 export function useCircleFlow() {
   const [screen, setScreen] = useState<"landing" | "circle">("landing");
+  const [circlePhase, setCirclePhase] = useState<CirclePhase>("idle");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -102,6 +107,7 @@ export function useCircleFlow() {
 
   async function startCircle() {
     setError(null);
+    setCirclePhase("loading");
     setBusy("Generating a fresh admin + 5 member identities and funding via friendbot…");
     try {
       const adminKp = Keypair.random();
@@ -138,8 +144,10 @@ export function useCircleFlow() {
       setRound(0);
       setPot(0n);
       setScreen("circle");
+      setCirclePhase("ready");
     } catch (e) {
       setError((e as Error).message);
+      setCirclePhase("error");
     } finally {
       setBusy(null);
     }
@@ -298,6 +306,7 @@ export function useCircleFlow() {
 
   return {
     screen,
+    circlePhase,
     busy,
     error,
     contributionXlm,
