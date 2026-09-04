@@ -706,6 +706,19 @@ export default function App() {
   const [prevCircle, setPrevCircle] = useState<{ id: string; explorerUrl: string } | null>(null);
 
   const contribution = xlmToStroops(contributionXlm);
+  // Holds the AbortController for the currently-running claim flow so that
+  // resetToLanding and the unmount cleanup can cancel it synchronously.
+  const claimAbortRef = useRef<AbortController | null>(null);
+
+  // Abort any in-flight claim when the component unmounts (e.g. the user
+  // navigates away mid-proof).  This prevents a stale setState from firing on
+  // a dead component and triggering React's "Can't perform a React state
+  // update on an unmounted component" warning.
+  useEffect(() => {
+    return () => {
+      claimAbortRef.current?.abort();
+    };
+  }, []);
   const fundedCount = members.filter((m) => m.funded).length;
   const fullyFunded = pot === contribution * BigInt(CIRCLE_SIZE);
   const { announce, message: liveRegionMessage } = usePoliteLiveRegion(120);
@@ -858,6 +871,10 @@ export default function App() {
       const ok = window.confirm(t("reset.confirm"));
       if (!ok) return;
     }
+
+    // Cancel any in-flight proof generation / artifact download.
+    claimAbortRef.current?.abort();
+    claimAbortRef.current = null;
 
     setPreviousCircleId(circleId);
     sessionStorage.removeItem("sharibo_demo_state");
@@ -1121,6 +1138,13 @@ export default function App() {
 
   async function doClaim() {
     if (!admin || !tree || circleId === null) return;
+
+    // Cancel any previous claim that might still be running.
+    claimAbortRef.current?.abort();
+    const controller = new AbortController();
+    claimAbortRef.current = controller;
+    const { signal } = controller;
+
     setError(null);
     setClaimResult(null);
     setRejection(null);
@@ -1130,21 +1154,25 @@ export default function App() {
         import("@stellar/stellar-sdk"),
         import("@sharibo/client")
       ]);
+
+      if (signal.aborted) return;
       const claimant = members[claimantIndex];
       const merkleProof = tree.proof(claimantIndex);
       const externalNullifier = await computeExternalNullifier(circleId, BigInt(round));
 
+      if (signal.aborted) return;
       setClaimStage("artifacts");
       const [wasm, zkey, vkJson] = await Promise.all([
         fetch("/circuits/membership.wasm")
           .then((r) => r.arrayBuffer())
           .then((b) => new Uint8Array(b)),
-        fetch("/circuits/membership_final.zkey")
+        fetch("/circuits/membership_final.zkey", { signal })
           .then((r) => r.arrayBuffer())
           .then((b) => new Uint8Array(b)),
         fetch("/circuits/verification_key.json").then((r) => r.json()),
       ]);
 
+      if (signal.aborted) return;
       setClaimStage("proving");
       setProveElapsedSeconds(0);
       const proveTimer = setInterval(() => setProveElapsedSeconds((s) => s + 1), 1000);
@@ -1161,7 +1189,7 @@ export default function App() {
           },
           wasm,
           zkey,
-          (e) => setEvents(prev => [...prev, e])
+          { signal, onEvent: (e) => setEvents((prev) => [...prev, e]) },
         );
       } finally {
         clearInterval(proveTimer);
@@ -1178,6 +1206,7 @@ export default function App() {
       const recipient = Keypair.random();
       await fundWithFriendbot(recipient.publicKey());
 
+      if (signal.aborted) return;
       setClaimStage("submitting");
       const adminClient = await connect({ ...NETWORK, onEvent: (e) => setEvents(prev => [...prev, e]) }, admin);
       const { hash } = await claim(adminClient, {
@@ -1188,6 +1217,7 @@ export default function App() {
         proof: generated.proof,
       });
 
+      if (signal.aborted) return;
       setProof(generated.proof);
       setNullifierHash(generated.nullifierHash);
       setClaimResult({
@@ -1203,8 +1233,14 @@ export default function App() {
     } catch (e) {
       setError(toUiError(e, t));
     } finally {
-      setBusy(null);
-      setClaimStage(null);
+      if (!signal.aborted) {
+        setBusy(null);
+        setClaimStage(null);
+      }
+      // Release the ref only if this controller is still the active one.
+      if (claimAbortRef.current === controller) {
+        claimAbortRef.current = null;
+      }
     }
   }
 

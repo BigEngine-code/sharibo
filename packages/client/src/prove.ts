@@ -11,6 +11,19 @@ import {
 } from "./artifacts.js";
 import { ProvingError, InvalidInputError } from "./errors.js";
 import type { OnEventFn } from "./events.js";
+
+/**
+ * Options for a proving run.
+ *
+ * @property signal - Cancels artifact download and short-circuits before the
+ *   un-interruptible WASM proving phase. snarkjs itself cannot be aborted, so
+ *   an abort during proving stops the caller waiting, not the worker.
+ * @property onEvent - Observability hook (proof:started / proof:finished).
+ */
+export interface ProveOptions {
+  signal?: AbortSignal;
+  onEvent?: OnEventFn;
+}
 import { TREE_LEVELS } from "./config.js";
 import { FR_MODULUS } from "./identity.js";
 
@@ -70,7 +83,12 @@ export interface ProofResult {
 
 let artifactPromise: Promise<ProverArtifacts> | undefined;
 
-export function getArtifacts(): Promise<ProverArtifacts> {
+export function getArtifacts(signal?: AbortSignal): Promise<ProverArtifacts> {
+  // If a signal is provided, use a dedicated cancellable fetch so an abort
+  // does not poison the shared background cache.
+  if (signal) {
+    return prefetchMembershipArtifacts(signal);
+  }
   if (!artifactPromise) {
     artifactPromise = import("./artifacts").then(({ prefetchMembershipArtifacts }) =>
       prefetchMembershipArtifacts()
@@ -167,6 +185,35 @@ export function verificationKeyToContractFormat(vkJson: unknown): ContractVerifi
   }
 
   return { alpha, beta, gamma, delta, ic: icPoints };
+}
+
+// Internal helper: races a snarkjs prove call against an optional abort signal.
+// snarkjs does not accept an AbortSignal, so we use Promise.race — the WASM
+// worker keeps running in the background but the caller stops waiting.
+async function raceProve(
+  input: Record<string, unknown>,
+  wasm: string | Uint8Array,
+  zkey: string | Uint8Array,
+  signal: AbortSignal | undefined,
+): Promise<{ proof: unknown; publicSignals: string[] }> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const provePromise = (groth16 as any).fullProve(input, wasm, zkey);
+
+  if (!signal) return provePromise;
+
+  const abortPromise = new Promise<never>((_, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException("Aborted", "AbortError"));
+      return;
+    }
+    signal.addEventListener(
+      "abort",
+      () => reject(new DOMException("Aborted", "AbortError")),
+      { once: true },
+    );
+  });
+
+  return Promise.race([provePromise, abortPromise]);
 }
 
 /**
@@ -283,8 +330,10 @@ export async function generateProof(
   input: CircuitInput,
   wasm: Uint8Array | string,
   zkey: Uint8Array | string,
-  onEvent?: OnEventFn,
+  options?: ProveOptions,
 ): Promise<GenerateProofResult> {
+  const { signal, onEvent } = options ?? {};
+  signal?.throwIfAborted();
   onEvent?.({ type: "proof:started" });
   // Serialise bigints to strings for snarkjs
   const snarkInput: Record<string, unknown> = {
@@ -379,9 +428,14 @@ export async function verifyProofLocally(
  */
 export async function fullProve(
   input: Record<string, unknown>,
-  onEvent?: OnEventFn,
+  options?: ProveOptions,
 ): Promise<ProofResult> {
-  const artifacts = await getArtifacts();
+  const { signal } = options ?? {};
+
+  const artifacts = await getArtifacts(signal);
+
+  // Check before entering the un-interruptible WASM phase.
+  signal?.throwIfAborted();
 
   const provingStartedAt = perf.now();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -402,8 +456,7 @@ export async function fullProve(
 
 export async function prove(
   input: Record<string, unknown>,
-  onEvent?: OnEventFn,
+  options?: ProveOptions,
 ): Promise<ProofResult> {
-  return fullProve(input, onEvent);
+  return fullProve(input, options);
 }
-
