@@ -1,16 +1,10 @@
 import { poseidon, FR_MODULUS } from "./identity.js";
 import { InvalidInputError } from "./errors.js";
 
-// Must match `component main = Sharibo(4)` in circuits/membership.circom
-// (generated from circuits/config.json). The circuit is the source of truth.
+// The Merkle depth is configurable — ./config.ts resolves it from LEVELS or
+// circuits/config.json, which the circuit is generated from. Declared there so
+// there is exactly one source of truth; nothing in this module needs it.
 // No `node:*` imports — this file runs unmodified in both Node and the browser.
-export const TREE_LEVELS = 4;
-export const MAX_CIRCLE_SIZE = 2 ** TREE_LEVELS;
-
-// Must match `component main = Sharibo(4)` in circuits/membership.circom
-// (generated from circuits/config.json). The circuit is the source of truth.
-export const TREE_LEVELS = 4;
-export const MAX_CIRCLE_SIZE = 2 ** TREE_LEVELS;
 
 /**
  * Fixed placeholder for unused leaves when padding the tree out to full capacity (2**levels).

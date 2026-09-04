@@ -118,7 +118,7 @@ export async function computeExternalNullifier(circleId: bigint, round: bigint):
 export async function computeRecipientHash(recipient: string): Promise<bigint> {
   // Decode Stellar ed25519 public key (StrKey) to raw 32 bytes and sha256.
   const raw = StrKey.decodeEd25519PublicKey(recipient);
-  const digest = await webCrypto.subtle.digest("SHA-256", raw);
+  const digest = await webCrypto.subtle.digest("SHA-256", new Uint8Array(raw));
   return bytesToBigInt(new Uint8Array(digest)) % FR_MODULUS;
 }
 

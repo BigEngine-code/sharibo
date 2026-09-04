@@ -97,7 +97,7 @@ function isTransientRpcError(err: unknown): boolean {
  * ("Error(Contract, #N)") are deterministic and immediately re-thrown as
  * typed subclasses via `decodeContractError`.
  */
-async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
+async function withRetry<T = any>(fn: () => Promise<T>): Promise<T> {
   let lastError: unknown;
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {

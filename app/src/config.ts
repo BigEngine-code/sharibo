@@ -1,4 +1,4 @@
-import { NETWORKS } from "@sharibo/client/networks";
+import { NETWORKS } from "@sharibo/client";
 /**
  * Reads and validates all required VITE_* environment variables at module
  * load time.  Import `config` wherever you need the values; import

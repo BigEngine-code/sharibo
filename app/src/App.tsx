@@ -225,6 +225,8 @@ interface Member {
   funded: boolean;
   fundHash?: string;
   freighterKey?: string;
+  ineligible?: boolean;
+  ineligibleReason?: string;
 }
 
 interface ClaimResult {
