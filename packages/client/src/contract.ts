@@ -164,7 +164,27 @@ export interface TxResult<T> {
 }
 
 /**
+ * Known Stellar network passphrases mapped to their stellar.expert path
+ * segment (the part after "https://stellar.expert/explorer/").
+ *
+ * Only networks that stellar.expert actually hosts are listed here.
+ * Any passphrase not in this map is unknown — callers receive `null`
+ * instead of a silently wrong URL (e.g. futurenet would otherwise
+ * receive a testnet URL, which is misleading).
+ */
+export const EXPLORER_NETWORKS: ReadonlyMap<string, string> = new Map([
+  // Mainnet — "Public Global Stellar Network ; September 2015"
+  ["Public Global Stellar Network ; September 2015", "public"],
+  // Testnet — "Test SDF Network ; September 2015"
+  ["Test SDF Network ; September 2015", "testnet"],
+]);
+
+/**
  * Build a Stellar explorer URL for a transaction hash, network-aware.
+ *
+ * Returns `null` for any network passphrase that stellar.expert does not
+ * host (futurenet, custom networks, etc.) so callers can decide whether to
+ * show a link at all, rather than silently linking to the wrong network.
  *
  * @param hash - Transaction hash (hex string).
  * @param networkPassphrase - Stellar network passphrase.
