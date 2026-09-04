@@ -13,6 +13,7 @@ import {
   fund,
   claim,
   getCircle,
+  xlmToStroops,
   type ContractProof,
   type FeeEstimate,
   TREE_LEVELS,
@@ -30,7 +31,6 @@ const NETWORK = {
 const TOKEN = config.testTokenContractId;
 const LEVELS = TREE_LEVELS;
 const CIRCLE_SIZE = 5;
-const STROOPS_PER_XLM = 10_000_000n;
 
 // All the state and on-chain calls behind a single demo run: create a
 // circle, fund it from 5 members, prove + claim, then optionally replay the
@@ -60,7 +60,7 @@ export function useCircleFlow() {
   // just left — it keeps living on-chain even though the UI has moved on.
   const [previousCircleId, setPreviousCircleId] = useState<bigint | null>(null);
 
-  const contribution = BigInt(contributionXlm) * STROOPS_PER_XLM;
+  const contribution = xlmToStroops(contributionXlm);
   const fundedCount = members.filter((m) => m.funded).length;
   const fullyFunded = pot === contribution * BigInt(CIRCLE_SIZE);
 
