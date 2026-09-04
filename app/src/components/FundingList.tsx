@@ -1,4 +1,5 @@
 import { explorerTx, short } from "../lib/explorer.js";
+import { useI18n } from "../i18n.js";
 import type { Member } from "../types.js";
 import { useI18n } from "../i18n.js";
 import styles from "./FundingList.module.css";
@@ -32,7 +33,7 @@ export function FundingList({
         {members.map((m, i) => (
           <div key={i} className={`member ${m.funded ? "funded" : ""} ${m.pending ? "pending" : ""}`}>
             <span className="member-addr">
-              member {i + 1} · {short(m.keypair.publicKey())}
+              {t("fund.memberLabel", { index: i + 1 })} · {short(m.keypair.publicKey())}
             </span>
             {m.pending ? (
               <span className="pending-indicator">⟳ submitting…</span>
@@ -53,7 +54,7 @@ export function FundingList({
                 disabled={!!busy || round > 0}
                 onClick={() => onFund(i)}
               >
-                Fund {contributionXlm} XLM
+                {t("fund.demoButton", { amount: contributionXlm })}
               </button>
             )}
           </div>

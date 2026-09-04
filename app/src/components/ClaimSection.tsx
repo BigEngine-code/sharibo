@@ -26,6 +26,7 @@ export function ClaimSection({
   onClaim: () => void;
   feeEstimate?: FeeEstimate | null;
 }) {
+  const { t } = useI18n();
   return (
     <>
       <h2>Claim</h2>

@@ -1,12 +1,12 @@
 /**
- * App.test.tsx — landing screen smoke tests
+ * App.test.tsx — landing screen smoke tests + locale switching
  *
  * @sharibo/client is mocked via __mocks__/@sharibo/client.ts so the heavy
  * Poseidon/snarkjs/Stellar crypto never loads. Tests exercise the React
  * component layer only.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import App from "./App";
 import { I18nProvider } from "./i18n";
 
@@ -43,6 +43,7 @@ function renderApp() {
 
 describe("App — landing screen", () => {
   beforeEach(() => {
+    localStorage.clear();
     vi.clearAllMocks();
     window.localStorage.clear();
   });
@@ -69,5 +70,15 @@ describe("App — landing screen", () => {
   it("renders the testnet-only disclaimer fineprint", () => {
     renderApp();
     expect(screen.getByText(/testnet only/i)).toBeInTheDocument();
+  });
+
+  it("switches the happy-path landing screen to Spanish", async () => {
+    renderApp();
+    const select = screen.getByRole("combobox", { name: /language/i });
+    fireEvent.change(select, { target: { value: "es" } });
+
+    expect(screen.getByText(/tanda privada y rotativa en stellar/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /lanzar una tanda de 5 miembros/i })).toBeInTheDocument();
+    expect(screen.getByText(/solo testnet\./i)).toBeInTheDocument();
   });
 });

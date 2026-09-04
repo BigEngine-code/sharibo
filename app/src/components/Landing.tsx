@@ -27,6 +27,7 @@ export function Landing({
   previousCircleId: bigint | null;
   onLaunch: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className={styles.page}>
       <div className={`${styles.card} ${styles.hero}`}>

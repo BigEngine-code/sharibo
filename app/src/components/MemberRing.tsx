@@ -11,6 +11,7 @@ export function MemberRing({
   members: Member[];
   revealed: boolean;
 }) {
+  const { t } = useI18n();
   const radius = 100;
   const center = 170;
 

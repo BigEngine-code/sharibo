@@ -1,4 +1,5 @@
 import { explorerAccount, explorerTx, short } from "../lib/explorer.js";
+import { useI18n } from "../i18n.js";
 import type { ClaimResult } from "../types.js";
 import styles from "./ResultCard.module.css";
 
@@ -15,15 +16,16 @@ export function ResultCard({
   onClaimAgain: () => void;
   onReset: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className={styles.result}>
       <h2>Payout landed</h2>
       <p>
-        Fresh recipient <code>{short(claimResult.recipient)}</code>{" "}
+        {t("result.recipientIntro")} <code>{short(claimResult.recipient)}</code>{" "}
         <a href={explorerAccount(claimResult.recipient)} target="_blank" rel="noreferrer">
           ↗
         </a>{" "}
-        received the pot. It has never appeared anywhere else on this circle.
+        {t("result.recipientOutro")}
       </p>
       <a className={styles.link} href={explorerTx(claimResult.hash)} target="_blank" rel="noreferrer">
         view claim transaction ↗

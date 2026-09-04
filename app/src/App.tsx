@@ -91,7 +91,8 @@ const isTestnet = networkOf(NETWORK.networkPassphrase) === "testnet";
 const BANNER_TEXT = isTestnet ? "Stellar testnet — no real funds" : "";
 
 function TestnetBanner() {
-  if (!BANNER_TEXT) return null;
+  const { t } = useI18n();
+  if (!isTestnet) return null;
   return (
     <div className={styles.testnetBanner}>
       <span>{BANNER_TEXT}</span>
@@ -136,7 +137,7 @@ const NAMES = [
   "chit fund",
 ];
 
-function toUiError(error: unknown): string {
+function toUiError(error: unknown, t: (key: string, vars?: Record<string, string | number>) => string): string {
   if (error instanceof FriendbotRetryableError) {
     return FRIEND_BOT_RATE_LIMIT_MESSAGE;
   }
@@ -184,7 +185,7 @@ function toUiError(error: unknown): string {
     return error.message;
   }
 
-  return "Something went wrong. Please retry.";
+  return t("error.generic");
 }
 
 // Same shape as toUiError, but additionally recognizes Sharibo contract
@@ -207,12 +208,13 @@ function getErrorMessage(error: unknown): string {
 // itself is trivially copyable) when the async Clipboard API isn't
 // available, e.g. non-secure contexts.
 function CopyButton({ value, label }: { value: string; label: string }) {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!copied) return;
-    const t = setTimeout(() => setCopied(false), 1500);
-    return () => clearTimeout(t);
+    const tmr = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(tmr);
   }, [copied]);
 
   async function handleCopy() {
@@ -230,8 +232,8 @@ function CopyButton({ value, label }: { value: string; label: string }) {
       type="button"
       className={styles.copyBtn}
       onClick={handleCopy}
-      aria-label={`Copy ${label}`}
-      title={`Copy ${label}`}
+      aria-label={t("copy.aria", { label })}
+      title={t("copy.title", { label })}
     >
       {copied ? "✓" : "📋"}
     </button>
@@ -277,7 +279,14 @@ const CLAIM_STAGES: ClaimStage[] = ["artifacts", "proving", "verifying", "fundin
 // snarkjs, but that step gets a live elapsed-seconds counter + spinner so a
 // slow prove still visibly ticks rather than sitting static).
 function ClaimProgress({ stage, elapsedSeconds }: { stage: ClaimStage; elapsedSeconds: number }) {
+  const { t } = useI18n();
   const activeIndex = CLAIM_STAGES.indexOf(stage);
+  const stageLabels: Record<ClaimStage, string> = {
+    artifacts: t("claim.stage.artifacts"),
+    proving: t("claim.stage.proving"),
+    funding: t("claim.stage.funding"),
+    submitting: t("claim.stage.submitting"),
+  };
   return (
     <div className={styles.claimProgress}>
       <div className={styles.stepper}>
@@ -345,7 +354,7 @@ function NetworkBanner() {
         target="_blank"
         rel="noreferrer"
       >
-        limitations ↗
+        {t("banner.limitationsShort")}
       </a>
     </div>
   );
@@ -376,8 +385,8 @@ function MemberRing({ members, revealed }: { members: { funded: boolean; pending
   const fundedCount = members.filter((m) => m.funded).length;
 
   const ringLabel = revealed
-    ? `${members.length}-member circle — pot claimed. Payout recipient is unlinkable to any member.`
-    : `${members.length}-member circle, ${fundedCount} of ${members.length} funded, pot not yet claimed.`;
+    ? t("ring.label.revealed", { count: members.length })
+    : t("ring.label.loading", { count: members.length, funded: fundedCount });
 
   const captionId = "ring-caption";
 
@@ -455,43 +464,36 @@ function EnvSetupScreen({ errors }: { errors: string[] }) {
 }
 
 function ClaimExplainer() {
+  const { t } = useI18n();
   return (
     <details className={styles.claimExplainer}>
       <summary>How this claim proof works</summary>
       <div className={styles.claimExplainerBody}>
         <section>
-          <h3>What the proof is saying</h3>
+          <h3>{t("explainer.sayingTitle")}</h3>
           <p>
-            It proves the claimant knows a secret identity that is in this circle&apos;s Merkle root,
-            and binds that proof to this exact circle and round via the round tag
-            (<code>external_nullifier</code>).
+            {t("explainer.sayingBody")}
           </p>
         </section>
 
         <section>
-          <h3>What stays secret</h3>
-          <p>
-            Which member generated the proof stays private. The transaction proves valid membership
-            without revealing which one of the 5 members claimed.
-          </p>
+          <h3>{t("explainer.secretTitle")}</h3>
+          <p>{t("explainer.secretBody")}</p>
         </section>
 
         <section>
-          <h3>What the contract checks (in order)</h3>
+          <h3>{t("explainer.checksTitle")}</h3>
           <ol>
-            <li>The round is fully funded: pot equals contribution × size.</li>
-            <li>The round tag matches this exact circle and round.</li>
-            <li>This nullifier has never claimed before in this circle.</li>
-            <li>The Groth16 proof verifies against the circle&apos;s committed root.</li>
+            <li>{t("explainer.check1")}</li>
+            <li>{t("explainer.check2")}</li>
+            <li>{t("explainer.check3")}</li>
+            <li>{t("explainer.check4")}</li>
           </ol>
         </section>
 
         <section>
-          <h3>What observers can see</h3>
-          <p>
-            On-chain observers see 5 deposits in and 1 payout out, but no visible link from that
-            payout address to a specific member address.
-          </p>
+          <h3>{t("explainer.observersTitle")}</h3>
+          <p>{t("explainer.observersBody")}</p>
         </section>
       </div>
     </details>
@@ -607,7 +609,7 @@ export default function App() {
 
   useEffect(() => {
     if (busy) {
-      announce(`Help: ${busy}`);
+      announce(t("liveRegion.help", { message: busy }));
       return;
     }
 
@@ -617,17 +619,17 @@ export default function App() {
     }
 
     if (claimResult) {
-      announce("Price update complete. The claim result is ready.");
+      announce(t("liveRegion.claimResultReady"));
       return;
     }
 
     if (error) {
-      announce(`Error: ${error}`);
+      announce(t("liveRegion.error", { message: error }));
       return;
     }
 
     if (fullyFunded) {
-      announce("Price update complete. The claim step is ready.");
+      announce(t("liveRegion.claimStepReady"));
     }
   }, [announce, busy, circlePhase, claimResult, error, fullyFunded]);
 
@@ -711,10 +713,7 @@ export default function App() {
   function resetToLanding() {
     const midFlow = fundedCount > 0 && !claimResult;
     if (midFlow) {
-      const ok = window.confirm(
-        "This circle is funded but hasn't claimed yet. Start over anyway?\n\n" +
-          "Your current circle stays on-chain — you just won't see it here.",
-      );
+      const ok = window.confirm(t("reset.confirm"));
       if (!ok) return;
     }
 
@@ -797,7 +796,7 @@ export default function App() {
       ]);
       const { generateIdentity, MerkleTree, verificationKeyToContractFormat, connect, createCircle } = client;
 
-      setBusy("Generating a fresh admin + 5 member identities and funding via friendbot…");
+      setBusy(t("busy.generating"));
       const adminKp = Keypair.random();
       await fundWithFriendbot(adminKp.publicKey());
 
@@ -813,7 +812,7 @@ export default function App() {
         newMembers.map((m) => m.identity.commitment),
       );
 
-      setBusy("Creating the circle on testnet…");
+      setBusy(t("busy.creating"));
       const vkJson = await fetch("/circuits/verification_key.json").then((r) =>
         r.json(),
       );
@@ -847,7 +846,7 @@ export default function App() {
   async function fundMember(i: number) {
     if (!admin || circleId === null) return;
     setError(null);
-    setBusy(`Funding from member ${i + 1}…`);
+    setBusy(t("fund.busy", { index: i + 1 }));
     try {
       const [{ Keypair }, { connect, fund }] = await Promise.all([
         import("@stellar/stellar-sdk"),
@@ -894,7 +893,7 @@ export default function App() {
   async function fundWithFreighter(i: number) {
     if (!admin || circleId === null) return;
     setError(null);
-    setBusy(`Funding from member ${i + 1} via Freighter…`);
+    setBusy(t("fund.busyFreighter", { index: i + 1 }));
     try {
       const allowedRes = await isAllowed();
       if (!allowedRes.isAllowed) {
@@ -916,7 +915,7 @@ export default function App() {
       const addressRes = await getAddress();
       const pubKey = addressRes.address;
       if (!pubKey) {
-        throw new Error("Could not get address from Freighter.");
+        throw new Error(t("error.getAddress"));
       }
       
       const freighterSigner = {
@@ -983,7 +982,7 @@ export default function App() {
     setError(null);
     setClaimResult(null);
     setRejection(null);
-    setBusy("Claiming…");
+    setBusy(t("busy.claiming"));
     try {
       const [{ Keypair }, { computeExternalNullifier, generateProof, verifyProofLocally, connect, claim, getCircle, hasClaimed }] = await Promise.all([
         import("@stellar/stellar-sdk"),
@@ -1060,7 +1059,7 @@ export default function App() {
       // Sync with on-chain state after claim
       await syncFundingState();
     } catch (e) {
-      setError(toUiError(e));
+      setError(toUiError(e, t));
     } finally {
       setBusy(null);
       setClaimStage(null);
@@ -1071,9 +1070,7 @@ export default function App() {
     if (!admin || circleId === null || !proof || nullifierHash === null) return;
     setError(null);
     setRejection(null);
-    setBusy(
-      "Refunding a new round, then replaying the same proof's nullifier…",
-    );
+    setBusy(t("busy.refunding"));
     try {
       const [{ Keypair }, { connect, fund, computeExternalNullifier, claim }] = await Promise.all([
         import("@stellar/stellar-sdk"),
@@ -1092,7 +1089,7 @@ export default function App() {
         BigInt(round),
       );
 
-      setBusy("Replaying the used nullifier…");
+      setBusy(t("busy.replaying"));
       await claim(adminClient, {
         circleId,
         recipient: Keypair.random().publicKey(),
@@ -1100,9 +1097,7 @@ export default function App() {
         externalNullifier: freshExternalNullifier,
         proof,
       });
-      setRejection(
-        "Unexpected: the replayed claim was accepted (this should never happen).",
-      );
+      setRejection(t("rejection.unexpected"));
     } catch (e) {
       setRejection(toUiError(e));
     } finally {
@@ -1161,7 +1156,7 @@ export default function App() {
               sessionStorage.removeItem("sharibo_demo_state");
               setResumePrompt(null);
             }}>
-              Discard
+              {t("resume.discardButton")}
             </button>
           </div>
         </div>
@@ -1197,7 +1192,7 @@ export default function App() {
             disabled={!!busy}
             onClick={startCircle}
           >
-            {busy ?? "Launch a 5-member circle on testnet"}
+            {busy ?? t("landing.launch")}
           </button>
           {error && <p className={styles.error}>{error}</p>}
           {previousCircleId !== null && (
@@ -1209,7 +1204,7 @@ export default function App() {
                 target="_blank"
                 rel="noreferrer"
               >
-                circle #{previousCircleId.toString()} ↗
+                {t("landing.previousCircleLink", { id: previousCircleId.toString() })}
               </a>
             </p>
           )}
@@ -1320,8 +1315,11 @@ export default function App() {
           {members.map((m, i) => (
             <div key={i} className={`member ${m.funded ? "funded" : ""} ${m.pending ? "pending" : ""}`}>
               <span className="member-addr">
-                member {i + 1} · {short(m.keypair.publicKey())}
-                <CopyButton value={m.keypair.publicKey()} label={`member ${i + 1} address`} />
+                {t("fund.memberLabel", { index: i + 1 })} · {short(m.keypair.publicKey())}
+                <CopyButton
+                  value={m.keypair.publicKey()}
+                  label={t("fund.memberAddressLabel", { index: i + 1 })}
+                />
               </span>
               {m.pending ? (
                 <span className="pending-indicator">⟳ submitting…</span>
@@ -1332,7 +1330,7 @@ export default function App() {
                   target="_blank"
                   rel="noreferrer"
                 >
-                  ✓ funded ↗
+                  {t("fund.fundedLink")}
                 </a>
               ) : (
                 <div className={styles.row}>
@@ -1341,7 +1339,7 @@ export default function App() {
                     disabled={!!busy || round > 0}
                     onClick={() => fundMember(i)}
                   >
-                    Fund {contributionXlm} XLM (Demo)
+                    {t("fund.demoButton", { amount: contributionXlm })}
                   </button>
                   {hasFreighter && (
                     <button
@@ -1349,7 +1347,7 @@ export default function App() {
                       disabled={!!busy || round > 0}
                       onClick={() => fundWithFreighter(i)}
                     >
-                      Fund with Freighter
+                      {t("fund.freighterButton")}
                     </button>
                   )}
                 </div>
@@ -1363,7 +1361,7 @@ export default function App() {
         {fullyFunded && !claimResult && (
           <>
             <h2 ref={claimHeadingRef} tabIndex={-1}>
-              Claim
+              {t("claim.heading")}
             </h2>
             <p className={styles.sub}>
               Pick which member is claiming this round — the proof will show the
@@ -1402,16 +1400,18 @@ export default function App() {
         {claimResult && (
           <div className={styles.result}>
             <h2 ref={payoutHeadingRef} tabIndex={-1}>
-              Payout landed
+              {t("result.heading")}
             </h2>
             <p>
-              Fresh recipient <code>{short(claimResult.recipient)}</code>
-              <CopyButton value={claimResult.recipient} label="recipient address" />{" "}
+              {t("result.recipientIntro")} <code>{short(claimResult.recipient)}</code>
+              <CopyButton
+                value={claimResult.recipient}
+                label={t("result.recipientLabel")}
+              />{" "}
               <a href={explorerAccount(claimResult.recipient)} target="_blank" rel="noreferrer">
                 ↗
               </a>{" "}
-              received the pot. It has never appeared anywhere else on this
-              circle.
+              {t("result.recipientOutro")}
             </p>
             <a
               className={styles.link}
@@ -1419,7 +1419,7 @@ export default function App() {
               target="_blank"
               rel="noreferrer"
             >
-              view claim transaction ↗
+              {t("result.viewClaimTx")}
             </a>
             <CopyButton value={claimResult.hash} label="claim transaction hash" />
             <p className={styles.callout}>
@@ -1435,12 +1435,10 @@ export default function App() {
               disabled={!!busy || (!!rejection && nullifierClaimed)}
               onClick={claimAgain}
               title={
-                rejection && nullifierClaimed
-                  ? "Nullifier already claimed (has_claimed)"
-                  : undefined
+                rejection && nullifierClaimed ? t("result.claimAgainTitle") : undefined
               }
             >
-              {busy ?? "Try to claim again with the same proof"}
+              {busy ?? t("result.claimAgainButton")}
             </button>
             {nullifierClaimed && !rejection && (
               <p className={styles.callout}>
@@ -1458,7 +1456,7 @@ export default function App() {
                   disabled={!!busy}
                   onClick={resetToLanding}
                 >
-                  Start a new circle
+                  {t("result.startNewCircle")}
                 </button>
               </>
             )}
@@ -1469,14 +1467,14 @@ export default function App() {
                   disabled={!!busy}
                   onClick={resetToLanding}
                 >
-                  ↺ Start a new circle
+                  {t("result.startNewCircleAlt")}
                 </button>
                 <p className={styles.fineprint}>
                   Circle #{circleId?.toString()} stays on-chain forever —{" "}
                   <a className={styles.link} href={explorerContract()} target="_blank" rel="noreferrer">
                     view on explorer ↗
                   </a>
-                  . Starting a new circle generates fresh identities and a brand-new on-chain record.
+                  {t("result.newCircleOutro")}
                 </p>
               </div>
             )}
