@@ -40,14 +40,15 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov", "json"],
-      all: true,
       include: ["src/**/*.{ts,tsx,js,jsx}"],
       exclude: ["**/*.test.*", "**/test-setup.*"],
       reportsDirectory: "coverage/app",
-      statements: appThreshold.statements,
-      branches: appThreshold.branches,
-      functions: appThreshold.functions,
-      lines: appThreshold.lines,
+      thresholds: {
+        statements: appThreshold.statements,
+        branches: appThreshold.branches,
+        functions: appThreshold.functions,
+        lines: appThreshold.lines,
+      },
     },
   },
 });
