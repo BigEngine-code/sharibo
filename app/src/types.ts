@@ -8,6 +8,8 @@ export interface Member {
   fundHash?: string;
   ineligible?: boolean;
   ineligibleReason?: string;
+  /** Optimistic flag while this member's funding transaction is in flight. */
+  pending?: boolean;
 }
 
 export interface ClaimResult {

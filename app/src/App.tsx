@@ -586,8 +586,9 @@ export default function App() {
       // Update member funded status based on on-chain contributors
       setMembers((prev) =>
         prev.map((m) => {
-          const hasFunded = status.contributors.includes(m.keypair.publicKey()) ||
-                          (m.freighterKey && status.contributors.includes(m.freighterKey));
+          const hasFunded =
+            status.contributors.includes(m.keypair.publicKey()) ||
+            Boolean(m.freighterKey && status.contributors.includes(m.freighterKey));
           return { ...m, funded: hasFunded, pending: false };
         })
       );

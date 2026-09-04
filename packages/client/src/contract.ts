@@ -418,6 +418,34 @@ export async function getCircle(client: ShariboClient, circleId: bigint): Promis
   }
 }
 
+/**
+ * The subset of a circle's state the funding UI polls for: how much is in the
+ * pot and which accounts have contributed so far.
+ *
+ * A narrow view over {@link getCircle} so callers that only drive funding
+ * progress don't depend on the full `CircleView` shape.
+ */
+export interface CircleStatus {
+  pot: bigint;
+  contributors: string[];
+  round: number;
+  cancelled: boolean;
+}
+
+/** Pure read: the funding-progress slice of a circle's on-chain state. */
+export async function getCircleStatus(
+  client: ShariboClient,
+  circleId: bigint,
+): Promise<CircleStatus> {
+  const circle = await getCircle(client, circleId);
+  return {
+    pot: circle.pot,
+    contributors: circle.contributors ?? [],
+    round: circle.round,
+    cancelled: circle.cancelled,
+  };
+}
+
 /** Pure read: the current count of circles ever created. 0 if none yet. */
 export async function getCircleCount(client: ShariboClient): Promise<bigint> {
   try {
