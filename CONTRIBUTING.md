@@ -86,6 +86,19 @@ If your change is intentional (e.g., renaming a function, adding a new export):
 5. Commit both your code changes and the updated `api-surface.json` together. This makes it easy to see in the PR what the API change is.
 
 If the test fails unexpectedly, it means you've inadvertently changed the public API. Consider whether that's the right fix, or if you should rename more carefully or preserve backward compatibility.
+## Import rules
+
+Each package layer has defined boundaries about what it may import. Before adding a new `import`
+statement, consult **[docs/architecture.md](docs/architecture.md)** for the full layering diagram
+and the rules enforced by ESLint.
+
+In short:
+
+- `app/` and `scripts/` must import the SDK via `@sharibo/client` (its published entry point), **never** a deep `packages/client/src/…` path.
+- `packages/client` must not import `app/` or `scripts/`.
+- `contracts/` and `circuits/` have no JavaScript import dependencies on the rest of the monorepo.
+
+Running `npm run lint` will catch violations.
 
 ## Setup trouble?
 
