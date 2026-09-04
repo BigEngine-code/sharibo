@@ -1,3 +1,5 @@
+import type { SdkEventEmitter } from "./events.js";
+
 /**
  * Retry policy for the client SDK.
  *
@@ -42,16 +44,22 @@ function isTransientError(error: unknown): boolean {
 export async function withRetry<T>(
   fn: () => Promise<T>,
   policy: RetryPolicy = DEFAULT_RETRY_POLICY,
+  emitter?: SdkEventEmitter,
 ): Promise<T> {
   let attempt = 0;
+  const startedAt = Date.now();
   while (true) {
     try {
-      return await fn();
+      emitter?.emit({ type: "rpc:attempt" });
+      const result = await fn();
+      emitter?.emit({ type: "rpc:success", duration: Date.now() - startedAt });
+      return result;
     } catch (error) {
       if (!isTransientError(error) || attempt >= policy.maxRetries) throw error;
       attempt++;
       const jitter = 0.5 + Math.random() * 0.5;
       const delay = policy.baseDelayMs * 2 ** (attempt - 1) * jitter;
+      emitter?.emit({ type: "rpc:retry", attempt, delay, error });
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }

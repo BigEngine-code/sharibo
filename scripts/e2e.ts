@@ -60,7 +60,10 @@ const SKIP_REPLAY = flags["skip-replay"]!;
 const REUSE_CIRCLE = flags["reuse-circle"] != null ? BigInt(flags["reuse-circle"]) : null;
 const VERBOSE = flags.verbose!;
 
-function verbose(...args: unknown[]) {
+function verbose(...args: any[]) {
+  if (args.length === 2 && args[1] && typeof args[1] === "object" && "type" in args[1]) {
+    runArtifact.events?.push(args[1]);
+  }
   if (VERBOSE) console.log("   [verbose]", ...args);
 }
 
@@ -198,6 +201,7 @@ interface RunArtifact {
   members: RunArtifactMember[];
   claim?: { recipient: string; txHash: string; nullifierHash: string };
   replayAttempt?: { rejected: boolean; detail: string };
+  events?: any[];
 }
 
 const runArtifact: RunArtifact = {

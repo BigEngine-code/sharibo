@@ -505,6 +505,7 @@ export default function App() {
   const [screen, setScreen] = useState<"landing" | "circle">("landing");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [events, setEvents] = useState<any[]>([]);
 
   const [contributionXlm, setContributionXlm] = useState(10);
   const [admin, setAdmin] = useState<Keypair | null>(null);
@@ -805,7 +806,7 @@ export default function App() {
         r.json(),
       );
       const vk = verificationKeyToContractFormat(vkJson);
-      const adminClient = await connect(NETWORK, adminKp);
+      const adminClient = await connect({ ...NETWORK, onEvent: (e) => setEvents(prev => [...prev, e]) }, adminKp);
       const { result: newCircleId } = await createCircle(adminClient, {
         admin: adminKp.publicKey(),
         token: TOKEN,
@@ -987,6 +988,7 @@ export default function App() {
           },
           wasm,
           zkey,
+          (e) => setEvents(prev => [...prev, e])
         );
       } finally {
         clearInterval(proveTimer);
@@ -1004,7 +1006,7 @@ export default function App() {
       await fundWithFriendbot(recipient.publicKey());
 
       setClaimStage("submitting");
-      const adminClient = await connect(NETWORK, admin);
+      const adminClient = await connect({ ...NETWORK, onEvent: (e) => setEvents(prev => [...prev, e]) }, admin);
       const { hash } = await claim(adminClient, {
         circleId,
         recipient: recipient.publicKey(),
@@ -1048,9 +1050,9 @@ export default function App() {
       // Fund round `round` again so this exercises the nullifier-reuse
       // check specifically, not just "the pot is empty" — the same
       // proof's nullifier gets rejected even against a fresh, funded round.
-      const adminClient = await connect(NETWORK, admin);
+      const adminClient = await connect({ ...NETWORK, onEvent: (e) => setEvents(prev => [...prev, e]) }, admin);
       for (const m of members) {
-        const memberClient = await connect(NETWORK, m.keypair);
+        const memberClient = await connect({ ...NETWORK, onEvent: (e) => setEvents(prev => [...prev, e]) }, m.keypair);
         await fund(memberClient, { circleId, from: m.keypair.publicKey() });
       }
       const freshExternalNullifier = await computeExternalNullifier(
@@ -1070,7 +1072,7 @@ export default function App() {
         "Unexpected: the replayed claim was accepted (this should never happen).",
       );
     } catch (e) {
-      setRejection(getErrorMessage(e));
+      setRejection(toUiError(e));
     } finally {
       // Reflect the on-chain state either way: the re-funding above happened
       // for real even though the replayed claim itself was rejected.

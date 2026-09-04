@@ -7,6 +7,7 @@ import { ContractError, RpcError, InvalidInputError } from "./errors.js";
 import { decodeContractError } from "./decodeError.js";
 import { withRetry, DEFAULT_RETRY_POLICY, type RetryPolicy } from "./retry.js";
 import { validateContractProof, validateContractVerificationKey } from "./validate.js";
+import { SdkEventEmitter, type OnEventFn } from "./events.js";
 
 /**
  * Network configuration for connecting to the Sharibo contract.
@@ -19,6 +20,7 @@ export interface ShariboNetworkConfig {
   contractId: string;
   rpcUrl: string;
   networkPassphrase: string;
+  onEvent?: OnEventFn;
 }
 
 /**
@@ -116,6 +118,7 @@ export async function connect(
     return cached;
   }
 
+  const emitter = new SdkEventEmitter(config.onEvent);
   const clientPromise = ContractClient.from({
     contractId: config.contractId,
     networkPassphrase: config.networkPassphrase,
@@ -128,7 +131,9 @@ export async function connect(
   contractClientCache.set(cacheKey, clientPromise);
 
   try {
-    return await clientPromise;
+    const client: ShariboClient = await clientPromise;
+    client.emitter = emitter;
+    return client;
   } catch (error) {
     contractClientCache.delete(cacheKey);
     throw error;
@@ -264,7 +269,7 @@ export async function createCircle(
       contribution: args.contribution,
       size: args.size,
       vk: args.vk,
-    }), retryPolicy);
+    }), retryPolicy, client.emitter);
     const sent = await tx.signAndSend();
     return populateTxResult(sent.result as bigint, sent);
   } catch (err) {
@@ -287,7 +292,7 @@ export async function fund(
   retryPolicy: RetryPolicy = DEFAULT_RETRY_POLICY,
 ): Promise<TxResult<void>> {
   try {
-    const tx: ContractTx = await withRetry(() => client.fund({ circle_id: args.circleId, from: args.from }), retryPolicy);
+    const tx: ContractTx = await withRetry(() => client.fund({ circle_id: args.circleId, from: args.from }), retryPolicy, client.emitter);
     const sent = await tx.signAndSend();
     return populateTxResult(undefined, sent);
   } catch (err) {
@@ -326,7 +331,7 @@ export async function claim(
       nullifier_hash: args.nullifierHash,
       external_nullifier: args.externalNullifier,
       proof: args.proof,
-    }), retryPolicy);
+    }), retryPolicy, client.emitter);
     const sent = await tx.signAndSend();
     return populateTxResult(undefined, sent);
   } catch (err) {
@@ -377,7 +382,7 @@ export async function getCircle(
   // get_circle is a pure read: the SDK detects no signature is needed and
   // refuses signAndSend() without `force` (there's nothing to sign/submit).
   try {
-    const tx: ContractTx = await withRetry(() => client.get_circle({ circle_id: circleId }), retryPolicy);
+    const tx: ContractTx = await withRetry(() => client.get_circle({ circle_id: circleId }), retryPolicy, client.emitter);
     const sent = await tx.signAndSend({ force: true });
     return sent.result;
   } catch (err) {
@@ -420,7 +425,7 @@ export async function getCircleCount(
   retryPolicy: RetryPolicy = DEFAULT_RETRY_POLICY,
 ): Promise<bigint> {
   try {
-    const tx: ContractTx = await withRetry(() => client.get_circle_count(), retryPolicy);
+    const tx: ContractTx = await withRetry(() => client.get_circle_count(), retryPolicy, client.emitter);
     const sent = await tx.signAndSend({ force: true });
     return sent.result as bigint;
   } catch (err) {
@@ -441,7 +446,7 @@ export async function hasClaimed(
   const res = await withRetry(() => client.has_claimed({
     circle_id: circleId,
     nullifier_hash: nullifierHash,
-  }), retryPolicy);
+  }), retryPolicy, client.emitter);
   return res as boolean;
 }
 
@@ -462,7 +467,7 @@ export async function cancelCircle(
   retryPolicy: RetryPolicy = DEFAULT_RETRY_POLICY,
 ): Promise<TxResult<void>> {
   try {
-    const tx: ContractTx = await withRetry(() => client.cancel_circle({ circle_id: args.circleId }), retryPolicy);
+    const tx: ContractTx = await withRetry(() => client.cancel_circle({ circle_id: args.circleId }), retryPolicy, client.emitter);
     const sent = await tx.signAndSend();
     return populateTxResult(undefined, sent);
   } catch (err) {

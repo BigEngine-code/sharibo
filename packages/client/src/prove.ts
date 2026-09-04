@@ -10,6 +10,7 @@ import {
   type ProverArtifacts,
 } from "./artifacts.js";
 import { ProvingError, InvalidInputError } from "./errors.js";
+import type { OnEventFn } from "./events.js";
 import { TREE_LEVELS } from "./config.js";
 import { FR_MODULUS } from "./identity.js";
 
@@ -280,7 +281,9 @@ export async function generateProof(
   input: CircuitInput,
   wasm: Uint8Array | string,
   zkey: Uint8Array | string,
+  onEvent?: OnEventFn,
 ): Promise<GenerateProofResult> {
+  onEvent?.({ type: "proof:started" });
   // Serialise bigints to strings for snarkjs
   const snarkInput: Record<string, unknown> = {
     identityNullifier: input.identityNullifier.toString(),
@@ -313,6 +316,8 @@ export async function generateProof(
     b: encodeG2(p.pi_b),
     c: encodeG1(p.pi_c),
   };
+
+  onEvent?.({ type: "proof:finished" });
 
   return {
     proof: contractProof,
@@ -372,6 +377,7 @@ export async function verifyProofLocally(
  */
 export async function fullProve(
   input: Record<string, unknown>,
+  onEvent?: OnEventFn,
 ): Promise<ProofResult> {
   const artifacts = await getArtifacts();
 
@@ -394,6 +400,8 @@ export async function fullProve(
 
 export async function prove(
   input: Record<string, unknown>,
+  onEvent?: OnEventFn,
 ): Promise<ProofResult> {
-  return fullProve(input);
+  return fullProve(input, onEvent);
 }
+
