@@ -13,6 +13,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { NETWORKS } from "@sharibo/client";
 import { writeFileSync, unlinkSync, existsSync } from "node:fs";
 
 const execFileAsync = promisify(execFile);
@@ -97,7 +98,7 @@ describe("smoke test", () => {
     const { stdout, exitCode } = await runSmoke(
       [
         "STELLAR_RPC_URL=https://soroban-testnet.stellar.org",
-        'STELLAR_NETWORK_PASSPHRASE="Test SDF Network ; September 2015"',
+        `STELLAR_NETWORK_PASSPHRASE="${NETWORKS.testnet.passphrase}"`,
         "",
       ].join("\n"),
     );
@@ -109,7 +110,7 @@ describe("smoke test", () => {
     const { stdout, exitCode } = await runSmoke(
       [
         "STELLAR_RPC_URL=https://soroban-testnet.stellar.org",
-        'STELLAR_NETWORK_PASSPHRASE="Test SDF Network ; September 2015"',
+        `STELLAR_NETWORK_PASSPHRASE="${NETWORKS.testnet.passphrase}"`,
         "SHARIBO_CONTRACT_ID=CBOGUS000000000000000000000000000000000000000000000000000",
         "",
       ].join("\n"),
@@ -123,7 +124,7 @@ describe("smoke test", () => {
     const { stdout, exitCode } = await runSmoke(
       [
         "STELLAR_RPC_URL=https://soroban-testnet.stellar.org",
-        'STELLAR_NETWORK_PASSPHRASE="Test SDF Network ; September 2015"',
+        `STELLAR_NETWORK_PASSPHRASE="${NETWORKS.testnet.passphrase}"`,
         "SHARIBO_CONTRACT_ID=CBOGUS000000000000000000000000000000000000000000000000000",
         "",
       ].join("\n"),

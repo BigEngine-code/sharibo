@@ -37,6 +37,7 @@ export const NETWORKS: Record<"testnet" | "mainnet" | "futurenet", NetworkPreset
     passphrase: "Test SDF Future Network ; October 2022",
     rpcUrl: "https://rpc-futurenet.stellar.org",
     horizonUrl: "https://horizon-futurenet.stellar.org",
+    friendbotUrl: "https://friendbot-futurenet.stellar.org",
     explorerBase: "https://stellar.expert/explorer/futurenet",
   },
 };

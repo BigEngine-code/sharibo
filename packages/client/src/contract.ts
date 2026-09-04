@@ -10,11 +10,12 @@ import { validateContractProof, validateContractVerificationKey } from "./valida
 import { SdkEventEmitter, type OnEventFn } from "./events.js";
 
 /**
- * Network configuration for connecting to the Sharibo contract.
+ * Configuration required to connect to the Sharibo contract.
  *
  * @property contractId - The Stellar contract ID.
  * @property rpcUrl - The RPC URL for the Stellar network.
- * @property networkPassphrase - The network passphrase (e.g., "Test SDF Network").
+ * @property networkPassphrase - The network passphrase.
+ * @property onEvent - Optional callback for observability events.
  */
 export interface ShariboNetworkConfig {
   contractId: string;
@@ -160,7 +161,7 @@ export interface TxResult<T> {
  * Build a Stellar explorer URL for a transaction hash, network-aware.
  *
  * @param hash - Transaction hash (hex string).
- * @param networkPassphrase - Stellar network passphrase (e.g. "Test SDF Network ; September 2015").
+ * @param networkPassphrase - Stellar network passphrase.
  * @returns A fully-qualified stellar.expert URL.
  */
 export function explorerTxUrl(hash: string, networkPassphrase: string): string {
