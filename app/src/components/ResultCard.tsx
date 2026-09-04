@@ -7,12 +7,16 @@ export function ResultCard({
   claimResult,
   rejection,
   busy,
+  nullifierClaimed,
+  circleId,
   onClaimAgain,
   onReset,
 }: {
   claimResult: ClaimResult;
   rejection: string | null;
   busy: string | null;
+  nullifierClaimed: boolean;
+  circleId: bigint | null;
   onClaimAgain: () => void;
   onReset: () => void;
 }) {
@@ -37,6 +41,11 @@ export function ResultCard({
       <button className={`${styles.btn} ${styles.btnDanger}`} disabled={!!busy} onClick={onClaimAgain}>
         {busy ?? "Try to claim again with the same proof"}
       </button>
+      {nullifierClaimed && !rejection && (
+        <p className="callout">
+          <code>has_claimed</code> is true for this nullifier — a replay will be rejected on-chain.
+        </p>
+      )}
       {rejection && (
         <>
           <div className={styles.rejected}>

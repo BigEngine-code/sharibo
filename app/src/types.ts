@@ -20,3 +20,6 @@ export interface ClaimResult {
   /** Pre-flight fee estimate shown before signing. */
   feeEstimate?: FeeEstimate;
 }
+
+/** The visible stages of a claim, in the order they actually occur. */
+export type ClaimStage = "artifacts" | "proving" | "verifying" | "funding" | "submitting";

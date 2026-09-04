@@ -44,7 +44,7 @@ import {
 } from "@sharibo/client";
 import { config, configError } from "./config";
 import { useI18n } from "./i18n";
-import { usePoliteLiveRegion, LiveRegion } from "./usePoliteLiveRegion";
+import { usePoliteLiveRegion } from "./usePoliteLiveRegion";
 import { ArtifactProgress } from "./components/ArtifactProgress.js";
 import { explorerTx, short, explorerAccount, explorerContract } from "./lib/explorer";
 import type { CirclePhase } from "./hooks/useCircleFlow";
@@ -262,7 +262,8 @@ interface ClaimResult {
 // fullProve is one opaque call, so "proving" covers witness computation +
 // proof generation together — it gets its own elapsed timer instead of a
 // substage breakdown, since we can't observe a finer boundary inside it.
-type ClaimStage = "artifacts" | "proving" | "verifying" | "funding" | "submitting";
+// Defined in ./types.ts so ClaimSection can share it without importing App.
+import type { ClaimStage } from "./types.js";
 
 const CLAIM_STAGE_LABELS: Record<ClaimStage, string> = {
   artifacts: "Fetching proving artifacts (wasm + zkey)…",
@@ -441,7 +442,6 @@ function MemberRing({ members, revealed }: { members: { funded: boolean; pending
 
 function EnvSetupScreen({ errors }: { errors: string[] }) {
   const { t } = useI18n();
-
   return (
     <div className={styles.page}>
       <div className={`${styles.card} ${styles.hero}`}>
@@ -466,6 +466,23 @@ function EnvSetupScreen({ errors }: { errors: string[] }) {
   );
 }
 
+// ── Persistent live-region (must stay in DOM) ───────────────────────────────
+
+function LiveRegion({ message }: { message: string }) {
+  return (
+    <div
+      aria-live="polite"
+      aria-atomic="true"
+      className="sr-only"
+      style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0,0,0,0)" }}
+    >
+      {message}
+    </div>
+  );
+}
+
+// ── ClaimExplainer ──────────────────────────────────────────────────────────
+
 function ClaimExplainer() {
   const { t } = useI18n();
   return (
@@ -478,12 +495,10 @@ function ClaimExplainer() {
             {t("explainer.sayingBody")}
           </p>
         </section>
-
         <section>
           <h3>{t("explainer.secretTitle")}</h3>
           <p>{t("explainer.secretBody")}</p>
         </section>
-
         <section>
           <h3>{t("explainer.checksTitle")}</h3>
           <ol>
@@ -493,7 +508,6 @@ function ClaimExplainer() {
             <li>{t("explainer.check4")}</li>
           </ol>
         </section>
-
         <section>
           <h3>{t("explainer.observersTitle")}</h3>
           <p>{t("explainer.observersBody")}</p>
@@ -502,6 +516,8 @@ function ClaimExplainer() {
     </details>
   );
 }
+
+// ── Root component ───────────────────────────────────────────────────────────
 
 export default function App() {
   const { t } = useI18n();
@@ -644,12 +660,9 @@ export default function App() {
   // 1. landing → circle: focus the circle card's "SHARIBO" h1
   const circleHeadingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
-    if (screen === "circle") {
-      circleHeadingRef.current?.focus();
-    }
-  }, [screen]);
+    if (flow.screen === "circle") circleHeadingRef.current?.focus();
+  }, [flow.screen]);
 
-  // 2. Fully funded → Claim section appears: focus "Claim" h2
   const claimHeadingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     if (fullyFunded && !claimResult) {
@@ -658,7 +671,6 @@ export default function App() {
     // Only trigger when fullyFunded flips to true; ignore claimResult changes here.
   }, [fullyFunded, claimResult]);
 
-  // 3. Claim succeeds → Payout section appears: focus "Payout landed" h2
   const payoutHeadingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     if (claimResult) {
@@ -1238,10 +1250,6 @@ export default function App() {
         {/*
           Persistent live region — always in the DOM so the browser registers
           it before any text lands inside it (a common AT pitfall).
-          aria-live="polite" lets the current reading finish first; "assertive"
-          would interrupt mid-sentence which would be rude for long proof steps.
-          aria-atomic="true" replaces the whole message on each update rather
-          than diffing individual text nodes, which is more reliable across ATs.
         */}
         <LiveRegion message={liveRegionMessage} />
         <ArtifactProgress announce={announce} />
@@ -1361,7 +1369,7 @@ export default function App() {
           </>
         )}
 
-        {fullyFunded && !claimResult && (
+        {flow.fullyFunded && !flow.claimResult && (
           <>
             <h2 ref={claimHeadingRef} tabIndex={-1}>
               {t("claim.heading")}

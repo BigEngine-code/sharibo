@@ -42,6 +42,19 @@ xdr-goldens:
     @echo ""
     @echo "Goldens written to contracts/sharibo/test_snapshots/xdr_goldens/"
     @echo "Review with: git diff --stat contracts/sharibo/test_snapshots/xdr_goldens/"
+# ── Dead-code check ───────────────────────────────────────────────────────────
+
+# Check for unused files, exports, and dependencies across all TS workspaces.
+# Zero issues is the baseline — adding an unreferenced module makes this fail.
+#
+# To mark an intentional public export so knip ignores it, add the JSDoc tag:
+#
+#   /** @public */
+#   export function myApi() { … }
+#
+# See knip.jsonc for the full configuration and workspace entry points.
+lint-dead:
+    npm run lint:dead
 
 # ── Client ────────────────────────────────────────────────────────────────────
 
@@ -142,6 +155,7 @@ test:
         fi
     }
 
+    run_suite "dead-code check"   npm run lint:dead
     run_suite "client typecheck"  npm run typecheck --workspace=packages/client
     run_suite "client tests"      npm test          --workspace=packages/client
     run_suite "app tests"         npm test          --workspace=app
