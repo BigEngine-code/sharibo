@@ -435,14 +435,12 @@ export async function hasClaimed(
   circleId: bigint,
   nullifierHash: bigint,
 ): Promise<boolean> {
-  try {
-    const tx = await withRetry(() => client.has_claimed({
-      circle_id: circleId,
-      nullifier_hash: nullifierHash,
-    }));
-    const sent = await tx.signAndSend({ force: true });
-    return sent.result;
-  } catch (err) {
-    throw decodeContractError(err);
-  }
+  // `has_claimed` is a pure read — don't submit or force a transaction.
+  // The SDK returns the raw result for read-only contract calls, so just
+  // invoke it and return the boolean directly.
+  const res = await withRetry(() => client.has_claimed({
+    circle_id: circleId,
+    nullifier_hash: nullifierHash,
+  }));
+  return res as boolean;
 }

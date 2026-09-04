@@ -33,15 +33,16 @@ export function ClaimSection({
         real member <em>without</em> revealing which one.
       </p>
       <div className="row">
-        {members.map((_, i) => (
+        {members.map((m, i) => (
           <label key={i} className="radio">
             <input
               type="radio"
               checked={claimantIndex === i}
               onChange={() => onSelectClaimant(i)}
-              disabled={!!busy}
+              disabled={!!busy || !!m.ineligible}
+              title={m.ineligible ? m.ineligibleReason ?? "Ineligible to claim" : undefined}
             />
-            member {i + 1}
+            member {i + 1}{m.ineligible ? ` (ineligible)` : ""}
           </label>
         ))}
       </div>
