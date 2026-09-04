@@ -72,7 +72,9 @@ let artifactPromise: Promise<ProverArtifacts> | undefined;
 
 export function getArtifacts(): Promise<ProverArtifacts> {
   if (!artifactPromise) {
-    artifactPromise = prefetchMembershipArtifacts();
+    artifactPromise = import("./artifacts").then(({ prefetchMembershipArtifacts }) =>
+      prefetchMembershipArtifacts()
+    );
   }
   return artifactPromise;
 }
