@@ -31,7 +31,7 @@ function generate() {
 
     const output =
       template.trimEnd() +
-      `\n\ncomponent main { public [root, externalNullifier] } = Sharibo(${levels});\n`;
+      `\n\ncomponent main { public [root, externalNullifier, recipientHash] } = Sharibo(${levels});\n`;
 
     const outPath = path.join(ROOT, "membership.circom");
     fs.writeFileSync(outPath, output);
@@ -59,7 +59,7 @@ module.exports = { generate: function (override) {
     if (!Number.isInteger(levels) || levels < 1) {
       throw new Error(`invalid levels: ${levels}`);
     }
-    const output = template.trimEnd() + `\n\ncomponent main { public [root, externalNullifier] } = Sharibo(${levels});\n`;
+    const output = template.trimEnd() + `\n\ncomponent main { public [root, externalNullifier, recipientHash] } = Sharibo(${levels});\n`;
     const outPath = path.join(ROOT, "membership.circom");
     fs.writeFileSync(outPath, output);
     return { outPath, levels };

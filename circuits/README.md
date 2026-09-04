@@ -89,6 +89,10 @@ npm run compile            # or: cd circuits && scripts/compile.sh
 npx snarkjs r1cs info build/membership.r1cs
 ```
 
+Note: The circuit's public-signal order is important. SnarkJS emits
+[nullifierHash, root, externalNullifier, recipientHash] — the first
+slot is the circuit output followed by the declared `signal input` order.
+
 The relevant line in the output is:
 
 ```

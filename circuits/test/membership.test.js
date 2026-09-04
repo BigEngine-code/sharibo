@@ -6,6 +6,7 @@ const {
   generateIdentity,
   computeExternalNullifier,
   computeNullifierHash,
+  computeRecipientHash,
   FR_MODULUS,
 } = require("../../packages/client/src/identity.ts");
 const { MerkleTree } = require("../../packages/client/src/tree.ts");
@@ -55,6 +56,9 @@ describe("Sharibo membership circuit (BLS12-381)", function () {
     const identity = identities[memberIndex];
     const merkleProof = tree.proof(memberIndex);
     const externalNullifier = await computeExternalNullifier(BigInt(circleId), BigInt(round));
+    // recipientHash is unused inside the circuit (squared only), so supply
+    // a deterministic placeholder value here.
+    const recipientHash = "0";
     return {
       identityNullifier: identity.identityNullifier.toString(),
       identitySecret: identity.identitySecret.toString(),
@@ -62,6 +66,7 @@ describe("Sharibo membership circuit (BLS12-381)", function () {
       pathIndices: merkleProof.pathIndices,
       root: merkleProof.root.toString(),
       externalNullifier: externalNullifier.toString(),
+      recipientHash: recipientHash,
     };
   }
 
@@ -139,14 +144,18 @@ describe("Sharibo membership circuit (BLS12-381)", function () {
   // (see prove.ts). This pins both the VALUE and the POSITION: swapping the
   // `signal input root` / `signal input externalNullifier` declarations in
   // membership.circom would make this test fail (issue #69).
-  it("public signals are pinned by position: [nullifierHash, root, externalNullifier]", async () => {
+  it("public signals are pinned by position: [nullifierHash, root, externalNullifier, recipientHash]", async () => {
     const input = await buildInput(1, 4, 2);
     const witness = await circuit.calculateWitness(input, true);
     await circuit.checkConstraints(witness);
-
-    // witness[0] is always the constant wire (1); the next three slots are
+    // witness[0] is always the constant wire (1); the next four slots are
     // the public signals in the exact order snarkjs would emit them.
-    const publicSignals = [witness[1].toString(), witness[2].toString(), witness[3].toString()];
+    const publicSignals = [
+      witness[1].toString(),
+      witness[2].toString(),
+      witness[3].toString(),
+      witness[4].toString(),
+    ];
 
     const expectedNullifierHash = computeNullifierHash(
       identities[1].identityNullifier,
@@ -156,6 +165,7 @@ describe("Sharibo membership circuit (BLS12-381)", function () {
     expect(publicSignals[0]).to.equal(expectedNullifierHash.toString());
     expect(publicSignals[1]).to.equal(input.root);
     expect(publicSignals[2]).to.equal(input.externalNullifier);
+    expect(publicSignals[3]).to.equal(input.recipientHash);
   });
 
   // externalNullifier boundary values (issue #70). In practice it's always
