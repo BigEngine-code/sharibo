@@ -63,6 +63,7 @@ import { Toaster } from "./components/Toaster";
 import { ConnectionStatus } from "./components/ConnectionStatus";
 import { useOnlineStatus } from "./hooks/useOnlineStatus";
 import { diagnose, type Failure } from "./state/circleMachine";
+import { copyDebugBundle, type BundleInput } from "./lib/debugBundle";
 
 const BIGINT_MARKER = 'BIGINT::';
 function replacer(key: string, value: unknown): unknown {
@@ -243,6 +244,122 @@ function CopyButton({ value, label }: { value: string; label: string }) {
     >
       {copied ? "✓" : "📋"}
     </button>
+  );
+}
+
+// Injected at build time by Vite; falls back to "dev" in local dev.
+const APP_VERSION: string =
+  (typeof import.meta.env.VITE_APP_VERSION === "string"
+    ? import.meta.env.VITE_APP_VERSION
+    : undefined) ?? "dev";
+
+const BUG_REPORT_URL =
+  "https://github.com/crackedstudio/sharibo/issues/new?template=bug_report.yml";
+
+/**
+ * Collects the current circle-flow state into a DebugBundle and copies it as
+ * formatted markdown to the clipboard. Placed in the footer of the circle
+ * screen and next to any error message so a user can grab it whenever
+ * something goes wrong.
+ *
+ * Secret keys are never included — see app/src/lib/debugBundle.ts for the
+ * allow-list and the defence-in-depth regex backstop.
+ */
+function CopyDebugBundleButton({
+  circleId,
+  round,
+  currentStep,
+  lastError,
+  fundedCount,
+  circleSize,
+  pot,
+  timings,
+}: {
+  circleId: bigint | null;
+  round: number;
+  currentStep: string | null;
+  lastError: string | null;
+  fundedCount: number;
+  circleSize: number;
+  pot: bigint;
+  timings: Record<string, number>;
+}) {
+  const [status, setStatus] = useState<"idle" | "copied" | "fallback" | "error">("idle");
+
+  useEffect(() => {
+    if (status === "idle") return;
+    const t = setTimeout(() => setStatus("idle"), 2500);
+    return () => clearTimeout(t);
+  }, [status]);
+
+  async function handleClick() {
+    const input: BundleInput = {
+      appVersion: APP_VERSION,
+      network: {
+        contractId: config.contractId,
+        rpcUrl: config.rpcUrl,
+        networkPassphrase: config.networkPassphrase,
+        tokenContractId: config.testTokenContractId,
+      },
+      circleId,
+      round,
+      currentStep,
+      lastError,
+      fundedCount,
+      circleSize,
+      pot,
+      // Artifact hashes are not tracked in the App's state yet; omit rather
+      // than leave undefined — the bundle accepts an empty record.
+      artifactHashes: {},
+      timings,
+      userAgent: navigator.userAgent,
+    };
+
+    const result = await copyDebugBundle(input);
+    if (result.ok) {
+      setStatus("copied");
+    } else if (result.markdown) {
+      // Clipboard API blocked but we have the markdown — show it via prompt().
+      window.prompt(
+        "Clipboard unavailable. Select all and copy manually, then paste into your bug report:",
+        result.markdown,
+      );
+      setStatus("fallback");
+    } else {
+      setStatus("error");
+    }
+  }
+
+  const label =
+    status === "copied"
+      ? "✓ Copied!"
+      : status === "fallback"
+        ? "Opened prompt"
+        : status === "error"
+          ? "Error — retry?"
+          : "📋 Copy debug bundle";
+
+  return (
+    <span className="debug-bundle-wrap">
+      <button
+        type="button"
+        className="btn btn-ghost btn-small"
+        onClick={handleClick}
+        title="Copy a redacted debug snapshot to your clipboard, ready to paste into a bug report. No secret keys are included."
+      >
+        {label}
+      </button>
+      {(status === "copied" || status === "fallback") && (
+        <a
+          className="link fineprint"
+          href={BUG_REPORT_URL}
+          target="_blank"
+          rel="noreferrer"
+        >
+          open bug report ↗
+        </a>
+      )}
+    </span>
   );
 }
 
@@ -564,6 +681,8 @@ export default function App() {
   const [rejection, setRejection] = useState<string | null>(null);
   const [claimStage, setClaimStage] = useState<ClaimStage | null>(null);
   const [proveElapsedSeconds, setProveElapsedSeconds] = useState(0);
+  // Step timings (ms) collected during doClaim for the debug bundle.
+  const [stepTimings, setStepTimings] = useState<Record<string, number>>({});
   // Survives a reset so the landing screen can point back at the circle you
   // just left — it keeps living on-chain even though the UI has moved on.
   const [previousCircleId, setPreviousCircleId] = useState<CircleId | null>(null);
@@ -1513,6 +1632,23 @@ export default function App() {
         )}
 
         {error && <p className="error">{error}</p>}
+
+        {/* ── Debug bundle footer ──────────────────────────────────────────
+          Always visible once a circle is active so a user can grab the
+          snapshot at any point — not just on error. Placed last so it
+          doesn't distract from the happy path. */}
+        <div className="debug-bundle-footer">
+          <CopyDebugBundleButton
+            circleId={circleId}
+            round={round}
+            currentStep={claimStage}
+            lastError={error}
+            fundedCount={fundedCount}
+            circleSize={CIRCLE_SIZE}
+            pot={pot}
+            timings={stepTimings}
+          />
+        </div>
       </div>
     </div>
   );
