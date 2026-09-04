@@ -210,11 +210,10 @@ export const EXPLORER_NETWORKS: ReadonlyMap<string, string> = new Map([
  * @param networkPassphrase - Stellar network passphrase.
  * @returns A fully-qualified stellar.expert URL.
  */
-export function explorerTxUrl(hash: string, networkPassphrase: string): string {
-  const subdomain = networkOf(networkPassphrase) === "mainnet"
-    ? "" // mainnet — no subdomain prefix
-    : "testnet.";
-  return `https://${subdomain}stellar.expert/explorer/tx/${hash}`;
+export function explorerTxUrl(hash: string, networkPassphrase: string): string | null {
+  const network = EXPLORER_NETWORKS.get(networkPassphrase);
+  if (network === undefined) return null;
+  return `https://stellar.expert/explorer/${network}/tx/${hash}`;
 }
 
 

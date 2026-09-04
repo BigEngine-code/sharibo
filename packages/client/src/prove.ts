@@ -460,3 +460,23 @@ export async function prove(
 ): Promise<ProofResult> {
   return fullProve(input, options);
 }
+
+// ── Encoding helpers (public: exercised by prove.test.ts) ────────────────────
+
+/** Bytes per BLS12-381 base-field element in the contract wire format. */
+export const FP_BYTES = 48;
+
+/** Big-endian 48-byte encoding of a base-field element given as a decimal string. */
+export function feToBytes(decimal: string): Uint8Array {
+  return decimalStringToUint8Array(decimal, FP_BYTES);
+}
+
+/** Uncompressed G1 point: X||Y, 96 bytes. */
+export function g1ToBytes(point: string[]): Uint8Array {
+  return encodeG1(point);
+}
+
+/** Uncompressed G2 point: Xc1||Xc0||Yc1||Yc0, 192 bytes. */
+export function g2ToBytes(point: string[][]): Uint8Array {
+  return encodeG2(point);
+}

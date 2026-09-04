@@ -801,8 +801,8 @@ export default function App() {
   // 1. landing → circle: focus the circle card's "SHARIBO" h1
   const circleHeadingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
-    if (flow.screen === "circle") circleHeadingRef.current?.focus();
-  }, [flow.screen]);
+    if (screen === "circle") circleHeadingRef.current?.focus();
+  }, [screen]);
 
   const claimHeadingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
@@ -1545,7 +1545,7 @@ export default function App() {
           </>
         )}
 
-        {flow.fullyFunded && !flow.claimResult && (
+        {fullyFunded && !claimResult && (
           <>
             <h2 ref={claimHeadingRef} tabIndex={-1}>
               {t("claim.heading")}

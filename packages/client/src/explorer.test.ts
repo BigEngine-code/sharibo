@@ -7,7 +7,7 @@
  * are repeated verbatim here so a future rename in the SDK fails the suite
  * rather than silently drifting.
  */
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 import { explorerTxUrl, EXPLORER_NETWORKS } from "./contract.js";
 
