@@ -61,6 +61,14 @@ export interface ResolvedSigner {
   signAuthEntry: any;
 }
 
+export interface ResolvedSigner {
+  publicKey: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  signTransaction: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  signAuthEntry: any;
+}
+
 /**
  * Turns a keypair or a wallet signer into the pieces the contract client
  * needs, without constructing the client. Shared by `connect` and the SDK
