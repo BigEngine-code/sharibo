@@ -5,6 +5,11 @@
 #
 # Run `just --list` to see available recipes.  Any recipe can be run
 # manually with the raw commands in README.md — `just` is optional.
+# ── Doctor ───────────────────────────────────────────────────────────────────
+
+# Run the toolchain doctor script (checks Rust, stellar CLI, Node, circom, just)
+doctor:
+    npm run doctor --workspace=scripts
 
 # ── Circuits ──────────────────────────────────────────────────────────────────
 
