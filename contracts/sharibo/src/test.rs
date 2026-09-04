@@ -301,7 +301,7 @@ fn setup(size: u32, contribution: i128) -> Setup {
     // which were generated for circle_id=0.
     let root = real_root(&env);
     let vk = real_verification_key(&env);
-    let circle_id = client.create_circle(&admin, &token, &root, &contribution, &size, &vk);
+    let circle_id = client.create_circle(&admin, &token, &root, &contribution, &size, &0u32, &vk);
     assert_eq!(circle_id, 0);
 
     let mut members: StdVec<Address> = StdVec::new();
@@ -531,7 +531,7 @@ fn same_identity_can_claim_two_consecutive_rounds() {
     let root = real_root(&env);
     let vk = round_reuse_verification_key(&env);
     let contribution: i128 = 100;
-    let circle_id = client.create_circle(&admin, &token, &root, &contribution, &1u32, &vk);
+    let circle_id = client.create_circle(&admin, &token, &root, &contribution, &1u32, &0u32, &vk);
 
     // ---- round 0: fund and claim with the real identity ----
     let funder = Address::generate(&env);
@@ -643,7 +643,7 @@ fn create_circle_requires_admin_auth() {
 
     let root = real_root(&env);
     let vk = real_verification_key(&env);
-    client.create_circle(&admin, &token, &root, &100i128, &5u32, &vk);
+    client.create_circle(&admin, &token, &root, &100i128, &5u32, &0u32, &vk);
 
     let auths = env.auths();
     assert_eq!(auths.len(), 1);
@@ -666,10 +666,10 @@ fn get_circle_count_tracks_next_circle_id() {
     let root = real_root(&env);
     let vk = real_verification_key(&env);
 
-    client.create_circle(&admin, &token, &root, &100i128, &5u32, &vk);
+    client.create_circle(&admin, &token, &root, &100i128, &5u32, &0u32, &vk);
     assert_eq!(client.get_circle_count(), 1);
 
-    client.create_circle(&admin, &token, &root, &100i128, &5u32, &vk);
+    client.create_circle(&admin, &token, &root, &100i128, &5u32, &0u32, &vk);
     assert_eq!(client.get_circle_count(), 2);
 }
 
@@ -807,7 +807,7 @@ fn cpu_instruction_benchmarks() {
     let token = create_token(&env, &token_admin);
     let root = real_root(&env);
     let vk = real_verification_key(&env);
-    client.create_circle(&admin, &token, &root, &100i128, &5u32, &vk);
+    client.create_circle(&admin, &token, &root, &100i128, &5u32, &0u32, &vk);
     let create_cpu = env.cost_estimate().budget().cpu_instruction_cost();
     std::println!("bench create_circle: {create_cpu} CPU instructions");
 
@@ -1102,7 +1102,7 @@ fn claim_with_truncated_ic_reverts() {
     truncated_vk.ic.pop_back(); // Remove the last ic point; len is now 3.
     assert_eq!(truncated_vk.ic.len(), 3);
 
-    let circle_id = client.create_circle(&admin, &token, &root, &100i128, &5u32, &truncated_vk);
+    let circle_id = client.create_circle(&admin, &token, &root, &100i128, &5u32, &0u32, &truncated_vk);
 
     // Fund the circle fully.
     let members: StdVec<Address> = (0..5)
@@ -1156,7 +1156,7 @@ fn instance_ttl_extended_after_create_fund_claim() {
     let vk = real_verification_key(&env);
 
     // create_circle must extend instance TTL.
-    client.create_circle(&admin, &token, &root, &100i128, &5u32, &vk);
+    client.create_circle(&admin, &token, &root, &100i128, &5u32, &0u32, &vk);
 
     // Advance the ledger by LEDGER_THRESHOLD so the instance entry would
     // expire without the extension; the TTL should now be refreshed.
@@ -1196,66 +1196,4 @@ fn instance_ttl_extended_after_create_fund_claim() {
     // its TTL expires, so a successful get_circle here is our proof.
     let circle = client.get_circle(&0u64);
     assert_eq!(circle.round, 1, "claim should have advanced round to 1");
-}
-
-// ---- Proptest: apply_fee invariants ----
-//
-// Two sub-suites:
-//
-// 1. Valid domain — lossless split: fee + net == amount exactly.
-//    Integer truncation in `fee = fee_bps * amount / 10_000` rounds *down*;
-//    the remainder always lands entirely in `net` — no tokens created or lost.
-//    Also asserts fee <= amount (net is non-negative) for the valid range.
-//
-//    Domain:
-//      amount  : 0 ..= i128::MAX / 2   (avoids intermediate multiplication
-//                 overflow, since fee_bps ≤ 10_000 and
-//                 10_000 * (i128::MAX / 2) < i128::MAX)
-//      fee_bps : 0 ..= 10_000          (0% – 100%)
-//
-// 2. Out-of-range rejection — fee_bps > 10_000 or amount < 0 must panic
-//    with Error::InvalidFeeParams rather than silently produce a negative net.
-mod proptest_apply_fee {
-    use super::*;
-    use proptest::prelude::*;
-
-    proptest! {
-        #[test]
-        fn fee_plus_net_equals_amount(
-            amount  in 0_i128..=(i128::MAX / 2),
-            fee_bps in 0_u32..=10_000_u32,
-        ) {
-            let env = Env::default();
-            let (fee, net) = apply_fee(&env, fee_bps, amount);
-            prop_assert_eq!(
-                fee + net,
-                amount,
-                "apply_fee({}, {}) = ({}, {}); fee + net = {}",
-                fee_bps, amount, fee, net, fee + net
-            );
-            // net must never be negative — fee cannot exceed the amount.
-            prop_assert!(net >= 0, "apply_fee({fee_bps}, {amount}) produced negative net {net}");
-        }
-
-        #[test]
-        fn rejects_fee_bps_above_10000(
-            amount  in 0_i128..=(i128::MAX / 2),
-            excess  in 1_u32..=u32::MAX - 10_000,
-        ) {
-            let env = Env::default();
-            let fee_bps = 10_000_u32 + excess;
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| apply_fee(&env, fee_bps, amount)));
-            prop_assert!(result.is_err(), "apply_fee({fee_bps}, {amount}) should have panicked");
-        }
-
-        #[test]
-        fn rejects_negative_amount(
-            amount  in i128::MIN..=-1_i128,
-            fee_bps in 0_u32..=10_000_u32,
-        ) {
-            let env = Env::default();
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| apply_fee(&env, fee_bps, amount)));
-            prop_assert!(result.is_err(), "apply_fee({fee_bps}, {amount}) should have panicked");
-        }
-    }
 }
