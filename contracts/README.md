@@ -71,6 +71,7 @@ After a successful `RestoreFootprintOp` the circle's full state (including `roun
 `NextCircleId` lives in **instance storage** (`env.storage().instance()`). Soroban instance entries have a TTL measured in ledgers; once a TTL lapses the entry is _archived_ (removed from the live state) and can be restored later via `RestoreFootprintOp`.
 
 **What happens on testnet when instance storage is archived and restored?** After a successful `RestoreFootprintOp` the entry reappears with its last-written value intact — the counter does _not_ reset. The risk is the gap between archival and restoration: any `create_circle` call during that gap would reinitialise the counter to `0` (the `unwrap_or(0)` default), silently overwriting circle 0.
+**Storage archival:** every entry the contract writes — instance (`NextCircleId`) and persistent (`Circle`, `Nullifier`) — has its own TTL-extension and archival-consequence analysis, including the `NextCircleId` reset-to-zero risk and the more sensitive nullifier double-claim fence. See [`docs/adr/004-storage-archival.md`](../docs/adr/004-storage-archival.md).
 
 ---
 
@@ -191,28 +192,36 @@ Below is the documentation for all public contract methods.
 * **Preconditions**:
   * The circle associated with `circle_id` must exist.
 
+### Events
+
+Every state-changing entrypoint emits a contract event so off-chain observers can react without polling `get_circle`.
+
+| Entrypoint | Topics | Data |
+| --- | --- | --- |
+| `create_circle` | `("circle", "created", circle_id)` | `(admin, token, contribution, size)` |
+| `fund` | `("circle", "funded", circle_id)` | `(from, new_pot, target)` |
+| `claim` | `("circle", "claimed", circle_id)` | `(round, amount, recipient)` |
+| `cancel_circle` | `("circle", "cancelled", circle_id)` | `(refunded_count, refunded_total)` |
+
+The `claim` event deliberately omits the nullifier hash: publishing it would give observers a linkability handle for correlating anonymized payouts.
+
 ---
 
 ## 5. Error Code Reference
 
 When a transaction reverts, Soroban returns a typed contract error of the form `Error(Contract, #Code)`. The canonical mapping — covering all eight current codes with SDK class, user-facing message, likely cause, and remedy — is in **[`docs/errors.md`](../docs/errors.md)**.
 
-Quick reference:
-
-| Code | Error Name | Raised by |
-| :---: | :--- | :--- |
-| **1** | `CircleNotFound` | `fund`, `claim`, `get_circle`, `cancel_circle` |
-| **2** | `RoundNotFunded` | `claim` |
-| **3** | `WrongRoundTag` | `claim` |
-| **4** | `AlreadyClaimed` | `claim` |
-| **5** | `InvalidProof` | `claim` |
-| **6** | `RoundFull` | `fund` |
-| **7** | `Overflow` | `fund`, `claim` |
-| **8** | `CircleCancelled` | `fund`, `claim`, `cancel_circle` |
-
-See [`docs/errors.md`](../docs/errors.md) for the full table including SDK class, user-facing message, likely cause, and what the caller should do.
-
-The variant count is enforced by the `error_table_variant_count` test in `contracts/sharibo/src/test.rs` — adding a ninth variant without updating `docs/errors.md` and `DOCUMENTED_ERROR_COUNT` will fail that test.
+| Code | Error Name | Trigger / Cause | What the Caller Should Do |
+| :---: | :--- | :--- | :--- |
+| **1** | `CircleNotFound` | The specified `circle_id` does not exist in persistent storage. | Verify that the circle ID is correct and was successfully created. |
+| **2** | `RoundNotFunded` | `claim` was called on a circle whose pot has not yet reached the required target size (`contribution * size`). | Ensure that the required number of contributors have successfully called `fund` for this round. |
+| **3** | `WrongRoundTag` | The presented `external_nullifier` does not match the expected SHA-256 round tag (`SHA256(circle_id, round) mod r`) of the current round. | Re-generate the proof with the correct round tag matching the circle's current round number. |
+| **4** | `AlreadyClaimed` | The `nullifier_hash` presented in `claim` has already been recorded in persistent storage as claimed. | Do not attempt to reuse a spent nullifier. Each member may only claim once per circle/round. |
+| **5** | `InvalidProof` | The Groth16 pairing check failed, or the public signal order/values did not match the proof statement. | Verify that the zero-knowledge proof was correctly generated, utilizing the correct secret, nullifier, path elements, and verification key. |
+| **6** | `RoundFull` | `fund` was called on a circle whose pot is already fully funded. | Wait for the current round to be claimed and advanced before attempting to fund the next round. |
+| **7** | `Overflow` | Checked arithmetic failed during contribution calculation or pot addition. | Avoid using absurdly large contribution amounts or circle sizes that overflow integer capacities. |
+| **8** | `CircleCancelled` | `fund`, `claim`, or `cancel_circle` was called on a circle that has already been cancelled. | Do not interact with a cancelled circle. Any funds were already refunded to the contributors. |
+| **9** | `InvalidCircleParams` | `create_circle` was given a zero size, a non-positive contribution, an invalid verification key length, or a creation-time overflow in `contribution * size`. | Correct the circle configuration before submitting the transaction. |
 
 ---
 
@@ -239,5 +248,50 @@ The accompanying test suite in [`contracts/sharibo/src/test.rs`](sharibo/src/tes
    - `cancel_refunds_partial_funders_and_closes_circle`: Verifies that a circle admin can cancel an underfunded circle, automatically refunding all current round contributors in FIFO order and closing the circle permanently.
 6. **State Persistence**:
    - `instance_ttl_extended_after_create_fund_claim`: Ensures that `extend_ttl` is executed on all write operations (`create_circle`, `fund`, `claim`) to prevent instance-storage archival issues.
+   - `persistent_circle_survives_multiple_rounds_with_ttl_refresh`: Verifies that Circle and Nullifier entries remain accessible across multiple fund/claim rounds when ledger advances by LEDGER_THRESHOLD, confirming TTL is actively re-extended (not once-at-creation).
+   - `circle_and_nullifier_entries_individually_extended`: Asserts that both the Circle persistent entry AND the Nullifier persistent entry are independently extended, surviving ledger advancement past LEDGER_THRESHOLD.
+   - `ttl_survives_fund_after_ledger_advance`: Confirms that fund operations trigger TTL re-extension even after ledger has advanced past LEDGER_THRESHOLD, allowing indefinite circle activity.
 7. **Gas / CPU Benchmarking**:
    - `cpu_instruction_benchmarks`: Benchmarks and prints the precise CPU instructions consumed by write operations (e.g., `create_circle`, `fund`, `claim`) and asserts that they remain safely under the 100M limit.
+
+### TTL (Time-To-Live) & State Archival
+
+The contract uses Soroban's ledger TTL mechanism to manage circle entry lifespan. The following constants govern TTL behavior:
+
+- **`LEDGER_THRESHOLD = 100`**: The minimum ledger distance at which an entry's TTL should be re-extended. At ~5 seconds per ledger, this is ~8.3 minutes. Active circles are re-extended every ~500 seconds of operation.
+- **`LEDGER_EXTEND_TO = 500_000`**: The target TTL (in ledgers) after each extension. At ~5 seconds per ledger:
+  ```
+  500_000 ledgers × 5 sec/ledger = 2_500_000 seconds ≈ 28.9 days ≈ 29 days
+  ```
+  This gives circles **~1 month of inactivity** before archival risk.
+
+#### Archival & Restoration
+
+If a circle's persistent entry (or any Nullifier) is not written to for 29+ days:
+
+1. **Archival**: The entry moves to the Soroban state archive (temporary inaccessibility). On-chain reads/writes fail with `CircleNotFound`.
+2. **Restoration**: The entry can be restored via `RestoreFootprintOp` on the Stellar network (Ledger 50M+ supports historical recovery).
+3. **Recovery**: Restoration is **permissionless** — any party can restore an archived circle; no admin key is needed (only network validator consensus).
+4. **State Preservation**: Upon restoration, the entry reappears with its last-written value intact (round number, pot, contributors, etc. are preserved).
+
+See the [Soroban Documentation](https://developers.stellar.org/) for "Temporary State" and "State Archival" (Soroban 23.0+).
+  - `cpu_instruction_benchmarks`: Benchmarks and prints the precise CPU instructions consumed by write operations (e.g., `create_circle`, `fund`, `claim`) and asserts that they remain safely under the 100M limit.
+
+### Running Coverage (LLVM / Rust)
+
+You can generate coverage reports for the Rust contract using `cargo-llvm-cov`. Install it and then run the coverage collection from the `contracts/` directory:
+
+```bash
+# Install the tool (once)
+cargo install cargo-llvm-cov
+
+# From the repository root
+cd contracts
+
+# Run tests and produce coverage reports (HTML + lcov)
+cargo llvm-cov --workspace --tests --lcov --output-path coverage --html
+
+# Combined coverage will be written to `contracts/coverage/` (open the HTML report in a browser).
+```
+
+Note: `cargo-llvm-cov` depends on LLVM tooling available in your environment. See the `cargo-llvm-cov` documentation for platform-specific notes.

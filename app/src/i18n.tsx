@@ -34,8 +34,12 @@ interface I18nContextValue {
 const I18nContext = createContext<I18nContextValue | null>(null);
 
 function chooseInitialLocale(): LocaleCode {
-  const stored = localStorage.getItem("sharibo.locale");
-  if (stored && dictionaries[stored]) return stored;
+  try {
+    const stored = localStorage.getItem("sharibo.locale");
+    if (stored && dictionaries[stored]) return stored;
+  } catch (e) {
+    // Ignore localStorage errors (e.g., privacy modes)
+  }
 
   const browser = navigator.language.toLowerCase();
   const exact = localeCodes.find((code) => code.toLowerCase() === browser);
@@ -48,6 +52,12 @@ function chooseInitialLocale(): LocaleCode {
   return fallbackLocale;
 }
 
+function applyLocale(code: LocaleCode) {
+  document.documentElement.lang = code;
+  const rtlLocales = new Set(["ar", "he", "fa", "ur", "ps", "yi", "ug"]);
+  document.documentElement.dir = rtlLocales.has(code.split("-")[0].toLowerCase()) ? "rtl" : "ltr";
+}
+
 function interpolate(template: string, vars?: Record<string, string | number>): string {
   if (!vars) return template;
   return template.replace(/\{([a-zA-Z0-9_]+)\}/g, (_, key: string) => {
@@ -57,12 +67,21 @@ function interpolate(template: string, vars?: Record<string, string | number>): 
 }
 
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<LocaleCode>(() => chooseInitialLocale());
+  const [locale, setLocaleState] = useState<LocaleCode>(() => {
+    const initial = chooseInitialLocale();
+    applyLocale(initial);
+    return initial;
+  });
 
   const setLocale = (next: LocaleCode) => {
     if (!dictionaries[next]) return;
     setLocaleState(next);
-    localStorage.setItem("sharibo.locale", next);
+    try {
+      localStorage.setItem("sharibo.locale", next);
+    } catch (e) {
+      // Ignore localStorage errors
+    }
+    applyLocale(next);
   };
 
   const value = useMemo<I18nContextValue>(() => {
@@ -70,7 +89,16 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     const fallback = dictionaries[fallbackLocale];
 
     const t = (key: string, vars?: Record<string, string | number>): string => {
-      const template = current[key] ?? fallback[key] ?? key;
+      const template = current[key] ?? fallback[key];
+      
+      if (template === undefined) {
+        // Warn in development when a key is not found in any locale
+        if (import.meta.env.DEV) {
+          console.warn(`[i18n] Unknown translation key: "${key}"`);
+        }
+        return key;
+      }
+      
       return interpolate(template, vars);
     };
 
@@ -99,4 +127,29 @@ export function useI18n(): I18nContextValue {
     setLocale: () => {},
     t,
   };
+}
+
+/**
+ * Dropdown to switch the UI locale (en / es). Locale codes come from
+ * whatever files exist under src/locales/, so adding a language is just
+ * adding a dictionary file.
+ */
+export function LanguageSwitcher({ className }: { className?: string }) {
+  const { locale, locales, setLocale, t } = useI18n();
+  return (
+    <label className={className}>
+      <span className="sr-only">{t("lang.label")}</span>
+      <select
+        aria-label={t("lang.label")}
+        value={locale}
+        onChange={(e) => setLocale(e.target.value)}
+      >
+        {locales.map((code) => (
+          <option key={code} value={code}>
+            {t(`lang.${code}`)}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
 }

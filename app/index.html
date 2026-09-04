@@ -1,9 +1,21 @@
 <!doctype html>
-<html lang="en">
+<html>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Sharibo — private savings circles on Stellar</title>
+    <!-- Pre-paint background so there's no white flash in dark mode before
+         style.css / React mount. Matches --bg in app/src/style.css. -->
+    <style>
+      html {
+        background: #fff4d6;
+      }
+      @media (prefers-color-scheme: dark) {
+        html {
+          background: #141518;
+        }
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

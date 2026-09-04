@@ -13,13 +13,19 @@ import {
   fund,
   claim,
   getCircle,
+  xlmToStroops,
   type ContractProof,
   type FeeEstimate,
   TREE_LEVELS,
+  getArtifacts,
 } from "@sharibo/client";
 import { config } from "../config.js";
 import { friendbotFund } from "../lib/friendbot.js";
 import type { Member, ClaimResult } from "../types.js";
+
+/** Where the circle view is in its on-chain load cycle, so the UI can show
+ *  skeletons instead of an empty ring while the first read is in flight. */
+export type CirclePhase = "idle" | "loading" | "ready" | "error";
 
 // Derive constants from config (same as App.tsx does)
 const NETWORK = {
@@ -30,7 +36,6 @@ const NETWORK = {
 const TOKEN = config.testTokenContractId;
 const LEVELS = TREE_LEVELS;
 const CIRCLE_SIZE = 5;
-const STROOPS_PER_XLM = 10_000_000n;
 
 // All the state and on-chain calls behind a single demo run: create a
 // circle, fund it from 5 members, prove + claim, then optionally replay the
@@ -40,6 +45,7 @@ const STROOPS_PER_XLM = 10_000_000n;
 // into screens.
 export function useCircleFlow() {
   const [screen, setScreen] = useState<"landing" | "circle">("landing");
+  const [circlePhase, setCirclePhase] = useState<CirclePhase>("idle");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -60,7 +66,7 @@ export function useCircleFlow() {
   // just left — it keeps living on-chain even though the UI has moved on.
   const [previousCircleId, setPreviousCircleId] = useState<bigint | null>(null);
 
-  const contribution = BigInt(contributionXlm) * STROOPS_PER_XLM;
+  const contribution = xlmToStroops(contributionXlm);
   const fundedCount = members.filter((m) => m.funded).length;
   const fullyFunded = pot === contribution * BigInt(CIRCLE_SIZE);
 
@@ -102,6 +108,7 @@ export function useCircleFlow() {
 
   async function startCircle() {
     setError(null);
+    setCirclePhase("loading");
     setBusy("Generating a fresh admin + 5 member identities and funding via friendbot…");
     try {
       const adminKp = Keypair.random();
@@ -119,7 +126,10 @@ export function useCircleFlow() {
       );
 
       setBusy("Creating the circle on testnet…");
-      const vkJson = await fetch("/circuits/verification_key.json").then((r) => r.json());
+      const baseUrl = import.meta.env.BASE_URL.endsWith("/")
+        ? import.meta.env.BASE_URL
+        : `${import.meta.env.BASE_URL}/`;
+      const vkJson = await fetch(`${baseUrl}circuits/verification_key.json`).then((r) => r.json());
       const vk = verificationKeyToContractFormat(vkJson);
       const adminClient = await connect(NETWORK, adminKp);
       const { result: newCircleId } = await createCircle(adminClient, {
@@ -138,8 +148,10 @@ export function useCircleFlow() {
       setRound(0);
       setPot(0n);
       setScreen("circle");
+      setCirclePhase("ready");
     } catch (e) {
       setError((e as Error).message);
+      setCirclePhase("error");
     } finally {
       setBusy(null);
     }
@@ -183,11 +195,13 @@ export function useCircleFlow() {
       const merkleProof = tree.proof(claimantIndex);
       const externalNullifier = await computeExternalNullifier(circleId, BigInt(round));
 
-      // Fetch artifacts and VK in parallel.
-      const [wasm, zkey, vkJson] = await Promise.all([
-        fetch("/circuits/membership.wasm").then((r) => r.arrayBuffer()).then((b) => new Uint8Array(b)),
-        fetch("/circuits/membership_final.zkey").then((r) => r.arrayBuffer()).then((b) => new Uint8Array(b)),
-        fetch("/circuits/verification_key.json").then((r) => r.json()),
+      // Fetch artifacts (via configured getArtifacts) and VK in parallel.
+      const baseUrl = import.meta.env.BASE_URL.endsWith("/")
+        ? import.meta.env.BASE_URL
+        : `${import.meta.env.BASE_URL}/`;
+      const [{ wasm, zkey }, vkJson] = await Promise.all([
+        getArtifacts(),
+        fetch(`${baseUrl}circuits/verification_key.json`).then((r) => r.json()),
       ]);
 
       const generated = await generateProof(
@@ -298,6 +312,7 @@ export function useCircleFlow() {
 
   return {
     screen,
+    circlePhase,
     busy,
     error,
     contributionXlm,

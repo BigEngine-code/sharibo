@@ -6,7 +6,7 @@
  * undefined and no network access. This guards against regressions where
  * a browser-only side-effect creeps back into the default entry point.
  */
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 
 test("package imports cleanly in Node with document undefined", async () => {
@@ -30,10 +30,25 @@ test("package imports cleanly in Node with document undefined", async () => {
   assert.strictEqual(typeof mod.validateCircuitInput, "function", "validateCircuitInput");
   assert.strictEqual(typeof mod.verifyProofLocally, "function", "verifyProofLocally");
   assert.strictEqual(typeof mod.verificationKeyToContractFormat, "function", "vkFormat");
+  assert.strictEqual(typeof mod.configureArtifacts, "function", "configureArtifacts");
+  assert.strictEqual(typeof mod.getArtifacts, "function", "getArtifacts");
 });
 
-test("prefetchMembershipArtifacts is exported but not auto-called at import time", async () => {
-  const { prefetchMembershipArtifacts, getArtifactPrefetchProgress } = await import("./index.js");
+test("prefetchMembershipArtifacts is internal-only and not auto-called at import time", async () => {
+  const main = await import("./index.js") as Record<string, unknown>;
+  // Main entrypoint must NOT leak artifact machinery — it's behind ./internal
+  assert.strictEqual(
+    typeof main.prefetchMembershipArtifacts,
+    "undefined",
+    "main entrypoint should not export prefetchMembershipArtifacts (use @sharibo/client/internal)",
+  );
+  assert.strictEqual(
+    typeof main.getArtifactPrefetchProgress,
+    "undefined",
+    "main entrypoint should not export getArtifactPrefetchProgress (use @sharibo/client/internal)",
+  );
+
+  const { prefetchMembershipArtifacts, getArtifactPrefetchProgress } = await import("./internal.js");
 
   assert.strictEqual(typeof prefetchMembershipArtifacts, "function");
 

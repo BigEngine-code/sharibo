@@ -34,6 +34,10 @@ npm-debug.log*
 .DS_Store
 scratch/
 
+# stryker mutation testing (on-demand, not CI)
+.stryker-tmp/
+packages/client/reports/
+
 # local tooling config (not project source)
 .claude/
 .agents/

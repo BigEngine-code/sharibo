@@ -38,12 +38,6 @@ npx --yes snarkjs zkey contribute "$BUILD/membership_0000.zkey" "$BUILD/membersh
   --name="Sharibo circuit key contribution" -v -e="$(head -c 64 /dev/urandom | base64)"
 npx --yes snarkjs zkey export verificationkey "$BUILD/membership_final.zkey" verification_key.json
 
-echo "Setup complete -> build/membership_final.zkey, verification_key.json"
-
-# ── Transcript fingerprinting ────────────────────────────────────────────────
-SNARKJS_VERSION="$(npx --yes snarkjs --version 2>&1 | head -n1 | sed 's/snarkjs@//')"
-DATE_NOW="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-
 hash_file() {
   # Portable SHA-256: prefer sha256sum (Linux/WSL), fall back to shasum (macOS).
   if command -v sha256sum >/dev/null 2>&1; then
@@ -54,6 +48,16 @@ hash_file() {
     echo "sha256-unavailable"
   fi
 }
+
+hash_file verification_key.json > verification_key.json.sha256
+hash_file "$BUILD/membership_js/membership.wasm" > membership.wasm.sha256
+hash_file "$BUILD/membership_final.zkey" > membership_final.zkey.sha256
+
+echo "Setup complete -> build/membership_final.zkey, verification_key.json"
+
+# ── Transcript fingerprinting ────────────────────────────────────────────────
+SNARKJS_VERSION="$(npx --yes snarkjs --version 2>&1 | head -n1 | sed 's/snarkjs@//')"
+DATE_NOW="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 
 HASH_VK="$(hash_file verification_key.json)"
 HASH_ZKEY="$(hash_file "$BUILD/membership_final.zkey")"

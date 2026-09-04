@@ -6,6 +6,10 @@ export interface Member {
   identity: Identity;
   funded: boolean;
   fundHash?: string;
+  ineligible?: boolean;
+  ineligibleReason?: string;
+  /** Optimistic flag while this member's funding transaction is in flight. */
+  pending?: boolean;
 }
 
 export interface ClaimResult {
@@ -16,3 +20,6 @@ export interface ClaimResult {
   /** Pre-flight fee estimate shown before signing. */
   feeEstimate?: FeeEstimate;
 }
+
+/** The visible stages of a claim, in the order they actually occur. */
+export type ClaimStage = "artifacts" | "proving" | "verifying" | "funding" | "submitting";

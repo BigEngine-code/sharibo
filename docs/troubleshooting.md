@@ -8,6 +8,9 @@ where possible), the **cause**, and the **fix**.
 If you hit a problem while setting up and it isn't covered here, please open an issue
 and share the exact error text — you're the most qualified person to document it.
 
+Start with `just doctor` for an automated checklist that prints the exact install command
+for anything missing or out of date.
+
 ---
 
 ## `circom: command not found`, or an ancient `1.x` circom
@@ -33,6 +36,8 @@ invoked as `circom --version` → `2.x.x`. It also needs the `--prime bls12381` 
 that only the Rust build provides.
 
 **Fix**
+
+Quick check: `just doctor` will flag a missing or outdated `circom` and print the exact install command.
 
 Install the Rust circom 2.x and put it on your `PATH`, then confirm the version:
 
@@ -78,6 +83,8 @@ Rust supports many targets; the `wasm32v1-none` target used by Stellar contracts
 
 **Fix**
 
+Quick check: `just doctor` verifies the target is installed and prints the install command if it is missing.
+
 ```bash
 rustup target add wasm32v1-none
 rustc +stable target list --installed | grep wasm32v1-none   # verify
@@ -110,6 +117,8 @@ into the `stellar` CLI, and its ordering/flags differ. The repo targets the curr
 Groth16 verifier uses, see [README §0](../README.md#0-prerequisites)).
 
 **Fix**
+
+Quick check: `just doctor` verifies the `stellar` CLI version and prints the install URL if it is missing.
 
 Use the `stellar` CLI exclusively. Walk with the docs:
 
@@ -183,24 +192,11 @@ ledger) are stale.
 
 **Fix**
 
-1. Rebuild/redeploy the contract and token, then paste the **new** IDs:
-
-   ```bash
-   cd contracts && stellar contract build && stellar contract deploy \
-     --wasm target/wasm32v1-none/release/sharibo.wasm --source admin --network testnet
-   cd ../packages/contracts/contracts && stellar contract id asset --asset native --network testnet
-   ```
-
-2. Update `.env` (and `app/.env`) with the fresh IDs and regenerate keys if needed:
-
-   ```bash
-   stellar keys generate admin --network testnet --fund
-   stellar keys generate member --network testnet --fund
-   stellar keys show admin ; stellar keys show member
-   ```
-
-3. Re-run the browser/further steps as usual — new circle state now lives on the new
-   ledger.
+Full ordered recovery — redeploy contract + token, re-fund identities, update both `.env` files,
+re-run `e2e`, rebuild/redeploy the (non-git-connected) Vercel app, and refresh the README's
+on-chain evidence — is [`docs/runbook-testnet-reset.md`](runbook-testnet-reset.md). Start there
+rather than improvising; it also covers what does *not* need redoing (the circuit/trusted-setup
+artifacts survive a reset untouched).
 
 ---
 
@@ -242,6 +238,36 @@ npm run dev
 
 Then hard-refresh the browser tab. If it still misbehaves, delete
 `app/public/circuits/*` and re-run `sync-circuit` to force a clean copy.
+
+---
+
+## Local circuit artifacts are stale and fail verification before the app copies them
+
+**Symptom**
+
+The browser throws `InvalidProof`, but the real problem is that the local `circuits/build/`
+artifacts no longer match the committed circuit setup. This often happens after deleting and
+rebuilding the circuit without re-running the trusted setup.
+
+**Cause**
+
+`app/scripts/sync-circuit.mjs` used to copy whatever existed in `circuits/build/` without checking
+whether the `.wasm` and `.zkey` still match the committed `verification_key.json`.
+
+**Fix**
+
+```bash
+cd circuits
+npm run verify-artifacts
+```
+
+If the hashes differ, the script aborts with:
+
+```bash
+run `npm run compile && npm run setup` in `circuits/`
+```
+
+This is the safe recovery path: rebuild the circuit and re-run setup, then re-sync the app.
 
 ---
 

@@ -89,6 +89,10 @@ npm run compile            # or: cd circuits && scripts/compile.sh
 npx snarkjs r1cs info build/membership.r1cs
 ```
 
+Note: The circuit's public-signal order is important. SnarkJS emits
+[nullifierHash, root, externalNullifier, recipientHash] — the first
+slot is the circuit output followed by the declared `signal input` order.
+
 The relevant line in the output is:
 
 ```
@@ -98,6 +102,17 @@ The relevant line in the output is:
 > **Keep in sync**: if you change `circuits/config.json` (tree depth) or the
 > circuit template, re-run the command above and update the count here _and_
 > in `app/src/App.tsx` (search for "1,452 constraints").
+
+### Automated guard
+
+`circuits/constraints.json` commits the expected `snarkjs r1cs info`
+constraint count per tree depth. `circuits/test/membership.test.js` reads it
+after compiling and fails, with a message explaining how to update it, if the
+compiled count drifts — so an innocuous circuit edit or a Poseidon package
+bump can't silently change proving time, `.zkey` size, or on-chain
+verification cost. Note this is the raw R1CS constraint count (linear +
+non-linear), not the "non-linear constraints" figure circom prints to stdout
+during compilation — the two numbers differ.
 
 ### Breakdown estimate
 
