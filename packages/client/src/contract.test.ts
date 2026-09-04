@@ -7,17 +7,17 @@ import { xdr, scValToNative } from "@stellar/stellar-sdk";
 import { fund } from "./contract.js";
 
 test("transient simulate-phase failure recovers", async () => {
-  let simulateCalls = 0;
-  let signAndSendCalls = 0;
-  const mockTx = {
-    signAndSend: async () => {
-      signAndSendCalls++;
-      return {
-        result: undefined,
-        sendTransactionResponse: { hash: "0xabc" },
-      };
-    },
-  };
+    let simulateCalls = 0;
+    let signAndSendCalls = 0;
+    const mockTx = {
+      signAndSend: async () => {
+        signAndSendCalls++;
+        return {
+          result: undefined,
+          sendTransactionResponse: { hash: "0xabc" },
+        };
+      },
+    };
 
   const mockClient = {
     fund: () => {
