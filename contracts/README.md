@@ -262,3 +262,23 @@ If a circle's persistent entry (or any Nullifier) is not written to for 29+ days
 4. **State Preservation**: Upon restoration, the entry reappears with its last-written value intact (round number, pot, contributors, etc. are preserved).
 
 See the [Soroban Documentation](https://developers.stellar.org/) for "Temporary State" and "State Archival" (Soroban 23.0+).
+  - `cpu_instruction_benchmarks`: Benchmarks and prints the precise CPU instructions consumed by write operations (e.g., `create_circle`, `fund`, `claim`) and asserts that they remain safely under the 100M limit.
+
+### Running Coverage (LLVM / Rust)
+
+You can generate coverage reports for the Rust contract using `cargo-llvm-cov`. Install it and then run the coverage collection from the `contracts/` directory:
+
+```bash
+# Install the tool (once)
+cargo install cargo-llvm-cov
+
+# From the repository root
+cd contracts
+
+# Run tests and produce coverage reports (HTML + lcov)
+cargo llvm-cov --workspace --tests --lcov --output-path coverage --html
+
+# Combined coverage will be written to `contracts/coverage/` (open the HTML report in a browser).
+```
+
+Note: `cargo-llvm-cov` depends on LLVM tooling available in your environment. See the `cargo-llvm-cov` documentation for platform-specific notes.
