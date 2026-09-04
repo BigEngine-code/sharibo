@@ -5,7 +5,6 @@ import { Api } from "@stellar/stellar-sdk/rpc";
 import type { ContractProof, ContractVerificationKey } from "./prove.js";
 import { ContractError, RpcError, InvalidInputError } from "./errors.js";
 import { decodeContractError } from "./decodeError.js";
-import type { CircleId } from "./brand.js";
 import { withRetry, DEFAULT_RETRY_POLICY, type RetryPolicy } from "./retry.js";
 import { validateContractProof, validateContractVerificationKey } from "./validate.js";
 import { SdkEventEmitter, type OnEventFn } from "./events.js";
@@ -323,7 +322,7 @@ export async function fund(
 export async function claim(
   client: ShariboClient,
   args: {
-    circleId: CircleId;
+    circleId: bigint;
     recipient: string;
     nullifierHash: bigint;
     externalNullifier: bigint;
@@ -486,7 +485,7 @@ export async function getContributors(client: ShariboClient, circleId: bigint): 
 /** Pure read: whether `nullifierHash` has already claimed in this circle. */
 export async function hasClaimed(
   client: ShariboClient,
-  circleId: CircleId,
+  circleId: bigint,
   nullifierHash: bigint,
   retryPolicy: RetryPolicy = DEFAULT_RETRY_POLICY,
 ): Promise<boolean> {
