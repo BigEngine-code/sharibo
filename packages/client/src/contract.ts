@@ -1,7 +1,6 @@
 import { networkOf } from "./networks";
 import { Client as ContractClient, basicNodeSigner } from "@stellar/stellar-sdk/contract";
-import { Keypair, StrKey } from "@stellar/stellar-sdk";
-import { Api } from "@stellar/stellar-sdk/rpc";
+import { Keypair } from "@stellar/stellar-sdk";
 import type { ContractProof, ContractVerificationKey } from "./prove.js";
 import { ContractError, RpcError } from "./errors.js";
 import { decodeContractError } from "./decodeError.js";

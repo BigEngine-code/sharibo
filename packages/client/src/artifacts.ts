@@ -90,19 +90,6 @@ async function fetchArtifacts(): Promise<ProverArtifacts> {
   let loaded = 0;
   let total: number | null = null;
 
-  const update = (artifactLoaded: number, artifactTotal: number | null) => {
-    loaded += artifactLoaded;
-    if (artifactTotal !== null) {
-      total = (total ?? 0) + artifactTotal;
-    }
-    publish({
-      status: "loading",
-      loaded,
-      total,
-      fraction: total && total > 0 ? Math.min(loaded / total, 1) : null,
-    });
-  };
-
   const [wasmResponse, zkeyResponse] = await Promise.all([
     fetch(MEMBERSHIP_WASM_URL),
     fetch(MEMBERSHIP_ZKEY_URL),
