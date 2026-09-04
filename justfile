@@ -217,3 +217,7 @@ coverage:
     @printf '%-25s %-12s %s\n' "packages/client" "coverage/packages-client" "vitest + v8"
     @printf '%-25s %-12s %s\n' "scripts" "(scripts test may output coverage)" "node --test"
     @printf '%-25s %-12s %s\n' "contracts" "contracts/coverage" "cargo llvm-cov (HTML/lcov)"
+
+# Refresh the committed contract CPU benchmark table
+bench-contract:
+    WRITE_BENCHMARKS=1 cargo test -p sharibo cpu_instruction_benchmarks -- --nocapture
