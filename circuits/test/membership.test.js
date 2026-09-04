@@ -172,6 +172,53 @@ describe("Sharibo membership circuit (BLS12-381)", function () {
     await expectThrows(() => circuit.calculateWitness(input, true));
   });
 
+  // --- recipientHash binding tests (issue #266) ---
+
+  it("accepts a genuine member with a valid recipientHash", async () => {
+    const input = await buildInput(2, 1, 0);
+    const witness = await circuit.calculateWitness(input, true);
+    await circuit.checkConstraints(witness);
+
+    const expected = computeNullifierHash(
+      identities[2].identityNullifier,
+      BigInt(input.externalNullifier),
+    );
+    await circuit.assertOut(witness, { nullifierHash: expected.toString() });
+  });
+
+  it("rejects a proof when recipientHash is swapped to a different value", async () => {
+    const input = await buildInput(2, 1, 0);
+    // Swap to a different recipientHash
+    const differentRecipientHash = poseidon(333n, 444n);
+    input.recipientHash = differentRecipientHash.toString();
+    await expectThrows(() => circuit.calculateWitness(input, true));
+  });
+
+  it("public signals are pinned: [nullifierHash, root, externalNullifier, recipientHash]", async () => {
+    const input = await buildInput(1, 4, 2);
+    const witness = await circuit.calculateWitness(input, true);
+    await circuit.checkConstraints(witness);
+
+    // witness[0] is always the constant wire (1); the next four slots are
+    // the public signals in the exact order snarkjs would emit them.
+    const publicSignals = [
+      witness[1].toString(),
+      witness[2].toString(),
+      witness[3].toString(),
+      witness[4].toString(),
+    ];
+
+    const expectedNullifierHash = computeNullifierHash(
+      identities[1].identityNullifier,
+      BigInt(input.externalNullifier),
+    );
+
+    expect(publicSignals[0]).to.equal(expectedNullifierHash.toString());
+    expect(publicSignals[1]).to.equal(input.root);
+    expect(publicSignals[2]).to.equal(input.externalNullifier);
+    expect(publicSignals[3]).to.equal(input.recipientHash);
+  });
+
   // Cross-implementation fixture shared with
   // packages/client/src/poseidon-vectors.test.ts (see
   // test-vectors/generate.mjs). If only ONE side fails after a dependency
