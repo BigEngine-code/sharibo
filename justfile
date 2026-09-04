@@ -5,6 +5,10 @@
 #
 # Run `just --list` to see available recipes.  Any recipe can be run
 # manually with the raw commands in README.md — `just` is optional.
+#
+# Requires just >= 1.33.0 for set working-directory setting.
+set working-directory := '.'
+
 # ── Doctor ───────────────────────────────────────────────────────────────────
 
 # Run the toolchain doctor script (checks Rust, stellar CLI, Node, circom, just)
