@@ -124,6 +124,15 @@ verify:
         exit 2; \
     fi
 
+# Mutation testing for the crypto modules (identity.ts + tree.ts).
+# Runs on demand — not part of the default test run.
+# Requires: npm install --workspace=packages/client (installs Stryker).
+# Expected runtime: ~3–8 minutes depending on CPU.
+# HTML report written to packages/client/reports/mutation/mutation.html.
+# Baseline mutation score (recorded 2026-08-31): see packages/client/MUTATION_SCORE.md.
+mutation:
+    npm run mutate --workspace=packages/client
+
 # ── End-to-end ────────────────────────────────────────────────────────────────
 
 # Full e2e round against live testnet (spends friendbot quota / testnet funds)
