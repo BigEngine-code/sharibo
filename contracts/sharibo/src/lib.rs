@@ -5,7 +5,7 @@ extern crate std;
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype,
     crypto::bls12_381::{Fr, G1Affine, G2Affine},
-    panic_with_error, token, vec, Address, Bytes, Env, Vec,
+    panic_with_error, token, vec, xdr::ToXdr, Address, Bytes, Env, Vec,
 };
 
 /// Groth16 verification key over BLS12-381.
@@ -935,11 +935,9 @@ impl Contract {
     // `computeRecipientHash` so both sides bind the proof to the same
     // recipient representation.
     fn compute_recipient_hash(env: &Env, recipient: &Address) -> Fr {
-        // Serialize the recipient address into bytes in a deterministic
-        // XDR-like form. Soroban's `Env` provides a host-level serializer
-        // that we can use via `env.serialize`.
-        let mut bytes = Bytes::new(env);
-        env.serialize(recipient, &mut bytes);
+        // Serialize the recipient address to its canonical XDR encoding, so
+        // both sides hash exactly the same bytes.
+        let bytes: Bytes = recipient.clone().to_xdr(env);
         let digest = env.crypto().sha256(&bytes).to_bytes();
         Fr::from_bytes(digest)
     }
