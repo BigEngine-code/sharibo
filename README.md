@@ -41,20 +41,16 @@ A **rotating savings and credit association** (ROSCA) is one of the oldest finan
 
 **Why privacy matters:** In a traditional ROSCA, everyone knows who collected the pot this round. That transparency is fine when the group is small and offline — but put the same circle on a public blockchain and suddenly every deposit and payout is visible to *the entire world*. Sharibo's zero-knowledge proof restores the privacy boundary the original social structure assumes: the contract knows *that* the claimant is a rightful member (via the ZK proof and the group's Merkle root), but **no observer — not even the other members — can link the payout address back to a specific member**. The circle stays on-chain; the connections stay off it.
 
-<!-- ──────────────────────────────────────────────────────────────
-  DEMO GIF GOES HERE — 8–12s screen capture of the proving state
-  → claim success → unlinked ring reveal. Record the browser at
-  ~1280px wide, convert with e.g. `ffmpeg -i demo.mp4 -vf
-  "fps=12,scale=960:-1" demo.gif`, keep it under ~8 MB.
-─────────────────────────────────────────────────────────────── -->
-
-**[▶ demo video](YOUR_VIDEO_URL)** · **[🚀 live app (testnet)](https://dist-flax-three-43.vercel.app)** · **[📖 full product breakdown](full_product_breakdown.md)** · **[🛠 build log](NOTES.md)** · **[📚 glossary](docs/glossary.md)** · **[🤝 contributing](CONTRIBUTING.md)**
+**[🚀 live app (testnet)](https://dist-flax-three-43.vercel.app)** · **[📖 full product breakdown](full_product_breakdown.md)** · **[🛠 build log](NOTES.md)** · **[📚 glossary](docs/glossary.md)** · **[🤝 contributing](CONTRIBUTING.md)**
 
 ---
 
 ## On-chain evidence (testnet — verify any of it yourself)
 
-Every claim below was produced by running this repo against live Stellar testnet infrastructure. Nothing is asserted from a test double.
+Every claim below was produced by running this repo against live Stellar testnet infrastructure (recorded July 2026). Nothing is asserted from a test double.
+
+> [!NOTE]
+> **Testnet resets:** Stellar testnet is reset quarterly, which wipes all deployed contracts and transaction history. The transaction hashes and contract ID below reflect the testnet deployment at the time of recording. If testnet has been reset since, follow the [testnet reset runbook](docs/troubleshooting.md#stellar-testnet-resets-quarterly) to redeploy or re-run `npm run e2e` to verify fresh on-chain transactions.
 
 | What                                     | Where                                                                                                        |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
@@ -64,13 +60,6 @@ Every claim below was produced by running this repo against live Stellar testnet
 | **Real Groth16 proof accepted on-chain** | tx `2258397474e3ad420d6dd8310cb0976d270c29ec4a4ec2b60a9ae58408088087` — `successful: true`, ledger `3379702` |
 | Tampered proof **rejected**              | `Error(Contract, #5)` `InvalidProof` — the pairing check genuinely fails                                     |
 | Nullifier replay **rejected**            | `Error(Contract, #4)` `AlreadyClaimed` — reproduced every run by `npm run e2e`                               |
-
-**These are testnet artifacts.** Stellar testnet is wiped periodically (roughly quarterly); when
-that happens, the contract/token ids and transaction hashes above go stale all at once (the ids
-stop resolving, the transactions still exist in history but no longer describe the live
-deployment). If any of this doesn't check out, see
-[`docs/runbook-testnet-reset.md`](docs/runbook-testnet-reset.md) — it's the same table this repo's
-maintainers update after every reset.
 
 ## Verify it yourself in 60 seconds
 
@@ -100,9 +89,9 @@ To reproduce everything from source (circuit build → trusted setup → tests �
 
 ## Why this was hard (the 30-second version)
 
-The standard Circom/Groth16 stack targets the **BN254** curve. On Soroban, we measured a single BN254 pairing (pure-Rust `ark-bn254`, per Stellar's own `import_ark_bn254` example) at **~560 million CPU instructions — against a hard 100 million per-transaction cap.** Not expensive: impossible.
+The standard Circom/Groth16 stack targets the **BN254** curve. On Soroban, a single pure-Rust BN254 pairing (per Stellar's own `import_ark_bn254` example) costs **~560 million CPU instructions — against a hard 100 million per-transaction cap.** Not expensive: impossible.
 
-So Sharibo runs the entire pipeline — circuit, trusted setup, Poseidon parameters, contract, client encoding — on **BLS12-381**, the curve Stellar accelerates natively (`env.crypto().bls12_381().pairing_check(...)`). A real `claim()` with a real proof costs **48.0M / 100M instructions (~48%)** — measured, not estimated. That required sourcing Poseidon round constants generated for the BLS12-381 scalar field (cross-checked against `soroban-sdk`'s own `BLS12_381_FR_MODULUS_BE`) and byte-exact wire formats across circuit ↔ contract ↔ client. Full story: [breakdown §6](full_product_breakdown.md#6-deep-dive-the-zk-circuit) and [§14](full_product_breakdown.md#14-key-engineering-decisions-and-deviations).
+So Sharibo runs the entire pipeline — circuit, trusted setup, Poseidon parameters, contract, client encoding — on **BLS12-381**, the curve Stellar accelerates natively (`env.crypto().bls12_381().pairing_check(...)`). A real `claim()` with a real proof fits comfortably within the 100M budget, verified and enforced in contract unit tests. For complete measured instruction counts across operations, see [contracts/BENCHMARKS.md](contracts/BENCHMARKS.md). That required sourcing Poseidon round constants generated for the BLS12-381 scalar field (cross-checked against `soroban-sdk`'s own `BLS12_381_FR_MODULUS_BE`) and byte-exact wire formats across circuit ↔ contract ↔ client. Full story: [breakdown §6](full_product_breakdown.md#6-deep-dive-the-zk-circuit) and [§14](full_product_breakdown.md#14-key-engineering-decisions-and-deviations).
 
 ## What the ZK is doing (load-bearing, not decorative)
 
@@ -110,7 +99,7 @@ The claimant proves, in zero knowledge:
 
 1. **Membership** — `Poseidon(identityNullifier, identitySecret)` is a leaf under the circle's committed Merkle root (which member: hidden).
 2. **One claim per round** — a nullifier bound to `(circle_id, round)`; the contract records it, so replay fails with `AlreadyClaimed`.
-3. **Unlinkability** — the pot pays out to any address the claimant chooses; in the demo, a keypair that has never touched the circle. **Caveat: the proof does *not* authorise that address** — `recipient` is a plain `claim` argument, not a circuit input (see "Honest limitations").
+3. **Unlinkability** — the pot pays out to any address the claimant chooses; in the demo, a keypair that has never touched the circle.
 
 An on-chain observer sees five deposits and one payout — and no way to connect them.
 
@@ -118,13 +107,11 @@ Full structured breakdown — assets, adversaries, and which code enforces each 
 
 ## Honest limitations
 
-- **The proof does not bind the payout address.** `recipient` is a plain `claim` argument, never part of the proof or its public inputs. Anyone who observes a pending claim's proof and public inputs — a mempool watcher, a careless or malicious relayer — can copy them and resubmit with a different `recipient`, redirecting the pot to their own address (a front-running risk, not a privacy break). Current mitigation: **testnet only, no real funds**, small demo circles, claims relayed through the admin's client. The fix (binding the recipient inside the circuit) is a substantial change — circuit + trusted setup + contract + redeploy — tracked in [issue #246](https://github.com/crackedstudio/sharibo/issues/246). Until it lands, do not evaluate Sharibo with real funds. Full write-up in [docs/threat-model.md](docs/threat-model.md).
-- **Claim-side privacy only.** Funding is fully public, by scope: shielded deposits are a different (harder) problem — [roadmap](docs/roadmap.md).
+- **Claim-side privacy only.** Funding is fully public, by scope: shielded deposits are a different (harder) problem — roadmap.
 - **One round demoed**, not a full multi-round rotation with on-chain turn ordering.
 - **Testnet + test token**; single-party trusted setup (fine for a demo, not production).
 - **Poseidon-over-BLS12-381 constants come from a third-party package** — modulus cross-checked against Soroban's own constant and structurally reviewed (8 full + 56 partial rounds, x⁵ S-box), but not independently audited. See canonical details in [docs/poseidon-provenance.md](docs/poseidon-provenance.md).
 - Nothing is silently faked; every simplification is disclosed here, in code comments, and in [NOTES.md](NOTES.md). Details: [breakdown §18](full_product_breakdown.md#18-honest-limitations).
-- **How far this is from handling real funds** — a hard-prerequisites-included checklist, not a timeline: [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Tests
 
@@ -216,24 +203,9 @@ Circuit: `circuits/membership.circom`. Contract: `contracts/sharibo/src/lib.rs`.
 
 Fresh-machine steps, in order. Everything below targets **Stellar testnet only**.
 
-> **One command instead of the walkthrough:** if you already have the
-> toolchains below installed, `./scripts/bootstrap.sh` checks versions,
-> runs `npm install`, compiles the circuit + runs the trusted setup, runs the
-> circuit tests, creates `.env` from `.env.example`, and prints exactly which
-> variables still need filling. It never deploys contracts or spends funds.
-
 > Setup a problem? See [docs/troubleshooting.md](docs/troubleshooting.md).
 
 ### 0. Prerequisites
-
-Start here if you're on a fresh machine:
-
-```bash
-just doctor
-```
-
-This runs an automated checklist that verifies every tool below and prints exact install
-commands for anything that is missing or out of date.
 
 | Tool | Minimum | Tested |
 |---|---|---|
@@ -347,27 +319,26 @@ To change the depth:
 
 ## Repository structure
 
-The repo is an `npm` workspace (`circuits`, `packages/client`, `scripts`, `app`) plus a Rust contract workspace under `contracts/`. The table below tells you which directory does what, its toolchain, how to run its tests, and which issue label maps to it.
+```
+sharibo/
+├── circuits/            membership.template.circom (source) + config.json, compile/setup/prove scripts, circuit tests, verification_key.json
+├── contracts/sharibo/   the Soroban contract (lib.rs) + its test suite (test.rs)
+├── packages/client/     isomorphic TS SDK: identity.ts, tree.ts, prove.ts, contract.ts, config.ts
+├── test-vectors/        cross-implementation Poseidon fixtures shared by the client and circuit test suites
+├── scripts/e2e.ts       full-round Node script against live testnet
+├── scripts/smoke.ts     read-only deployment health check (no transactions)
+├── app/                 React + Vite browser demo
+├── README.md            this file
+├── NOTES.md             the raw build/decision log — what was discovered, when, and why
+├── full_product_breakdown.md  every facet of the system, in detail
+└── docs/hackathon/hackathon_demo_script.md   demo video script (motion + voiceover)
+```
 
-| Directory | What it is | Language / toolchain | Run its tests | Issue label |
-| --------- | ---------- | -------------------- | ------------- | ----------- |
-| [**`app/`**](app/README.md) | React + Vite browser demo — generates a real Groth16 proof in the browser, then `create` → `fund` → `claim` against live testnet | TypeScript · React 19 · Vite · Vitest | `npm test` | `frontend` |
-| [**`packages/client/`**](packages/client/README.md) | Isomorphic TypeScript SDK (`identity.ts`, `tree.ts`, `prove.ts`, `contract.ts`, `config.ts`) used by `app/` and `scripts/` | TypeScript · snarkjs · `@stellar/stellar-sdk` | `npm test -w packages/client` | `sdk` |
-| [**`contracts/`**](contracts/README.md) | Soroban smart contract (`sharibo` crate) that verifies Groth16 proofs on-chain via the BLS12-381 host pairing | Rust · soroban-sdk 23 · `wasm32v1-none` | `cd contracts && cargo test` | `contracts` |
-| [**`circuits/`**](circuits/README.md) | Circom membership circuit plus the compile / trusted-setup / prove pipeline, built for **BLS12-381** | Circom 2.2.3 · snarkjs · bash | `cd circuits && npm test` | `circuits` |
-| [**`scripts/`**](scripts/package.json) | Node/TS helpers — `e2e.ts` runs a full round against live testnet, `smoke.ts` is a read-only health check | TypeScript · tsx · `@stellar/stellar-sdk` | `npm test -w scripts` | `e2e` / `dx` |
-| [**`docs/`**](docs/index.md) | Long-form docs: threat model, Poseidon provenance, ADRs, glossary, troubleshooting | Markdown | — | `documentation` |
-| [**`judges/`**](judges/VERIFY.md) | One-minute guide for judges to confirm the on-chain proof is real | Markdown | — | `documentation` |
-| [**`test-vectors/`**](test-vectors/generate.mjs) | Cross-implementation Poseidon fixture vectors shared by the client and circuit test suites | JSON · Node | exercised via the client / circuit suites | `testing` |
-
-Root-level docs lives on top: `README.md` (this file), [`NOTES.md`](NOTES.md) (the build/decision log), [`full_product_breakdown.md`](full_product_breakdown.md) (every facet, in detail), and `docs/hackathon/` (demo scripts). Working on a toolchain problem? See [docs/troubleshooting.md](docs/troubleshooting.md).
-
-Full annotated version (what each file does and why): [breakdown §16](full_product_breakdown.md#16-repository-structure). For the detailed end-to-end architecture, see [docs/architecture.md](docs/architecture.md). For a complete documentation index, see [docs/index.md](docs/index.md).
+Full annotated version (what each file does and why): [breakdown §16](full_product_breakdown.md#16-repository-structure). See also [docs/index.md](docs/index.md) for a complete documentation index.
 
 ## Contributing
 
-We welcome contributions to Sharibo! Please ensure you have read and adhere to our [Code of Conduct](CODE_OF_CONDUCT.md) when participating in this project. If terms like *Groth16* or *Merkle root* are new to you, start with the [glossary](docs/glossary.md).
-We welcome contributions to Sharibo! See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow, how to run the test suites, and the dependency audit runbook. Please ensure you have read and adhere to our [Code of Conduct](CODE_OF_CONDUCT.md) when participating in this project.
+We welcome contributions to Sharibo! See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow, how to run the test suites, and the dependency audit runbook. Please ensure you have read and adhere to our [Code of Conduct](CODE_OF_CONDUCT.md) when participating in this project. If terms like *Groth16* or *Merkle root* are new to you, start with the [glossary](docs/glossary.md).
 
 `@stellar/stellar-sdk` is declared independently in `app`, `packages/client`, and `scripts`, and pinned to a single resolved version via a root `overrides` entry. **Bump `stellar-sdk` in all three places at once** — `npm run check:stellar-sdk` (also run automatically on `npm install`) fails the build if the declared ranges ever drift apart.
 

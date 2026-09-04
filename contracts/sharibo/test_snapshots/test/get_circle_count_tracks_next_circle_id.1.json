@@ -51,9 +51,6 @@
                   "u32": 5
                 },
                 {
-                  "u32": 0
-                },
-                {
                   "map": [
                     {
                       "key": {
@@ -141,9 +138,6 @@
                 },
                 {
                   "u32": 5
-                },
-                {
-                  "u32": 0
                 },
                 {
                   "map": [
@@ -353,14 +347,6 @@
                     },
                     {
                       "key": {
-                        "symbol": "nullifiers"
-                      },
-                      "val": {
-                        "vec": []
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "pot"
                       },
                       "val": {
@@ -381,30 +367,6 @@
                       },
                       "val": {
                         "u32": 0
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "round_deadline_ledgers"
-                      },
-                      "val": {
-                        "u32": 0
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "round_started_ledger"
-                      },
-                      "val": {
-                        "u32": 0
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "schema_version"
-                      },
-                      "val": {
-                        "u32": 1
                       }
                     },
                     {
@@ -565,14 +527,6 @@
                     },
                     {
                       "key": {
-                        "symbol": "nullifiers"
-                      },
-                      "val": {
-                        "vec": []
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "pot"
                       },
                       "val": {
@@ -593,30 +547,6 @@
                       },
                       "val": {
                         "u32": 0
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "round_deadline_ledgers"
-                      },
-                      "val": {
-                        "u32": 0
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "round_started_ledger"
-                      },
-                      "val": {
-                        "u32": 0
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "schema_version"
-                      },
-                      "val": {
-                        "u32": 1
                       }
                     },
                     {
