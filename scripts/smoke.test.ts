@@ -28,18 +28,9 @@ function writeEnv(content: string) {
   writeFileSync(envPath, content, "utf8");
 }
 
-function readEnvSafe(): string | null {
-  try {
-    const { readFileSync } = require("node:fs");
-    return readFileSync(envPath, "utf8");
-  } catch {
-    return null;
-  }
-}
-
 beforeEach(() => {
   try {
-    envBackup = require("node:fs").readFileSync(envPath, "utf8");
+    envBackup = readFileSync(envPath, "utf8");
   } catch {
     envBackup = null;
   }

@@ -4,6 +4,7 @@ import { NETWORKS } from "@sharibo/client";
  * load time.  Import `config` wherever you need the values; import
  * `configError` to check whether the app should render the setup screen.
  */
+import { TREE_LEVELS } from "@sharibo/client";
 
 interface AppConfig {
   contractId: string;

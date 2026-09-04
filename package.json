@@ -12,7 +12,8 @@
     "build": "npm run build --workspaces --if-present",
     "e2e": "npm run e2e --workspace=scripts",
     "test": "npm test --workspaces --if-present",
-    "lint": "eslint packages/client/**/*.ts"
+    "lint": "eslint .",
+    "typecheck": "npm run typecheck --workspace=packages/client"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.0.0",

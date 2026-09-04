@@ -354,6 +354,8 @@ async function main() {
 
   console.log("\n4. Generating a real ZK proof for member", CLAIMANT_INDEX, "...");
   const externalNullifier = await computeExternalNullifier(circleId, 0n);
+  const claimant = members[CLAIMANT_INDEX];
+  const merkleProof = tree.proof(CLAIMANT_INDEX);
   const circuitsBuildDir = path.join(
     path.dirname(fileURLToPath(import.meta.url)),
     "..",
@@ -492,6 +494,7 @@ async function main() {
   );
   console.log("\nRun artifact:", writeRunArtifact());
 
+  writeRunArtifact();
   printStepSummary();
 
   // The RPC client's underlying HTTP keep-alive connections otherwise leave
