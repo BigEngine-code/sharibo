@@ -21,7 +21,17 @@ const en = {
   "landing.previousCircleLink": "circle #{id} ↗",
   "landing.testnetFineprint": "Testnet only. Demo identities are generated fresh in your browser, never reused.",
   "circle.onChainLink": "circle #{id} on-chain ↗",
-  "common.startNewCircle": "Start a new circle"
+  "common.startNewCircle": "Start a new circle",
+  "browser.unsupportedTitle": "Browser support required",
+  "browser.unsupportedIntro": "Sharibo generates the proof in your browser, so JavaScript is required.",
+  "browser.unsupportedDetails": "This browser is missing one or more features needed for the zero-knowledge proof flow.",
+  "browser.unsupportedMissing": "Missing browser support:",
+  "browser.unsupportedSecureContext": "Open this app over HTTPS or localhost. Plain HTTP on a LAN IP is not supported.",
+  "browser.unsupportedFooter": "Use a modern browser that supports WebAssembly, BigInt, and Web Crypto.",
+  "browser.capability.webassembly": "WebAssembly",
+  "browser.capability.bigint": "BigInt",
+  "browser.capability.cryptoSubtle": "Web Crypto (crypto.subtle)",
+  "browser.capability.secureContext": "Secure context (HTTPS or localhost)"
 } as const;
 
 export default en;
