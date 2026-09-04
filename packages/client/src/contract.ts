@@ -440,6 +440,48 @@ export async function getCircleCount(
   }
 }
 
+/** Pure read: the current round number for `circleId`. */
+export async function getRound(client: ShariboClient, circleId: bigint): Promise<number> {
+  const tx = await withRetry(() => client.get_round({ circle_id: circleId }));
+  const sent = await tx.signAndSend({ force: true });
+  return Number(sent.result);
+}
+
+/** Pure read: the current pot balance (in token stroops) for `circleId`. */
+export async function getPot(client: ShariboClient, circleId: bigint): Promise<bigint> {
+  const tx = await withRetry(() => client.get_pot({ circle_id: circleId }));
+  const sent = await tx.signAndSend({ force: true });
+  return BigInt(sent.result);
+}
+
+/**
+ * Pure read: compact status tuple `(round, pot, target, cancelled)`.
+ *
+ * @returns `[round, pot, target, cancelled]` for `circleId`.
+ */
+export async function getStatus(
+  client: ShariboClient,
+  circleId: bigint,
+): Promise<{ round: number; pot: bigint; target: bigint; cancelled: boolean }> {
+  const tx = await withRetry(() => client.get_status({ circle_id: circleId }));
+  const sent = await tx.signAndSend({ force: true });
+  const [round, pot, target, cancelled] = sent.result as
+    [bigint | number, bigint | string, bigint | string, boolean];
+  return {
+    round: Number(round),
+    pot: BigInt(pot),
+    target: BigInt(target),
+    cancelled,
+  };
+}
+
+/** Pure read: the ordered list of addresses that funded the current round. */
+export async function getContributors(client: ShariboClient, circleId: bigint): Promise<string[]> {
+  const tx = await withRetry(() => client.get_contributors({ circle_id: circleId }));
+  const sent = await tx.signAndSend({ force: true });
+  return sent.result as string[];
+}
+
 /** Pure read: whether `nullifierHash` has already claimed in this circle. */
 export async function hasClaimed(
   client: ShariboClient,
@@ -480,4 +522,20 @@ export async function cancelCircle(
   } catch (err) {
     throw decodeContractError(err);
   }
+}
+
+/**
+ * Admin-only: cancel a stuck circle and refund all current-round contributors.
+ *
+ * @param client - The Sharibo contract client.
+ * @param circleId - The ID of the circle to cancel.
+ * @returns The transaction hash.
+ */
+export async function cancelCircle(
+  client: ShariboClient,
+  circleId: bigint,
+): Promise<TxResult<void>> {
+  const tx = await withRetry(() => client.cancel_circle({ circle_id: circleId }));
+  const sent = await tx.signAndSend();
+  return populateTxResult(undefined, sent);
 }
