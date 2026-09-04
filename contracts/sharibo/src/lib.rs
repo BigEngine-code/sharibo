@@ -303,10 +303,9 @@ impl Contract {
     ///
     /// # Errors
     ///
-    /// This entrypoint does not panic with any [`Error`] variant — it
-    /// performs no arithmetic on user-provided `contribution`/`size`.
-    /// Overflow is first possible in [`Self::fund`]/[`Self::claim`] where
-    /// `pot_target` is computed.
+    /// * [`Error::InvalidCircleConfig`] — `size == 0` or `contribution <= 0`.
+    ///   A non-positive target would let an empty pot count as already-funded
+    ///   during the first claim and advance a round without any real deposits.
     pub fn create_circle(
         env: Env,
         admin: Address,

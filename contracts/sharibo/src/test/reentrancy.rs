@@ -110,11 +110,11 @@ fn reentrancy_same_nullifier_reverts_already_claimed() {
 
     // register our reentrant token
     let token = env.register(ReentrantToken, ());
-    let token_client = reentrant_token::Client::new(&env, &token);
+    let token_client = ReentrantTokenClient::new(&env, &token);
 
     let root = real_root(&env);
     let vk = real_verification_key(&env);
-    let circle_id = client.create_circle(&admin, &token, &root, &100i128, &1u32, &vk);
+    let circle_id = client.create_circle(&admin, &token, &root, &100i128, &1u32, &0u32, &vk);
 
     // fund the single-member circle
     let funder = Address::generate(&env);
@@ -160,11 +160,11 @@ fn reentrancy_different_nullifier_same_round_reverts() {
     let admin = Address::generate(&env);
 
     let token = env.register(ReentrantToken, ());
-    let token_client = reentrant_token::Client::new(&env, &token);
+    let token_client = ReentrantTokenClient::new(&env, &token);
 
     let root = real_root(&env);
     let vk = real_verification_key(&env);
-    let circle_id = client.create_circle(&admin, &token, &root, &100i128, &1u32, &vk);
+    let circle_id = client.create_circle(&admin, &token, &root, &100i128, &1u32, &0u32, &vk);
 
     // fund
     let funder = Address::generate(&env);
@@ -211,11 +211,11 @@ fn reentrancy_during_cancel_refunds() {
 
     let admin = Address::generate(&env);
     let token = env.register(ReentrantToken, ());
-    let token_client = reentrant_token::Client::new(&env, &token);
+    let token_client = ReentrantTokenClient::new(&env, &token);
 
     let root = real_root(&env);
     let vk = real_verification_key(&env);
-    let circle_id = client.create_circle(&admin, &token, &root, &100i128, &2u32, &vk);
+    let circle_id = client.create_circle(&admin, &token, &root, &100i128, &2u32, &0u32, &vk);
 
     // two funders
     let f1 = Address::generate(&env);
@@ -237,5 +237,5 @@ fn reentrancy_during_cancel_refunds() {
     );
 
     // admin cancels — during refunds the token will try to reenter
-    client.cancel_circle(&admin, &circle_id);
+    client.cancel_circle(&circle_id);
 }
