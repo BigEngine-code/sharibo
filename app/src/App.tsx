@@ -16,6 +16,7 @@ import {
   verifyProofLocally,
   verificationKeyToContractFormat,
   connect,
+  connectReadOnly,
   createCircle,
   fund,
   claim,

@@ -148,6 +148,26 @@ export async function connect(
 }
 
 /**
+ * Build a read-only contract client that can simulate view calls without a
+ * signer, a funded account, or any fee payment.
+ *
+ * Use this for {@link getCircle}, {@link getCircleCount}, and
+ * {@link hasClaimed}.  The returned client must **not** be passed to
+ * write-path functions (`fund`, `claim`, `createCircle`) — those require a
+ * signed client from {@link connect}.
+ */
+export async function connectReadOnly(
+  config: ShariboNetworkConfig,
+): Promise<ShariboClient> {
+  return ContractClient.from({
+    contractId: config.contractId,
+    networkPassphrase: config.networkPassphrase,
+    rpcUrl: config.rpcUrl,
+    // publicKey omitted — the SDK accepts undefined for simulation-only calls
+  });
+}
+
+/**
  * Result of a contract transaction.
  *
  * @template T - The type of the transaction result.
@@ -397,6 +417,10 @@ export interface CircleView {
 /**
  * Retrieves the current state of a circle.
  *
+ * Uses simulation only — no transaction is submitted, no fee is charged, and
+ * no funded keypair is required.  Pass a client from {@link connectReadOnly}
+ * (or any signed client; signing is simply ignored for view calls).
+ *
  * @param client - The Sharibo contract client.
  * @param circleId - The ID of the circle to query.
  * @returns The circle's current state.
@@ -410,8 +434,8 @@ export async function getCircle(
   // refuses signAndSend() without `force` (there's nothing to sign/submit).
   try {
     const tx: ContractTx = await withRetry(() => client.get_circle({ circle_id: circleId }), retryPolicy, client.emitter);
-    const sent = await tx.signAndSend({ force: true });
-    return sent.result;
+    // Pure read — take the simulated result rather than submitting a tx (#279).
+    return tx.result as CircleView;
   } catch (err) {
     throw decodeContractError(err);
   }
@@ -453,8 +477,7 @@ export async function getCircleCount(
 ): Promise<bigint> {
   try {
     const tx: ContractTx = await withRetry(() => client.get_circle_count(), retryPolicy, client.emitter);
-    const sent = await tx.signAndSend({ force: true });
-    return sent.result as bigint;
+    return tx.result as bigint;
   } catch (err) {
     throw decodeContractError(err);
   }
@@ -463,15 +486,13 @@ export async function getCircleCount(
 /** Pure read: the current round number for `circleId`. */
 export async function getRound(client: ShariboClient, circleId: bigint): Promise<number> {
   const tx: ContractTx = await withRetry(() => client.get_round({ circle_id: circleId }));
-  const sent = await tx.signAndSend({ force: true });
-  return Number(sent.result);
+  return Number(tx.result);
 }
 
 /** Pure read: the current pot balance (in token stroops) for `circleId`. */
 export async function getPot(client: ShariboClient, circleId: bigint): Promise<bigint> {
   const tx: ContractTx = await withRetry(() => client.get_pot({ circle_id: circleId }));
-  const sent = await tx.signAndSend({ force: true });
-  return BigInt(sent.result);
+  return BigInt(tx.result);
 }
 
 /**
@@ -484,8 +505,7 @@ export async function getStatus(
   circleId: bigint,
 ): Promise<{ round: number; pot: bigint; target: bigint; cancelled: boolean }> {
   const tx: ContractTx = await withRetry(() => client.get_status({ circle_id: circleId }));
-  const sent = await tx.signAndSend({ force: true });
-  const [round, pot, target, cancelled] = sent.result as
+  const [round, pot, target, cancelled] = tx.result as
     [bigint | number, bigint | string, bigint | string, boolean];
   return {
     round: Number(round),
@@ -498,11 +518,15 @@ export async function getStatus(
 /** Pure read: the ordered list of addresses that funded the current round. */
 export async function getContributors(client: ShariboClient, circleId: bigint): Promise<string[]> {
   const tx: ContractTx = await withRetry(() => client.get_contributors({ circle_id: circleId }));
-  const sent = await tx.signAndSend({ force: true });
-  return sent.result as string[];
+  return tx.result as string[];
 }
 
-/** Pure read: whether `nullifierHash` has already claimed in this circle. */
+/**
+ * Pure read: whether `nullifierHash` has already claimed in this circle.
+ *
+ * Uses simulation only — no transaction is submitted, no fee is charged, and
+ * no funded keypair is required.
+ */
 export async function hasClaimed(
   client: ShariboClient,
   circleId: bigint,
@@ -512,11 +536,11 @@ export async function hasClaimed(
   // `has_claimed` is a pure read — don't submit or force a transaction.
   // The SDK returns the raw result for read-only contract calls, so just
   // invoke it and return the boolean directly.
-  const res = await withRetry(() => client.has_claimed({
+  const tx: ContractTx = await withRetry(() => client.has_claimed({
     circle_id: circleId,
     nullifier_hash: nullifierHash,
   }), retryPolicy, client.emitter);
-  return res as boolean;
+  return tx.result as boolean;
 }
 
 /**
