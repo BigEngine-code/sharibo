@@ -1,5 +1,5 @@
 /// <reference types="vitest" />
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
 // Shares the same plugin-react config as vite.config.ts so JSX transform and
@@ -16,6 +16,9 @@ export default defineConfig({
     // globally before every test file.
     setupFiles: ["./src/setupTests.ts"],
     globals: true,
+    // Config.ts validates VITE_* env vars at module load and the app renders
+    // a blocking "setup required" screen when they're missing. Supply valid
+    // values here so component tests exercise the real landing screen.
     env: {
       VITE_SHARIBO_CONTRACT_ID: "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
       VITE_STELLAR_RPC_URL: "https://soroban-testnet.stellar.org",

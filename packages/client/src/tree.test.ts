@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 import { MerkleTree, ZERO_VALUE } from "./tree.js";
 import { generateIdentity, FR_MODULUS } from "./identity.js";

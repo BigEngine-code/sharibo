@@ -5,6 +5,7 @@ import { Api } from "@stellar/stellar-sdk/rpc";
 import type { ContractProof, ContractVerificationKey } from "./prove.js";
 import { ContractError, RpcError } from "./errors.js";
 import { decodeContractError } from "./decodeError.js";
+import { withRetry, DEFAULT_RETRY_POLICY, type RetryPolicy } from "./retry.js";
 
 /**
  * Network configuration for connecting to the Sharibo contract.
@@ -32,6 +33,16 @@ export interface ShariboNetworkConfig {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ShariboClient = any;
 
+/**
+ * The transaction builder the dynamically-typed contract client returns from
+ * each contract method (create_circle/fund/claim/get_circle/...). Kept as
+ * `any` for the same reason as `ShariboClient` — the shape is defined by the
+ * on-chain spec, not by a hand-rolled interface. It exposes `signAndSend`,
+ * whose result shape is documented by `populateTxResult`.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ContractTx = any;
+
 export interface ShariboSigner {
   publicKey: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -40,17 +51,18 @@ export interface ShariboSigner {
   signAuthEntry?: (entryXdr: string, opts?: any) => Promise<string>;
 }
 
+export interface ResolvedSigner {
+  publicKey: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  signTransaction: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  signAuthEntry: any;
+}
+
 /**
- * Pre-flight fee estimate from a dry-run simulation.
- *
- * All values are in stroops (1 XLM = 10,000,000 stroops).
- *
- * @property minResourceFee - The minimum fee the network requires to cover
- *   resource usage (CPU, memory, I/O) as reported by the simulation. For a
- *   claim this is dominated by the BLS12-381 pairing check.
- * @property totalFee - The full fee encoded in the assembled transaction
- *   (base inclusion fee + minResourceFee). This is what the account will
- *   actually be charged if the transaction is accepted.
+ * Turns a keypair or a wallet signer into the pieces the contract client
+ * needs, without constructing the client. Shared by `connect` and the SDK
+ * facade so both agree on who the signer is.
  */
 export interface FeeEstimate {
   /** Minimum resource fee in stroops, as reported by simulation. */
@@ -59,70 +71,23 @@ export interface FeeEstimate {
   totalFee: bigint;
 }
 
-// ── withRetry ──────────────────────────────────────────────────
-// Retries the simulation/preparation phase of a contract call on transient
-// errors (429 / 5xx / timeouts). The submit phase is never retried — once a
-// transaction is signed and sent, retrying could cause a double-spend.
-
-/**
- * Maximum number of retry attempts for transient RPC errors (429, 5xx).
- * Contract errors ("Error(Contract, #N)") are never retried — they are
- * deterministic and will fail identically on every attempt.
- */
-const MAX_RETRIES = 3;
-
-/**
- * Returns `true` when the error looks like a transient RPC failure that
- * is safe to retry (rate-limit, server timeout, gateway error, etc.).
- */
-function isTransientRpcError(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  const msg = err.message;
-  // Match common transient HTTP status codes and SDK-level wording.
-  return (
-    /\b(429|5[0-9]{2})\b/.test(msg) ||
-    /Too Many Requests/i.test(msg) ||
-    /rate.?limit/i.test(msg) ||
-    /timeout/i.test(msg) ||
-    /ECONNRESET/.test(msg) ||
-    /Gateway Timeout/i.test(msg) ||
-    /Service Unavailable/i.test(msg)
-  );
-}
-
-/**
- * Wrap an async operation with retry-on-transient-error semantics.
- *
- * Only retries when `isTransientRpcError` returns `true`; contract errors
- * ("Error(Contract, #N)") are deterministic and immediately re-thrown as
- * typed subclasses via `decodeContractError`.
- */
-async function withRetry<T = any>(fn: () => Promise<T>): Promise<T> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    try {
-      return await fn();
-    } catch (err) {
-      lastError = err;
-
-      // Contract errors are deterministic — never retry them.
-      const decoded = decodeContractError(err);
-      if (decoded instanceof ContractError) {
-        throw decoded;
-      }
-
-      // Transient RPC error — retry with backoff if attempts remain.
-      if (isTransientRpcError(err) && attempt < MAX_RETRIES - 1) {
-        await new Promise((r) => setTimeout(r, 2 ** attempt * 200));
-        continue;
-      }
-
-      // Non-transient or exhausted retries — throw as RpcError.
-      throw decoded;
-    }
+export function resolveSigner(
+  keypairOrSigner: Keypair | ShariboSigner,
+  networkPassphrase: string,
+): ResolvedSigner {
+  if (keypairOrSigner instanceof Keypair) {
+    const signer = basicNodeSigner(keypairOrSigner, networkPassphrase);
+    return {
+      publicKey: keypairOrSigner.publicKey(),
+      signTransaction: signer.signTransaction,
+      signAuthEntry: signer.signAuthEntry,
+    };
   }
-  // Exhausted retries for transient error — wrap and throw.
-  throw decodeContractError(lastError);
+  return {
+    publicKey: keypairOrSigner.publicKey,
+    signTransaction: keypairOrSigner.signTransaction,
+    signAuthEntry: keypairOrSigner.signAuthEntry,
+  };
 }
 
 const contractClientCache = new Map<string, Promise<ShariboClient>>();
@@ -135,28 +100,13 @@ export async function connect(
   config: ShariboNetworkConfig,
   keypairOrSigner: Keypair | ShariboSigner,
 ): Promise<ShariboClient> {
-  let publicKey: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let signTransaction: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let signAuthEntry: any;
-
-  if (keypairOrSigner instanceof Keypair) {
-    const signer = basicNodeSigner(keypairOrSigner, config.networkPassphrase);
-    publicKey = keypairOrSigner.publicKey();
-    signTransaction = signer.signTransaction;
-    signAuthEntry = signer.signAuthEntry;
-  } else {
-    publicKey = keypairOrSigner.publicKey;
-    signTransaction = keypairOrSigner.signTransaction;
-    signAuthEntry = keypairOrSigner.signAuthEntry;
-  }
+  const signer = resolveSigner(keypairOrSigner, config.networkPassphrase);
 
   const cacheKey = JSON.stringify([
     config.contractId,
     config.rpcUrl,
     config.networkPassphrase,
-    publicKey,
+    signer.publicKey,
   ]);
 
   const cached = contractClientCache.get(cacheKey);
@@ -169,9 +119,9 @@ export async function connect(
     contractId: config.contractId,
     networkPassphrase: config.networkPassphrase,
     rpcUrl: config.rpcUrl,
-    publicKey,
-    signTransaction,
-    signAuthEntry,
+    publicKey: signer.publicKey,
+    signTransaction: signer.signTransaction,
+    signAuthEntry: signer.signAuthEntry,
   });
 
   contractClientCache.set(cacheKey, clientPromise);
@@ -250,7 +200,7 @@ export async function estimateClaimFee(
   },
 ): Promise<FeeEstimate | null> {
   try {
-    const tx = await withRetry(() =>
+    const tx: ContractTx = await withRetry(() =>
       client.claim({
         circle_id: args.circleId,
         recipient: args.recipient,
@@ -297,16 +247,17 @@ export async function createCircle(
     size: number;
     vk: ContractVerificationKey;
   },
+  retryPolicy: RetryPolicy = DEFAULT_RETRY_POLICY,
 ): Promise<TxResult<bigint>> {
   try {
-    const tx = await withRetry(() => client.create_circle({
+    const tx: ContractTx = await withRetry(() => client.create_circle({
       admin: args.admin,
       token: args.token,
       root: args.root,
       contribution: args.contribution,
       size: args.size,
       vk: args.vk,
-    }));
+    }), retryPolicy);
     const sent = await tx.signAndSend();
     return populateTxResult(sent.result as bigint, sent);
   } catch (err) {
@@ -326,9 +277,10 @@ export async function createCircle(
 export async function fund(
   client: ShariboClient,
   args: { circleId: bigint; from: string },
+  retryPolicy: RetryPolicy = DEFAULT_RETRY_POLICY,
 ): Promise<TxResult<void>> {
   try {
-    const tx = await withRetry(() => client.fund({ circle_id: args.circleId, from: args.from }));
+    const tx: ContractTx = await withRetry(() => client.fund({ circle_id: args.circleId, from: args.from }), retryPolicy);
     const sent = await tx.signAndSend();
     return populateTxResult(undefined, sent);
   } catch (err) {
@@ -357,15 +309,16 @@ export async function claim(
     externalNullifier: bigint;
     proof: ContractProof;
   },
+  retryPolicy: RetryPolicy = DEFAULT_RETRY_POLICY,
 ): Promise<TxResult<void>> {
   try {
-    const tx = await withRetry(() => client.claim({
+    const tx: ContractTx = await withRetry(() => client.claim({
       circle_id: args.circleId,
       recipient: args.recipient,
       nullifier_hash: args.nullifierHash,
       external_nullifier: args.externalNullifier,
       proof: args.proof,
-    }));
+    }), retryPolicy);
     const sent = await tx.signAndSend();
     return populateTxResult(undefined, sent);
   } catch (err) {
@@ -408,11 +361,15 @@ export interface CircleView {
  * @param circleId - The ID of the circle to query.
  * @returns The circle's current state.
  */
-export async function getCircle(client: ShariboClient, circleId: bigint): Promise<CircleView> {
+export async function getCircle(
+  client: ShariboClient,
+  circleId: bigint,
+  retryPolicy: RetryPolicy = DEFAULT_RETRY_POLICY,
+): Promise<CircleView> {
   // get_circle is a pure read: the SDK detects no signature is needed and
   // refuses signAndSend() without `force` (there's nothing to sign/submit).
   try {
-    const tx = await withRetry(() => client.get_circle({ circle_id: circleId }));
+    const tx: ContractTx = await withRetry(() => client.get_circle({ circle_id: circleId }), retryPolicy);
     const sent = await tx.signAndSend({ force: true });
     return sent.result;
   } catch (err) {
@@ -438,8 +395,9 @@ export interface CircleStatus {
 export async function getCircleStatus(
   client: ShariboClient,
   circleId: bigint,
+  retryPolicy: RetryPolicy = DEFAULT_RETRY_POLICY,
 ): Promise<CircleStatus> {
-  const circle = await getCircle(client, circleId);
+  const circle = await getCircle(client, circleId, retryPolicy);
   return {
     pot: circle.pot,
     contributors: circle.contributors ?? [],
@@ -449,9 +407,12 @@ export async function getCircleStatus(
 }
 
 /** Pure read: the current count of circles ever created. 0 if none yet. */
-export async function getCircleCount(client: ShariboClient): Promise<bigint> {
+export async function getCircleCount(
+  client: ShariboClient,
+  retryPolicy: RetryPolicy = DEFAULT_RETRY_POLICY,
+): Promise<bigint> {
   try {
-    const tx = await client.get_circle_count();
+    const tx: ContractTx = await withRetry(() => client.get_circle_count(), retryPolicy);
     const sent = await tx.signAndSend({ force: true });
     return sent.result as bigint;
   } catch (err) {
@@ -464,6 +425,7 @@ export async function hasClaimed(
   client: ShariboClient,
   circleId: bigint,
   nullifierHash: bigint,
+  retryPolicy: RetryPolicy = DEFAULT_RETRY_POLICY,
 ): Promise<boolean> {
   // `has_claimed` is a pure read — don't submit or force a transaction.
   // The SDK returns the raw result for read-only contract calls, so just
@@ -471,19 +433,8 @@ export async function hasClaimed(
   const res = await withRetry(() => client.has_claimed({
     circle_id: circleId,
     nullifier_hash: nullifierHash,
-  }));
+  }), retryPolicy);
   return res as boolean;
-}
-
-/**
- * A lightweight view of a circle's funding status.
- *
- * @property pot - The total amount in the prize pot.
- * @property contributors - Addresses that have funded the current round in order.
- */
-export interface CircleStatus {
-  pot: bigint;
-  contributors: string[];
 }
 
 /**
@@ -500,8 +451,13 @@ export interface CircleStatus {
 export async function cancelCircle(
   client: ShariboClient,
   args: { circleId: bigint },
+  retryPolicy: RetryPolicy = DEFAULT_RETRY_POLICY,
 ): Promise<TxResult<void>> {
-  const tx = await withRetry(() => client.cancel_circle({ circle_id: args.circleId }));
-  const sent = await tx.signAndSend();
-  return populateTxResult(undefined, sent);
+  try {
+    const tx: ContractTx = await withRetry(() => client.cancel_circle({ circle_id: args.circleId }), retryPolicy);
+    const sent = await tx.signAndSend();
+    return populateTxResult(undefined, sent);
+  } catch (err) {
+    throw decodeContractError(err);
+  }
 }

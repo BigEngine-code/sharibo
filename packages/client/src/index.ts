@@ -10,6 +10,8 @@ export * from "./config.js";
 export * from "./errors.js";
 export * from "./artifacts.js";
 export { decodeContractError } from "./decodeError.js";
+export * from "./retry.js";
+export * from "./sdk.js";
 
 // Re-exported for convenience so consumers can import from "@sharibo/client"
 // rather than digging into the contract module.

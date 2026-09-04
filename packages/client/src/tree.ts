@@ -132,6 +132,26 @@ export class MerkleTree {
   }
 
   /**
+   * Generates a Merkle proof for a leaf by its commitment value, with a
+   * descriptive error for leaves that aren't in the tree.
+   *
+   * @param leaf - The leaf value (identity commitment) to prove membership of.
+   * @returns A MerkleProof for the leaf.
+   * @throws {InvalidInputError} If the leaf is not in the tree.
+   */
+  proofOf(leaf: bigint): MerkleProof {
+    const index = this.indexOf(leaf);
+    if (index === -1) {
+      const slots = this.layers[0].length;
+      const occupied = this.leaves.length;
+      throw new InvalidInputError(
+        `leaf 0x${leaf.toString(16)} not found in this tree (${slots} slots, ${occupied} occupied)`,
+      );
+    }
+    return this.proof(index);
+  }
+
+  /**
    * Generates a Merkle proof for a leaf at the given index.
    *
    * @param leafIndex - The index of the leaf in the tree.
@@ -159,26 +179,4 @@ export class MerkleTree {
     return { root: this.root, pathElements, pathIndices };
   }
 
-  /**
-   * Generates a Merkle proof for a leaf by its value.
-   *
-   * Convenience wrapper around {@link indexOf} and {@link proof} that throws a
-   * descriptive error if the leaf is not found, instead of returning -1.
-   *
-   * @param leaf - The leaf value to prove membership for.
-   * @returns A MerkleProof for the leaf.
-   * @throws {InvalidInputError} If the leaf is not found in the tree.
-   */
-  proofOf(leaf: bigint): MerkleProof {
-    const index = this.indexOf(leaf);
-    if (index === -1) {
-      const hexShort = "0x" + leaf.toString(16).slice(0, 16) + "…";
-      const capacity = this.layers[0].length;
-      const occupied = this.leaves.length;
-      throw new InvalidInputError(
-        `leaf ${hexShort} not found in this tree (${capacity} slots, ${occupied} occupied)`,
-      );
-    }
-    return this.proof(index);
-  }
 }
