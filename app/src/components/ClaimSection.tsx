@@ -1,5 +1,6 @@
 import type { FeeEstimate } from "@sharibo/client";
 import type { Member } from "../types.js";
+import styles from "./ClaimSection.module.css";
 
 const STROOPS_PER_XLM = 10_000_000n;
 
@@ -28,7 +29,7 @@ export function ClaimSection({
   return (
     <>
       <h2>Claim</h2>
-      <p className="sub">
+      <p className={styles.sub}>
         Pick which member is claiming this round — the proof will show the contract that they're a
         real member <em>without</em> revealing which one.
       </p>
@@ -46,20 +47,11 @@ export function ClaimSection({
           </label>
         ))}
       </div>
-      {feeEstimate && (
-        <p className="techline fee-estimate">
-          Estimated claim fee:{" "}
-          <strong>{formatXlm(feeEstimate.totalFee)}</strong>
-          {" "}·{" "}
-          resource fee {formatXlm(feeEstimate.minResourceFee)}
-          {" "}· the BLS12-381 pairing check makes this higher than a typical Soroban call
-        </p>
-      )}
-      <button className="btn btn-primary" disabled={!!busy} onClick={onClaim}>
+      <button className={`${styles.btn} ${styles.btnPrimary}`} disabled={!!busy} onClick={onClaim}>
         {busy ?? "Generate proof & claim"}
       </button>
       {busy && (
-        <p className="techline">
+        <p className={styles.techline}>
           Groth16 · BLS12-381 · 1,452 constraints · proving locally in your browser, nothing sent
           anywhere until the proof is done
         </p>

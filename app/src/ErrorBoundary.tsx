@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import styles from "./App.module.css";
 
 interface Props {
   children: ReactNode;
@@ -27,20 +28,20 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.error) {
       return (
-        <div className="page">
-          <div className="card hero">
-            <h1 className="small">Something broke</h1>
-            <p className="sub">
+        <div className={styles.page}>
+          <div className={`${styles.card} ${styles.hero}`}>
+            <h1 className={styles.h1Small}>Something broke</h1>
+            <p className={styles.sub}>
               The demo hit an unexpected error and can't continue safely from here.
             </p>
-            <p className="error">{this.state.error.message}</p>
-            <button className="btn btn-primary" onClick={() => window.location.reload()}>
+            <p className={styles.error}>{this.state.error.message}</p>
+            <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => window.location.reload()}>
               Start over
             </button>
-            <p className="fineprint">
+            <p className={styles.fineprint}>
               If this keeps happening,{" "}
               <a
-                className="link"
+                className={styles.link}
                 href="https://github.com/crackedstudio/sharibo/issues/new"
                 target="_blank"
                 rel="noreferrer"

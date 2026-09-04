@@ -1,5 +1,6 @@
 import { explorerAccount, explorerTx, short } from "../lib/explorer.js";
 import type { ClaimResult } from "../types.js";
+import styles from "./ResultCard.module.css";
 
 export function ResultCard({
   claimResult,
@@ -15,7 +16,7 @@ export function ResultCard({
   onReset: () => void;
 }) {
   return (
-    <div className="result">
+    <div className={styles.result}>
       <h2>Payout landed</h2>
       <p>
         Fresh recipient <code>{short(claimResult.recipient)}</code>{" "}
@@ -24,22 +25,22 @@ export function ResultCard({
         </a>{" "}
         received the pot. It has never appeared anywhere else on this circle.
       </p>
-      <a className="link" href={explorerTx(claimResult.hash)} target="_blank" rel="noreferrer">
+      <a className={styles.link} href={explorerTx(claimResult.hash)} target="_blank" rel="noreferrer">
         view claim transaction ↗
       </a>
-      <p className="callout">
+      <p className={styles.callout}>
         Compare the 5 funding transactions above to this claim — same contract, no shared address,
         no visible link.
       </p>
-      <button className="btn btn-danger" disabled={!!busy} onClick={onClaimAgain}>
+      <button className={`${styles.btn} ${styles.btnDanger}`} disabled={!!busy} onClick={onClaimAgain}>
         {busy ?? "Try to claim again with the same proof"}
       </button>
       {rejection && (
         <>
-          <div className="rejected">
+          <div className={styles.rejected}>
             <strong>Rejected on-chain:</strong> {rejection}
           </div>
-          <button className="btn btn-primary" disabled={!!busy} onClick={onReset}>
+          <button className={`${styles.btn} ${styles.btnPrimary}`} disabled={!!busy} onClick={onReset}>
             Start a new circle
           </button>
         </>
