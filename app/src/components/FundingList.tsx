@@ -19,11 +19,13 @@ export function FundingList({
       <h2>Fund</h2>
       <div className="members">
         {members.map((m, i) => (
-          <div key={i} className={`member ${m.funded ? "funded" : ""}`}>
+          <div key={i} className={`member ${m.funded ? "funded" : ""} ${m.pending ? "pending" : ""}`}>
             <span className="member-addr">
               member {i + 1} · {short(m.keypair.publicKey())}
             </span>
-            {m.funded ? (
+            {m.pending ? (
+              <span className="pending-indicator">⟳ submitting…</span>
+            ) : m.funded ? (
               <a className="link" href={explorerTx(m.fundHash!)} target="_blank" rel="noreferrer">
                 ✓ funded ↗
               </a>

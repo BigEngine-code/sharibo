@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Keypair } from "@stellar/stellar-sdk";
 import {
   isConnected,
@@ -227,6 +227,7 @@ interface Member {
   freighterKey?: string;
   ineligible?: boolean;
   ineligibleReason?: string;
+  pending?: boolean; // Optimistic flag while transaction is in flight
 }
 
 interface ClaimResult {
@@ -351,7 +352,7 @@ function useRingRadius(): number {
   return radius;
 }
 
-function MemberRing({ members, revealed }: { members: { funded: boolean }[]; revealed: boolean }) {
+function MemberRing({ members, revealed }: { members: { funded: boolean; pending?: boolean }[]; revealed: boolean }) {
   const radius = useRingRadius();
   const fundedCount = members.filter((m) => m.funded).length;
 
@@ -388,7 +389,7 @@ function MemberRing({ members, revealed }: { members: { funded: boolean }[]; rev
             <div
               key={i}
               aria-hidden="true"
-              className={`ring-node ${m.funded ? "funded" : ""}`}
+              className={`ring-node ${m.funded ? "funded" : ""} ${m.pending ? "pending" : ""}`}
               style={{ transform: `translate(${x}px, ${y}px)` }}
             >
               {i + 1}
@@ -533,6 +534,7 @@ export default function App() {
   }, []);
   const [round, setRound] = useState(0);
   const [pot, setPot] = useState(0n);
+  const [onChainContributors, setOnChainContributors] = useState<string[]>([]);
   const [claimantIndex, setClaimantIndex] = useState(0);
   const [proof, setProof] = useState<ContractProof | null>(null);
   const [nullifierHash, setNullifierHash] = useState<bigint | null>(null);
@@ -569,6 +571,47 @@ export default function App() {
   const fundedCount = members.filter((m) => m.funded).length;
   const fullyFunded = pot === contribution * BigInt(CIRCLE_SIZE);
   const { announce, message: liveRegionMessage } = usePoliteLiveRegion(120);
+
+  // Sync funding state from on-chain data
+  const syncFundingState = useCallback(async () => {
+    if (!admin || circleId === null) return;
+    try {
+      const { connect, getCircleStatus } = await import("@sharibo/client");
+      const adminClient = await connect(NETWORK, admin);
+      const status = await getCircleStatus(adminClient, circleId);
+      
+      setPot(status.pot);
+      setOnChainContributors(status.contributors);
+      
+      // Update member funded status based on on-chain contributors
+      setMembers((prev) =>
+        prev.map((m) => {
+          const hasFunded = status.contributors.includes(m.keypair.publicKey()) ||
+                          (m.freighterKey && status.contributors.includes(m.freighterKey));
+          return { ...m, funded: hasFunded, pending: false };
+        })
+      );
+    } catch (e) {
+      console.error("Failed to sync funding state:", e);
+    }
+  }, [admin, circleId]);
+
+  // Sync funding state when circleId changes or on mount
+  useEffect(() => {
+    if (circleId !== null && admin) {
+      syncFundingState();
+    }
+  }, [circleId, admin, syncFundingState]);
+
+  // Poll for third-party funding updates every 10 seconds when circle is active
+  useEffect(() => {
+    if (circleId !== null && admin && screen === "circle" && !claimResult) {
+      const interval = setInterval(() => {
+        syncFundingState();
+      }, 10000); // Poll every 10 seconds
+      return () => clearInterval(interval);
+    }
+  }, [circleId, admin, screen, claimResult, syncFundingState]);
 
   useEffect(() => {
     if (busy) {
@@ -711,9 +754,10 @@ export default function App() {
     const loadedMembers = parsed.members.map((m: any) => ({
       keypair: Keypair.fromSecret(m.secret),
       identity: m.identity,
-      funded: m.funded,
+      funded: false, // Will be synced from on-chain
       fundHash: m.fundHash,
       ineligible: m.ineligible ?? false,
+      pending: false,
     }));
     setMembers(loadedMembers);
     
@@ -725,7 +769,7 @@ export default function App() {
 
     setCircleId(parsed.circleId);
     setRound(parsed.round);
-    setPot(parsed.pot);
+    setPot(0n); // Will be synced from on-chain
     setClaimantIndex(parsed.claimantIndex);
     setProof(parsed.proof);
     setNullifierHash(parsed.nullifierHash);
@@ -734,6 +778,9 @@ export default function App() {
     
     setScreen("circle");
     setResumePrompt(null);
+    
+    // Sync from on-chain after loading state
+    setTimeout(() => syncFundingState(), 100);
   }
 
   async function startCircle() {
@@ -798,27 +845,42 @@ export default function App() {
     setError(null);
     setBusy(`Funding from member ${i + 1}…`);
     try {
-      const [{ Keypair }, { connect, fund, getCircle }] = await Promise.all([
+      const [{ Keypair }, { connect, fund }] = await Promise.all([
         import("@stellar/stellar-sdk"),
         import("@sharibo/client")
       ]);
       const m = members[i];
       await fundWithFriendbot(m.keypair.publicKey());
+      
+      // Set optimistic pending state
+      setMembers((prev) =>
+        prev.map((mm, idx) =>
+          idx === i ? { ...mm, pending: true } : mm,
+        ),
+      );
+      
       const memberClient = await connect(NETWORK, m.keypair);
       const { hash } = await fund(memberClient, {
         circleId,
         from: m.keypair.publicKey(),
       });
+      
+      // Sync with on-chain state after submission
+      await syncFundingState();
+      
+      // Update fund hash for the successful transaction
       setMembers((prev) =>
         prev.map((mm, idx) =>
-          idx === i ? { ...mm, funded: true, fundHash: hash } : mm,
+          idx === i ? { ...mm, fundHash: hash } : mm,
         ),
       );
-      const adminClient = await connect(NETWORK, admin);
-      const circle = await getCircle(adminClient, circleId);
-      setPot(circle.pot);
-      setRound(circle.round);
     } catch (e) {
+      // Clear pending state on error
+      setMembers((prev) =>
+        prev.map((mm, idx) =>
+          idx === i ? { ...mm, pending: false } : mm,
+        ),
+      );
       setError(toUiError(e));
     } finally {
       setBusy(null);
@@ -860,21 +922,34 @@ export default function App() {
         }
       };
 
+      // Set optimistic pending state
+      setMembers((prev) =>
+        prev.map((mm, idx) =>
+          idx === i ? { ...mm, pending: true } : mm,
+        ),
+      );
+
+      const { connect, fund } = await import("@sharibo/client");
       const memberClient = await connect(NETWORK, freighterSigner);
       const { hash } = await fund(memberClient, {
         circleId,
         from: pubKey,
       });
 
+      // Sync with on-chain state after submission
+      await syncFundingState();
+      
+      // Update fund hash and freighter key for the successful transaction
       setMembers((prev) =>
-        prev.map((mm, idx) => (idx === i ? { ...mm, funded: true, fundHash: hash, freighterKey: pubKey } : mm)),
+        prev.map((mm, idx) => (idx === i ? { ...mm, fundHash: hash, freighterKey: pubKey } : mm)),
       );
-
-      const adminClient = await connect(NETWORK, admin);
-      const circle = await getCircle(adminClient, circleId);
-      setPot(circle.pot);
-      setRound(circle.round);
     } catch (e) {
+      // Clear pending state on error
+      setMembers((prev) =>
+        prev.map((mm, idx) =>
+          idx === i ? { ...mm, pending: false } : mm,
+        ),
+      );
       setError(getErrorMessage(e));
     } finally {
       setBusy(null);
@@ -888,7 +963,7 @@ export default function App() {
     setRejection(null);
     setBusy("Claiming…");
     try {
-      const [{ Keypair }, { computeExternalNullifier, generateProof, verifyProofLocally, connect, claim, getCircle }] = await Promise.all([
+      const [{ Keypair }, { computeExternalNullifier, generateProof, verifyProofLocally, connect, claim, getCircle, hasClaimed }] = await Promise.all([
         import("@stellar/stellar-sdk"),
         import("@sharibo/client")
       ]);
@@ -959,9 +1034,8 @@ export default function App() {
       });
       setNullifierClaimed(await hasClaimed(adminClient, circleId, generated.nullifierHash));
 
-      const circle = await getCircle(adminClient, circleId);
-      setPot(circle.pot);
-      setRound(circle.round);
+      // Sync with on-chain state after claim
+      await syncFundingState();
     } catch (e) {
       setError(toUiError(e));
     } finally {
@@ -978,7 +1052,7 @@ export default function App() {
       "Refunding a new round, then replaying the same proof's nullifier…",
     );
     try {
-      const [{ Keypair }, { connect, fund, computeExternalNullifier, claim, getCircle }] = await Promise.all([
+      const [{ Keypair }, { connect, fund, computeExternalNullifier, claim }] = await Promise.all([
         import("@stellar/stellar-sdk"),
         import("@sharibo/client")
       ]);
@@ -1012,11 +1086,7 @@ export default function App() {
       // Reflect the on-chain state either way: the re-funding above happened
       // for real even though the replayed claim itself was rejected.
       try {
-        const { connect, getCircle } = await import("@sharibo/client");
-        const adminClient = await connect(NETWORK, admin);
-        const circle = await getCircle(adminClient, circleId);
-        setPot(circle.pot);
-        setRound(circle.round);
+        await syncFundingState();
       } catch {
         // best-effort refresh only
       }
@@ -1176,12 +1246,14 @@ export default function App() {
         </p>
         <div className="members">
           {members.map((m, i) => (
-            <div key={i} className={`member ${m.funded ? "funded" : ""}`}>
+            <div key={i} className={`member ${m.funded ? "funded" : ""} ${m.pending ? "pending" : ""}`}>
               <span className="member-addr">
                 member {i + 1} · {short(m.keypair.publicKey())}
                 <CopyButton value={m.keypair.publicKey()} label={`member ${i + 1} address`} />
               </span>
-              {m.funded ? (
+              {m.pending ? (
+                <span className="pending-indicator">⟳ submitting…</span>
+              ) : m.funded ? (
                 <a
                   className="link"
                   href={explorerTx(m.fundHash!)}
