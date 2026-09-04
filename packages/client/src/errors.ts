@@ -70,33 +70,63 @@ export class ContractError extends ShariboError {
   }
 }
 
-/**
- * Numeric constants for every `Error` variant in the contract.
- *
- * These mirror the `#[repr(u32)]` discriminants in `pub enum Error` in
- * `contracts/sharibo/src/lib.rs`. The count is guarded by the Rust test
- * `error_table_variant_count` — adding a variant without updating that test
- * and this object will cause a test failure.
- *
- * See `docs/errors.md` for the full description of each code.
- */
-export const ErrorCode = {
-  /** `circle_id` does not exist in persistent storage. */
-  CircleNotFound: 1,
-  /** `claim` called before the pot reached `contribution × size`. */
-  RoundNotFunded: 2,
-  /** `external_nullifier` did not match `SHA256(circle_id, round) mod r`. */
-  WrongRoundTag: 3,
-  /** `nullifier_hash` was already recorded by a prior successful claim. */
-  AlreadyClaimed: 4,
-  /** Groth16 pairing check returned false. */
-  InvalidProof: 5,
-  /** `fund` called after the pot is already at `contribution × size`. */
-  RoundFull: 6,
-  /** `contribution × size` or `pot + contribution` overflowed `i128`. */
-  Overflow: 7,
-  /** Circle was permanently closed by `cancel_circle`. */
-  CircleCancelled: 8,
-} as const;
+// ── Typed contract-error subclasses (error codes 1..8) ──────────────────────
+// Each mirrors a `#[contracterror]` variant in contracts/sharibo/src/lib.rs.
+// Callers can use `instanceof` to branch on the specific failure reason
+// without parsing XDR dumps.
 
-export type ErrorCodeValue = (typeof ErrorCode)[keyof typeof ErrorCode];
+/** #1 – No Circle is stored at the requested circle_id. */
+export class CircleNotFoundError extends ContractError {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, 1, options);
+  }
+}
+
+/** #2 – Claim called before the pot reached contribution * size. */
+export class RoundNotFundedError extends ContractError {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, 2, options);
+  }
+}
+
+/** #3 – Proof's external_nullifier did not match hash(circle_id, round). */
+export class WrongRoundTagError extends ContractError {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, 3, options);
+  }
+}
+
+/** #4 – Nullifier has already been used in a prior claim for this circle. */
+export class AlreadyClaimedError extends ContractError {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, 4, options);
+  }
+}
+
+/** #5 – Groth16 pairing check returned false. */
+export class InvalidProofError extends ContractError {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, 5, options);
+  }
+}
+
+/** #6 – The round pot is already full; further funds would brick claim. */
+export class RoundFullError extends ContractError {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, 6, options);
+  }
+}
+
+/** #7 – Checked pot arithmetic overflowed. */
+export class OverflowError extends ContractError {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, 7, options);
+  }
+}
+
+/** #8 – cancel_circle or fund/claim called on a cancelled circle. */
+export class CircleCancelledError extends ContractError {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, 8, options);
+  }
+}
