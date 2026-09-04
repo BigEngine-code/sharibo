@@ -239,5 +239,30 @@ The accompanying test suite in [`contracts/sharibo/src/test.rs`](sharibo/src/tes
    - `cancel_refunds_partial_funders_and_closes_circle`: Verifies that a circle admin can cancel an underfunded circle, automatically refunding all current round contributors in FIFO order and closing the circle permanently.
 6. **State Persistence**:
    - `instance_ttl_extended_after_create_fund_claim`: Ensures that `extend_ttl` is executed on all write operations (`create_circle`, `fund`, `claim`) to prevent instance-storage archival issues.
+   - `persistent_circle_survives_multiple_rounds_with_ttl_refresh`: Verifies that Circle and Nullifier entries remain accessible across multiple fund/claim rounds when ledger advances by LEDGER_THRESHOLD, confirming TTL is actively re-extended (not once-at-creation).
+   - `circle_and_nullifier_entries_individually_extended`: Asserts that both the Circle persistent entry AND the Nullifier persistent entry are independently extended, surviving ledger advancement past LEDGER_THRESHOLD.
+   - `ttl_survives_fund_after_ledger_advance`: Confirms that fund operations trigger TTL re-extension even after ledger has advanced past LEDGER_THRESHOLD, allowing indefinite circle activity.
 7. **Gas / CPU Benchmarking**:
    - `cpu_instruction_benchmarks`: Benchmarks and prints the precise CPU instructions consumed by write operations (e.g., `create_circle`, `fund`, `claim`) and asserts that they remain safely under the 100M limit.
+
+### TTL (Time-To-Live) & State Archival
+
+The contract uses Soroban's ledger TTL mechanism to manage circle entry lifespan. The following constants govern TTL behavior:
+
+- **`LEDGER_THRESHOLD = 100`**: The minimum ledger distance at which an entry's TTL should be re-extended. At ~5 seconds per ledger, this is ~8.3 minutes. Active circles are re-extended every ~500 seconds of operation.
+- **`LEDGER_EXTEND_TO = 500_000`**: The target TTL (in ledgers) after each extension. At ~5 seconds per ledger:
+  ```
+  500_000 ledgers × 5 sec/ledger = 2_500_000 seconds ≈ 28.9 days ≈ 29 days
+  ```
+  This gives circles **~1 month of inactivity** before archival risk.
+
+#### Archival & Restoration
+
+If a circle's persistent entry (or any Nullifier) is not written to for 29+ days:
+
+1. **Archival**: The entry moves to the Soroban state archive (temporary inaccessibility). On-chain reads/writes fail with `CircleNotFound`.
+2. **Restoration**: The entry can be restored via `RestoreFootprintOp` on the Stellar network (Ledger 50M+ supports historical recovery).
+3. **Recovery**: Restoration is **permissionless** — any party can restore an archived circle; no admin key is needed (only network validator consensus).
+4. **State Preservation**: Upon restoration, the entry reappears with its last-written value intact (round number, pot, contributors, etc. are preserved).
+
+See the [Soroban Documentation](https://developers.stellar.org/) for "Temporary State" and "State Archival" (Soroban 23.0+).

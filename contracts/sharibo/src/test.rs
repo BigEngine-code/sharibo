@@ -1301,7 +1301,7 @@ fn instance_ttl_extended_after_create_fund_claim() {
 
     // Verify the instance entry is still live (has a TTL > 0) after all
     // three write paths have run. If extend_ttl were missing, the entry
-    // would have lapsed and NextCircleId would behave unpredictably.
+    // would have lapse and NextCircleId would behave unpredictably.
     // The test env raises an error if a live entry is accessed after
     // its TTL expires, so a successful get_circle here is our proof.
     let circle = client.get_circle(&0u64);
