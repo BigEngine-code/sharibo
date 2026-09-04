@@ -23,6 +23,8 @@
     "getRound": "function",
     "getStatus": "function",
     "hasClaimed": "function",
+    "installIndicatorAndPrefetch": "function",
+    "poseidon": "function",
     "prefetchMembershipArtifacts": "function",
     "getArtifactPrefetchProgress": "function",
     "subscribeToArtifactPrefetch": "function"

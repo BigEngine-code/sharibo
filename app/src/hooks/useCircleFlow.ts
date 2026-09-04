@@ -17,6 +17,7 @@ import {
   type ContractProof,
   type FeeEstimate,
   TREE_LEVELS,
+  getArtifacts,
 } from "@sharibo/client";
 import { config } from "../config.js";
 import { friendbotFund } from "../lib/friendbot.js";
@@ -125,7 +126,10 @@ export function useCircleFlow() {
       );
 
       setBusy("Creating the circle on testnet…");
-      const vkJson = await fetch("/circuits/verification_key.json").then((r) => r.json());
+      const baseUrl = import.meta.env.BASE_URL.endsWith("/")
+        ? import.meta.env.BASE_URL
+        : `${import.meta.env.BASE_URL}/`;
+      const vkJson = await fetch(`${baseUrl}circuits/verification_key.json`).then((r) => r.json());
       const vk = verificationKeyToContractFormat(vkJson);
       const adminClient = await connect(NETWORK, adminKp);
       const { result: newCircleId } = await createCircle(adminClient, {
@@ -191,11 +195,13 @@ export function useCircleFlow() {
       const merkleProof = tree.proof(claimantIndex);
       const externalNullifier = await computeExternalNullifier(circleId, BigInt(round));
 
-      // Fetch artifacts and VK in parallel.
-      const [wasm, zkey, vkJson] = await Promise.all([
-        fetch("/circuits/membership.wasm").then((r) => r.arrayBuffer()).then((b) => new Uint8Array(b)),
-        fetch("/circuits/membership_final.zkey").then((r) => r.arrayBuffer()).then((b) => new Uint8Array(b)),
-        fetch("/circuits/verification_key.json").then((r) => r.json()),
+      // Fetch artifacts (via configured getArtifacts) and VK in parallel.
+      const baseUrl = import.meta.env.BASE_URL.endsWith("/")
+        ? import.meta.env.BASE_URL
+        : `${import.meta.env.BASE_URL}/`;
+      const [{ wasm, zkey }, vkJson] = await Promise.all([
+        getArtifacts(),
+        fetch(`${baseUrl}circuits/verification_key.json`).then((r) => r.json()),
       ]);
 
       const generated = await generateProof(

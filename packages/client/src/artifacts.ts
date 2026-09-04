@@ -1,6 +1,19 @@
 export const MEMBERSHIP_WASM_URL = "/circuits/membership.wasm";
 export const MEMBERSHIP_ZKEY_URL = "/circuits/membership_final.zkey";
 
+export interface ArtifactsConfig {
+  wasmUrl?: string;
+  zkeyUrl?: string;
+  fetchImpl?: typeof fetch | ((input: string | URL | Request, init?: RequestInit) => Promise<Response>);
+}
+
+let configuredWasmUrl = MEMBERSHIP_WASM_URL;
+let configuredZkeyUrl = MEMBERSHIP_ZKEY_URL;
+let configuredFetchImpl:
+  | typeof fetch
+  | ((input: string | URL | Request, init?: RequestInit) => Promise<Response>)
+  | undefined;
+
 export type ArtifactPrefetchStatus =
   | "idle"
   | "loading"
@@ -31,6 +44,61 @@ let currentProgress: ArtifactPrefetchProgress = {
 };
 const listeners = new Set<Listener>();
 
+/**
+ * Configures the circuit artifact locations and optional custom fetch implementation.
+ *
+ * @param config - Configuration options for artifact URLs and fetch implementation.
+ */
+export function configureArtifacts(config: ArtifactsConfig): void {
+  if (config.wasmUrl !== undefined) {
+    configuredWasmUrl = config.wasmUrl;
+  }
+  if (config.zkeyUrl !== undefined) {
+    configuredZkeyUrl = config.zkeyUrl;
+  }
+  if (config.fetchImpl !== undefined) {
+    configuredFetchImpl = config.fetchImpl;
+  }
+  prefetchPromise = undefined;
+  publish({
+    status: "idle",
+    loaded: 0,
+    total: null,
+    fraction: null,
+  });
+}
+
+/**
+ * Returns the currently active artifact configuration.
+ */
+export function getArtifactsConfig(): {
+  wasmUrl: string;
+  zkeyUrl: string;
+  fetchImpl?: typeof fetch | ((input: string | URL | Request, init?: RequestInit) => Promise<Response>);
+} {
+  return {
+    wasmUrl: configuredWasmUrl,
+    zkeyUrl: configuredZkeyUrl,
+    fetchImpl: configuredFetchImpl,
+  };
+}
+
+/**
+ * Resets artifact configuration and prefetch state back to initial defaults.
+ */
+export function resetArtifactsConfig(): void {
+  configuredWasmUrl = MEMBERSHIP_WASM_URL;
+  configuredZkeyUrl = MEMBERSHIP_ZKEY_URL;
+  configuredFetchImpl = undefined;
+  prefetchPromise = undefined;
+  publish({
+    status: "idle",
+    loaded: 0,
+    total: null,
+    fraction: null,
+  });
+}
+
 function publish(progress: ArtifactPrefetchProgress): void {
   currentProgress = progress;
   for (const listener of listeners) {
@@ -47,9 +115,9 @@ async function readResponse(
     throw new Error(`Unable to download circuit artifact (${response.status})`);
   }
 
-  const contentLengthHeader = response.headers.get("content-length");
+  const contentLengthHeader = response.headers?.get?.("content-length");
   const total = contentLengthHeader ? Number(contentLengthHeader) : null;
-  const reader = response.body?.getReader();
+  const reader = typeof response.body?.getReader === "function" ? response.body.getReader() : undefined;
 
   if (!reader) {
     signal?.throwIfAborted();
@@ -109,9 +177,6 @@ async function fetchArtifacts(signal?: AbortSignal): Promise<ProverArtifacts> {
     fraction: null,
   });
 
-  let loaded = 0;
-  let total: number | null = null;
-
   const [wasmResponse, zkeyResponse] = await Promise.all([
     fetch(MEMBERSHIP_WASM_URL, { signal }),
     fetch(MEMBERSHIP_ZKEY_URL, { signal }),
@@ -119,8 +184,8 @@ async function fetchArtifacts(signal?: AbortSignal): Promise<ProverArtifacts> {
 
   let wasmLoaded = 0;
   let zkeyLoaded = 0;
-  const wasmTotal = wasmResponse.headers.get("content-length");
-  const zkeyTotal = zkeyResponse.headers.get("content-length");
+  const wasmTotal = wasmResponse.headers?.get?.("content-length");
+  const zkeyTotal = zkeyResponse.headers?.get?.("content-length");
   const knownTotal =
     wasmTotal && zkeyTotal ? Number(wasmTotal) + Number(zkeyTotal) : null;
 
@@ -153,8 +218,8 @@ async function fetchArtifacts(signal?: AbortSignal): Promise<ProverArtifacts> {
     read(zkeyResponse, 1),
   ]);
 
-  loaded = wasm.byteLength + zkey.byteLength;
-  total = knownTotal ?? loaded;
+  const loaded = wasm.byteLength + zkey.byteLength;
+  const total = knownTotal ?? loaded;
   publish({ status: "ready", loaded, total, fraction: 1 });
   return { wasm, zkey };
 }
@@ -206,6 +271,13 @@ export function prefetchMembershipArtifacts(signal?: AbortSignal): Promise<Prove
     });
   }
   return prefetchPromise;
+}
+
+/**
+ * Retrieves the compiled circuit artifacts, prefetching them if not already started.
+ */
+function getArtifacts(): Promise<ProverArtifacts> {
+  return prefetchMembershipArtifacts();
 }
 
 export function getArtifactPrefetchProgress(): ArtifactPrefetchProgress {
