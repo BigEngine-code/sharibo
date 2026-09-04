@@ -183,24 +183,11 @@ ledger) are stale.
 
 **Fix**
 
-1. Rebuild/redeploy the contract and token, then paste the **new** IDs:
-
-   ```bash
-   cd contracts && stellar contract build && stellar contract deploy \
-     --wasm target/wasm32v1-none/release/sharibo.wasm --source admin --network testnet
-   cd ../packages/contracts/contracts && stellar contract id asset --asset native --network testnet
-   ```
-
-2. Update `.env` (and `app/.env`) with the fresh IDs and regenerate keys if needed:
-
-   ```bash
-   stellar keys generate admin --network testnet --fund
-   stellar keys generate member --network testnet --fund
-   stellar keys show admin ; stellar keys show member
-   ```
-
-3. Re-run the browser/further steps as usual — new circle state now lives on the new
-   ledger.
+Full ordered recovery — redeploy contract + token, re-fund identities, update both `.env` files,
+re-run `e2e`, rebuild/redeploy the (non-git-connected) Vercel app, and refresh the README's
+on-chain evidence — is [`docs/runbook-testnet-reset.md`](runbook-testnet-reset.md). Start there
+rather than improvising; it also covers what does *not* need redoing (the circuit/trusted-setup
+artifacts survive a reset untouched).
 
 ---
 
