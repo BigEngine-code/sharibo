@@ -48,8 +48,7 @@ A **rotating savings and credit association** (ROSCA) is one of the oldest finan
   "fps=12,scale=960:-1" demo.gif`, keep it under ~8 MB.
 ─────────────────────────────────────────────────────────────── -->
 
-**[▶ demo video](YOUR_VIDEO_URL)** · **[🚀 live app (testnet)](https://dist-flax-three-43.vercel.app)** · **[📖 full product breakdown](full_product_breakdown.md)** · **[🛠 build log](NOTES.md)** · **[📚 glossary](docs/glossary.md)**
-**[▶ demo video](YOUR_VIDEO_URL)** · **[🚀 live app (testnet)](https://dist-flax-three-43.vercel.app)** · **[📖 full product breakdown](full_product_breakdown.md)** · **[🛠 build log](NOTES.md)** · **[🤝 contributing](CONTRIBUTING.md)**
+**[▶ demo video](YOUR_VIDEO_URL)** · **[🚀 live app (testnet)](https://dist-flax-three-43.vercel.app)** · **[📖 full product breakdown](full_product_breakdown.md)** · **[🛠 build log](NOTES.md)** · **[📚 glossary](docs/glossary.md)** · **[🤝 contributing](CONTRIBUTING.md)**
 
 ---
 
@@ -331,22 +330,22 @@ To change the depth:
 
 ## Repository structure
 
-```
-sharibo/
-├── circuits/            membership.template.circom (source) + config.json, compile/setup/prove scripts, circuit tests, verification_key.json
-├── contracts/sharibo/   the Soroban contract (lib.rs) + its test suite (test.rs)
-├── packages/client/     isomorphic TS SDK: identity.ts, tree.ts, prove.ts, contract.ts, config.ts
-├── test-vectors/        cross-implementation Poseidon fixtures shared by the client and circuit test suites
-├── scripts/e2e.ts       full-round Node script against live testnet
-├── scripts/smoke.ts     read-only deployment health check (no transactions)
-├── app/                 React + Vite browser demo
-├── README.md            this file
-├── NOTES.md             the raw build/decision log — what was discovered, when, and why
-├── full_product_breakdown.md  every facet of the system, in detail
-└── docs/hackathon/hackathon_demo_script.md   demo video script (motion + voiceover)
-```
+The repo is an `npm` workspace (`circuits`, `packages/client`, `scripts`, `app`) plus a Rust contract workspace under `contracts/`. The table below tells you which directory does what, its toolchain, how to run its tests, and which issue label maps to it.
 
-Full annotated version (what each file does and why): [breakdown §16](full_product_breakdown.md#16-repository-structure). See also [docs/index.md](docs/index.md) for a complete documentation index.
+| Directory | What it is | Language / toolchain | Run its tests | Issue label |
+| --------- | ---------- | -------------------- | ------------- | ----------- |
+| [**`app/`**](app/README.md) | React + Vite browser demo — generates a real Groth16 proof in the browser, then `create` → `fund` → `claim` against live testnet | TypeScript · React 19 · Vite · Vitest | `npm test` | `frontend` |
+| [**`packages/client/`**](packages/client/README.md) | Isomorphic TypeScript SDK (`identity.ts`, `tree.ts`, `prove.ts`, `contract.ts`, `config.ts`) used by `app/` and `scripts/` | TypeScript · snarkjs · `@stellar/stellar-sdk` | `npm test -w packages/client` | `sdk` |
+| [**`contracts/`**](contracts/README.md) | Soroban smart contract (`sharibo` crate) that verifies Groth16 proofs on-chain via the BLS12-381 host pairing | Rust · soroban-sdk 23 · `wasm32v1-none` | `cd contracts && cargo test` | `contracts` |
+| [**`circuits/`**](circuits/README.md) | Circom membership circuit plus the compile / trusted-setup / prove pipeline, built for **BLS12-381** | Circom 2.2.3 · snarkjs · bash | `cd circuits && npm test` | `circuits` |
+| [**`scripts/`**](scripts/package.json) | Node/TS helpers — `e2e.ts` runs a full round against live testnet, `smoke.ts` is a read-only health check | TypeScript · tsx · `@stellar/stellar-sdk` | `npm test -w scripts` | `e2e` / `dx` |
+| [**`docs/`**](docs/index.md) | Long-form docs: threat model, Poseidon provenance, ADRs, glossary, troubleshooting | Markdown | — | `documentation` |
+| [**`judges/`**](judges/VERIFY.md) | One-minute guide for judges to confirm the on-chain proof is real | Markdown | — | `documentation` |
+| [**`test-vectors/`**](test-vectors/generate.mjs) | Cross-implementation Poseidon fixture vectors shared by the client and circuit test suites | JSON · Node | exercised via the client / circuit suites | `testing` |
+
+Root-level docs lives on top: `README.md` (this file), [`NOTES.md`](NOTES.md) (the build/decision log), [`full_product_breakdown.md`](full_product_breakdown.md) (every facet, in detail), and `docs/hackathon/` (demo scripts). Working on a toolchain problem? See [docs/troubleshooting.md](docs/troubleshooting.md).
+
+Full annotated version (what each file does and why): [breakdown §16](full_product_breakdown.md#16-repository-structure). For the detailed end-to-end architecture, see [docs/architecture.md](docs/architecture.md). For a complete documentation index, see [docs/index.md](docs/index.md).
 
 ## Contributing
 
