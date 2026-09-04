@@ -86,6 +86,7 @@ const en = {
   "claim.generateButton": "Generate proof & claim",
   "claim.stage.artifacts": "Fetching proving artifacts (wasm + zkey)…",
   "claim.stage.proving": "Proving…",
+  "claim.stage.verifying": "Verifying proof locally…",
   "claim.stage.funding": "Funding a fresh, unlinked recipient…",
   "claim.stage.submitting": "Submitting the claim…",
   "claim.techline":
@@ -161,7 +162,6 @@ const en = {
   "resume.resumeButton": "Resume Circle",
   "resume.discardButton": "Discard",
 
-  "common.startNewCircle": "Start a new circle",
 } as const;
 
 export default en;

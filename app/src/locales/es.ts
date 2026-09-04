@@ -86,6 +86,7 @@ const es = {
   "claim.generateButton": "Generar prueba y reclamar",
   "claim.stage.artifacts": "Descargando artefactos de prueba (wasm + zkey)\u2026",
   "claim.stage.proving": "Probando\u2026",
+  "claim.stage.verifying": "Verificando la prueba localmente…",
   "claim.stage.funding": "Financiando un destinatario nuevo, no vinculado\u2026",
   "claim.stage.submitting": "Enviando la reclamaci\u00f3n\u2026",
   "claim.techline":
@@ -162,7 +163,6 @@ const es = {
   "resume.resumeButton": "Reanudar tanda",
   "resume.discardButton": "Descartar",
 
-  "common.startNewCircle": "Iniciar una nueva tanda",
 } as const;
 
 export default es;

@@ -1,5 +1,6 @@
 import { explorerContract } from "../lib/explorer.js";
 import styles from "./Landing.module.css";
+import { useI18n } from "../i18n.js";
 
 const NAMES = [
   "ajo",

@@ -1,6 +1,7 @@
 import type { FeeEstimate } from "@sharibo/client";
 import type { Member } from "../types.js";
 import styles from "./ClaimSection.module.css";
+import { useI18n } from "../i18n.js";
 
 const STROOPS_PER_XLM = 10_000_000n;
 

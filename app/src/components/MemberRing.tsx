@@ -3,6 +3,7 @@
 // five remain equally plausible; only the demo operator (via the radio
 // picker below) ever knows which one actually did.
 import type { Member } from "../types.js";
+import { useI18n } from "../i18n.js";
 
 export function MemberRing({
   members,

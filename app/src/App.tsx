@@ -284,6 +284,7 @@ function ClaimProgress({ stage, elapsedSeconds }: { stage: ClaimStage; elapsedSe
   const stageLabels: Record<ClaimStage, string> = {
     artifacts: t("claim.stage.artifacts"),
     proving: t("claim.stage.proving"),
+    verifying: t("claim.stage.verifying"),
     funding: t("claim.stage.funding"),
     submitting: t("claim.stage.submitting"),
   };
@@ -344,6 +345,7 @@ function Stepper({ step }: { step: 0 | 1 | 2 | 3 }) {
 }
 
 function NetworkBanner() {
+  const { t } = useI18n();
   const isTestnet = networkOf(NETWORK.networkPassphrase) !== "mainnet";
   if (!isTestnet) return null;
   return (
@@ -381,6 +383,7 @@ function useRingRadius(): number {
 }
 
 function MemberRing({ members, revealed }: { members: { funded: boolean; pending?: boolean }[]; revealed: boolean }) {
+  const { t } = useI18n();
   const radius = useRingRadius();
   const fundedCount = members.filter((m) => m.funded).length;
 
@@ -685,7 +688,7 @@ export default function App() {
         if (!mounted) return;
         setMembers((prev) => prev.map((m, i) => ({ ...m, ineligible: results[i], ineligibleReason: results[i] ? "Already claimed in this circle" : undefined })));
       } catch (e) {
-        setError(toUiError(e));
+        setError(toUiError(e, t));
       } finally {
         if (mounted) setBusy(null);
       }
@@ -836,7 +839,7 @@ export default function App() {
       setScreen("circle");
       setCirclePhase("ready");
     } catch (e) {
-      setError(toUiError(e));
+      setError(toUiError(e, t));
       setCirclePhase("error");
     } finally {
       setBusy(null);
@@ -884,7 +887,7 @@ export default function App() {
           idx === i ? { ...mm, pending: false } : mm,
         ),
       );
-      setError(toUiError(e));
+      setError(toUiError(e, t));
     } finally {
       setBusy(null);
     }
@@ -1099,7 +1102,7 @@ export default function App() {
       });
       setRejection(t("rejection.unexpected"));
     } catch (e) {
-      setRejection(toUiError(e));
+      setRejection(toUiError(e, t));
     } finally {
       // Reflect the on-chain state either way: the re-funding above happened
       // for real even though the replayed claim itself was rejected.
@@ -1134,7 +1137,7 @@ export default function App() {
       // Sync with on-chain state after cancellation
       await syncFundingState();
     } catch (e) {
-      setError(toUiError(e));
+      setError(toUiError(e, t));
     } finally {
       setBusy(null);
     }

@@ -1,7 +1,6 @@
 import { explorerTx, short } from "../lib/explorer.js";
 import { useI18n } from "../i18n.js";
 import type { Member } from "../types.js";
-import { useI18n } from "../i18n.js";
 import styles from "./FundingList.module.css";
 
 export function FundingList({
