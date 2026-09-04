@@ -3,7 +3,7 @@ import { Client as ContractClient, basicNodeSigner } from "@stellar/stellar-sdk/
 import { Keypair } from "@stellar/stellar-sdk";
 import { Api } from "@stellar/stellar-sdk/rpc";
 import type { ContractProof, ContractVerificationKey } from "./prove.js";
-import { ContractError, RpcError } from "./errors.js";
+import { ContractError, RpcError, InvalidInputError } from "./errors.js";
 import { decodeContractError } from "./decodeError.js";
 import { withRetry, DEFAULT_RETRY_POLICY, type RetryPolicy } from "./retry.js";
 import { validateContractProof, validateContractVerificationKey } from "./validate.js";
@@ -250,6 +250,11 @@ export async function createCircle(
   },
   retryPolicy: RetryPolicy = DEFAULT_RETRY_POLICY,
 ): Promise<TxResult<bigint>> {
+  if (args.size === 0 || args.contribution <= 0n || args.vk.ic.length !== 4) {
+    throw new InvalidInputError(
+      "InvalidCircleParams: size must be > 0, contribution must be > 0, and vk.ic must have length 4",
+    );
+  }
   validateContractVerificationKey(args.vk);
   try {
     const tx: ContractTx = await withRetry(() => client.create_circle({

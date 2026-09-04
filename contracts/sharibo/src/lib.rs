@@ -204,6 +204,12 @@ pub enum Error {
     CircleCancelled = 8,
     /// `apply_fee` called with `fee_bps > 10_000` or `amount < 0`.
     InvalidFeeParams = 9,
+    /// `create_circle` rejected invalid setup parameters: zero size,
+    /// non-positive contribution, or a verification key length mismatch.
+    InvalidCircleParams = 10,
+    /// A payout or refund target that would strand the tokens — currently
+    /// only the contract's own address.
+    InvalidRecipient = 11,
 }
 
 /// Minimum remaining TTL (in ledgers) that triggers a `extend_ttl` call.
@@ -308,6 +314,15 @@ impl Contract {
         vk: VerificationKey,
     ) -> u64 {
         admin.require_auth();
+
+        if size == 0 || contribution <= 0 || vk.ic.len() != 4 {
+            panic_with_error!(&env, Error::InvalidCircleParams);
+        }
+
+        let target = contribution
+            .checked_mul(size as i128)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::InvalidCircleParams));
+        let _ = target;
 
         let circle_id: u64 = env
             .storage()
