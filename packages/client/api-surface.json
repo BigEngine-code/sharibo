@@ -31,8 +31,7 @@
     "hasClaimed": "function",
     "prefetchMembershipArtifacts": "function",
     "getArtifactPrefetchProgress": "function",
-    "subscribeToArtifactPrefetch": "function",
-    "installIndicatorAndPrefetch": "function"
+    "subscribeToArtifactPrefetch": "function"
   },
   "types": {
     "Identity": "interface",

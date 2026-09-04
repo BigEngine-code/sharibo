@@ -34,6 +34,7 @@ import {
 import { config, configError } from "./config";
 import { useI18n } from "./i18n";
 import { usePoliteLiveRegion } from "./usePoliteLiveRegion";
+import { ArtifactProgress } from "./components/ArtifactProgress.js";
 import {
   friendbotFund as fundWithFriendbot,
   FriendbotRetryableError,
@@ -1041,6 +1042,7 @@ export default function App() {
           than diffing individual text nodes, which is more reliable across ATs.
         */}
         <LiveRegion message={liveRegionMessage} />
+        <ArtifactProgress announce={announce} />
         <div className="row space-between">
           <h1 className="small" ref={circleHeadingRef} tabIndex={-1}>
             SHARIBO

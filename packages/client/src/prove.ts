@@ -330,4 +330,3 @@ export async function prove(
 ): Promise<ProofResult> {
   return fullProve(input);
 }
-
