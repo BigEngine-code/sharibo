@@ -233,6 +233,10 @@ pub enum Error {
 /// this to 100 ledgers (≈ 8 minutes at ~5 s/ledger) means that any write
 /// performed in the last few minutes of a circle's live window will refresh it
 /// to the full `LEDGER_EXTEND_TO` budget.
+/// Number of public signals the membership circuit exposes:
+/// [nullifierHash, root, externalNullifier, recipientHash].
+const PUBLIC_INPUT_COUNT: u32 = 4;
+
 const LEDGER_THRESHOLD: u32 = 100;
 
 /// TTL (in ledgers) that persistent and instance entries are extended to on
@@ -326,7 +330,10 @@ impl Contract {
     ) -> u64 {
         admin.require_auth();
 
-        if size == 0 || contribution <= 0 || vk.ic.len() != 4 {
+        // ic must hold one point per public input plus one: the circuit's
+        // public signals are [nullifierHash, root, externalNullifier,
+        // recipientHash], so 4 + 1 = 5. Recount this if the circuit changes.
+        if size == 0 || contribution <= 0 || vk.ic.len() != PUBLIC_INPUT_COUNT + 1 {
             panic_with_error!(&env, Error::InvalidCircleParams);
         }
 

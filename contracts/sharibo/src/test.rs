@@ -99,6 +99,17 @@ fn real_verification_key(env: &Env) -> VerificationKey {
                     "1139639735249734389716550152334771925368743101551174618639126933146950882148738629034742548110661371468474272052506",
                     "602183753303311254514069927726945031108676267537368074300846024773039689216672925642441569139153167028473300165854",
                 ),
+                // Placeholder 5th ic point. The committed trusted-setup fixture
+                // above predates the recipientHash public input added by #266/#275,
+                // so it only has 4 points. Padding keeps create_circle's
+                // length guard satisfied for the non-proof tests; the claim
+                // tests still fail verification until the circuit is
+                // recompiled and the setup re-run (see docs/adr/006).
+                g1_from_coords(
+                    env,
+                    "1139639735249734389716550152334771925368743101551174618639126933146950882148738629034742548110661371468474272052506",
+                    "602183753303311254514069927726945031108676267537368074300846024773039689216672925642441569139153167028473300165854",
+                ),
             ],
         ),
     }
@@ -675,9 +686,9 @@ fn create_circle_emits_created_event() {
     let event = events
         .iter()
         .find(|(_, topics, _)| {
-            let t0: Symbol = topics.get(0).unwrap().try_into_val(&env_ref).unwrap();
-            let t1: Symbol = topics.get(1).unwrap().try_into_val(&env_ref).unwrap();
-            t0 == symbol_short!("circle") && t1 == symbol_short!("created")
+            let t0: Option<Symbol> = topics.get(0).and_then(|v| v.try_into_val(&env_ref).ok());
+            let t1: Option<Symbol> = topics.get(1).and_then(|v| v.try_into_val(&env_ref).ok());
+            t0 == Some(symbol_short!("circle")) && t1 == Some(symbol_short!("created"))
         })
         .unwrap();
 
@@ -707,9 +718,9 @@ fn fund_emits_funded_event() {
     let event = events
         .iter()
         .find(|(_, topics, _)| {
-            let t0: Symbol = topics.get(0).unwrap().try_into_val(&env_ref).unwrap();
-            let t1: Symbol = topics.get(1).unwrap().try_into_val(&env_ref).unwrap();
-            t0 == symbol_short!("circle") && t1 == symbol_short!("funded")
+            let t0: Option<Symbol> = topics.get(0).and_then(|v| v.try_into_val(&env_ref).ok());
+            let t1: Option<Symbol> = topics.get(1).and_then(|v| v.try_into_val(&env_ref).ok());
+            t0 == Some(symbol_short!("circle")) && t1 == Some(symbol_short!("funded"))
         })
         .unwrap();
 
@@ -752,9 +763,9 @@ fn claim_emits_claimed_event() {
     let event = events
         .iter()
         .find(|(_, topics, _)| {
-            let t0: Symbol = topics.get(0).unwrap().try_into_val(&env_ref).unwrap();
-            let t1: Symbol = topics.get(1).unwrap().try_into_val(&env_ref).unwrap();
-            t0 == symbol_short!("circle") && t1 == symbol_short!("claimed")
+            let t0: Option<Symbol> = topics.get(0).and_then(|v| v.try_into_val(&env_ref).ok());
+            let t1: Option<Symbol> = topics.get(1).and_then(|v| v.try_into_val(&env_ref).ok());
+            t0 == Some(symbol_short!("circle")) && t1 == Some(symbol_short!("claimed"))
         })
         .unwrap();
 
@@ -786,9 +797,9 @@ fn cancel_circle_emits_cancelled_event() {
     let event = events
         .iter()
         .find(|(_, topics, _)| {
-            let t0: Symbol = topics.get(0).unwrap().try_into_val(&env_ref).unwrap();
-            let t1: Symbol = topics.get(1).unwrap().try_into_val(&env_ref).unwrap();
-            t0 == symbol_short!("circle") && t1 == symbol_short!("cancelled")
+            let t0: Option<Symbol> = topics.get(0).and_then(|v| v.try_into_val(&env_ref).ok());
+            let t1: Option<Symbol> = topics.get(1).and_then(|v| v.try_into_val(&env_ref).ok());
+            t0 == Some(symbol_short!("circle")) && t1 == Some(symbol_short!("cancelled"))
         })
         .unwrap();
 
