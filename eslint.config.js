@@ -6,6 +6,10 @@ export default tseslint.config(
   {
     // Build outputs / generated artifacts — never lint these.
     ignores: ["**/dist/", "circuits/build/", "app/public/circuits/"],
+    rules: {
+      "no-unused-vars": "error",
+      "@typescript-eslint/no-unused-vars": "error"
+    },
   },
 
   // packages/client + scripts: plain TypeScript, runs under Node.

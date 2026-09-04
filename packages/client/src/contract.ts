@@ -34,8 +34,7 @@ export interface ShariboNetworkConfig {
  * or codegen'd interface. Keeps this SDK working against whatever the
  * deployed contract's real spec is, rather than a copy that can drift.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ShariboClient = any;
+export type ShariboClient = ReturnType<typeof ContractClient.from>;
 
 /**
  * The transaction builder the dynamically-typed contract client returns from
@@ -49,10 +48,8 @@ type ContractTx = any;
 
 export interface ShariboSigner {
   publicKey: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  signTransaction: (txXdr: string, opts?: any) => Promise<string>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  signAuthEntry?: (entryXdr: string, opts?: any) => Promise<string>;
+  signTransaction: (txXdr: string, opts?: unknown) => Promise<string>;
+  signAuthEntry?: (entryXdr: string, opts?: unknown) => Promise<string>;
 }
 
 export interface ResolvedSigner {

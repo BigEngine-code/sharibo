@@ -56,16 +56,14 @@ import styles from "./App.module.css";
 import { checkNetworkMatch } from "./lib/wallet.freighter";
 
 const BIGINT_MARKER = 'BIGINT::';
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function replacer(key: string, value: any) {
+function replacer(key: string, value: unknown): unknown {
   if (typeof value === 'bigint') {
     return BIGINT_MARKER + value.toString();
   }
   return value;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function reviver(key: string, value: any) {
+function reviver(key: string, value: unknown): unknown {
   if (typeof value === 'string' && value.startsWith(BIGINT_MARKER)) {
     return BigInt(value.slice(BIGINT_MARKER.length));
   }
@@ -643,8 +641,7 @@ export default function App() {
       claimHeadingRef.current?.focus();
     }
     // Only trigger when fullyFunded flips to true; ignore claimResult changes here.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fullyFunded]);
+  }, [fullyFunded, claimResult]);
 
   // 3. Claim succeeds → Payout section appears: focus "Payout landed" h2
   const payoutHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -1459,4 +1456,8 @@ export default function App() {
       </div>
     </div>
   );
+}
+
+function getErrorMessage(error: unknown): string {
+  return toUiError(error);
 }

@@ -115,3 +115,7 @@ test:
 # Equivalent to running circuits, contract, client, and test in sequence.
 all: circuits contract test
     @echo 'All recipes completed (e2e skipped — uses testnet funds/friendbot quota)'
+
+# Verify: run lint and client checks
+verify: client
+    npm run lint
