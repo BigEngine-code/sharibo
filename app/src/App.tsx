@@ -1457,7 +1457,3 @@ export default function App() {
     </div>
   );
 }
-
-function getErrorMessage(error: unknown): string {
-  return toUiError(error);
-}

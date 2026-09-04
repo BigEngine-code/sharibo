@@ -34,7 +34,8 @@ export interface ShariboNetworkConfig {
  * or codegen'd interface. Keeps this SDK working against whatever the
  * deployed contract's real spec is, rather than a copy that can drift.
  */
-export type ShariboClient = ReturnType<typeof ContractClient.from>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type ShariboClient = any;
 
 /**
  * The transaction builder the dynamically-typed contract client returns from
