@@ -245,6 +245,36 @@ Then hard-refresh the browser tab. If it still misbehaves, delete
 
 ---
 
+## Local circuit artifacts are stale and fail verification before the app copies them
+
+**Symptom**
+
+The browser throws `InvalidProof`, but the real problem is that the local `circuits/build/`
+artifacts no longer match the committed circuit setup. This often happens after deleting and
+rebuilding the circuit without re-running the trusted setup.
+
+**Cause**
+
+`app/scripts/sync-circuit.mjs` used to copy whatever existed in `circuits/build/` without checking
+whether the `.wasm` and `.zkey` still match the committed `verification_key.json`.
+
+**Fix**
+
+```bash
+cd circuits
+npm run verify-artifacts
+```
+
+If the hashes differ, the script aborts with:
+
+```bash
+run `npm run compile && npm run setup` in `circuits/`
+```
+
+This is the safe recovery path: rebuild the circuit and re-run setup, then re-sync the app.
+
+---
+
 **Still stuck?** Re-read [`CONTRIBUTING.md`](../CONTRIBUTING.md) for the dev loop and
 the [README "Run it" section](../README.md#run-it) for the step order; open an issue if
 your symptom isn't here.
