@@ -21,8 +21,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
-import { getCapabilityReport } from "./lib/capabilities.js";
-import { I18nProvider, useI18n } from "./i18n.js";
+import { I18nProvider } from "./i18n.js";
 import "./style.css";
 
 function UnsupportedBrowserScreen() {
@@ -63,10 +62,10 @@ const capabilityReport = getCapabilityReport();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <I18nProvider>
-      <ErrorBoundary>
-        {capabilityReport.ok ? <App /> : <UnsupportedBrowserScreen />}
-      </ErrorBoundary>
-    </I18nProvider>
+    <ErrorBoundary>
+      <I18nProvider>
+        <App />
+      </I18nProvider>
+    </ErrorBoundary>
   </StrictMode>,
 );
