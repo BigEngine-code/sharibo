@@ -1,3 +1,20 @@
+/**
+ * Sharibo SDK error classes.
+ *
+ * See docs/errors.md for the full mapping between on-chain contract error
+ * codes, these classes, user-facing messages, likely causes, and remedies.
+ *
+ * ## Class hierarchy
+ *
+ * ```
+ * ShariboError
+ * ├── ContractError      — on-chain revert; .code matches docs/errors.md table
+ * ├── InvalidInputError  — bad argument caught client-side before any RPC call
+ * ├── ProvingError       — snarkjs / witness generation failure
+ * └── RpcError           — network or RPC transport failure
+ * ```
+ */
+
 export class ShariboError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {
     super(message, options);
@@ -24,6 +41,26 @@ export class RpcError extends ShariboError {
   }
 }
 
+/**
+ * Thrown when the Soroban contract reverts with a typed error code.
+ *
+ * `code` matches the discriminant of `pub enum Error` in
+ * `contracts/sharibo/src/lib.rs`. Use the constants below for readable
+ * comparisons. Full semantics for each code are in `docs/errors.md`.
+ *
+ * @example
+ * ```ts
+ * import { ContractError, ErrorCode } from "@sharibo/client";
+ *
+ * try {
+ *   await claim(client, args);
+ * } catch (err) {
+ *   if (err instanceof ContractError) {
+ *     if (err.code === ErrorCode.AlreadyClaimed) { ... }
+ *   }
+ * }
+ * ```
+ */
 export class ContractError extends ShariboError {
   readonly code?: number;
 
@@ -34,128 +71,32 @@ export class ContractError extends ShariboError {
 }
 
 /**
- * A human-readable description of a contract error code.
+ * Numeric constants for every `Error` variant in the contract.
  *
- * @property code - The numeric error discriminant (matches
- *   `contracts/sharibo/src/lib.rs`'s `Error` enum).
- * @property name - The `Error` enum variant name (e.g. `"AlreadyClaimed"`).
- * @property message - A user-facing sentence describing what happened.
- * @property hint - A short explanation of why, or what the user can do next.
+ * These mirror the `#[repr(u32)]` discriminants in `pub enum Error` in
+ * `contracts/sharibo/src/lib.rs`. The count is guarded by the Rust test
+ * `error_table_variant_count` — adding a variant without updating that test
+ * and this object will cause a test failure.
+ *
+ * See `docs/errors.md` for the full description of each code.
  */
-export interface ContractErrorDescription {
-  code: number;
-  name: string;
-  message: string;
-  hint: string;
-}
+export const ErrorCode = {
+  /** `circle_id` does not exist in persistent storage. */
+  CircleNotFound: 1,
+  /** `claim` called before the pot reached `contribution × size`. */
+  RoundNotFunded: 2,
+  /** `external_nullifier` did not match `SHA256(circle_id, round) mod r`. */
+  WrongRoundTag: 3,
+  /** `nullifier_hash` was already recorded by a prior successful claim. */
+  AlreadyClaimed: 4,
+  /** Groth16 pairing check returned false. */
+  InvalidProof: 5,
+  /** `fund` called after the pot is already at `contribution × size`. */
+  RoundFull: 6,
+  /** `contribution × size` or `pot + contribution` overflowed `i128`. */
+  Overflow: 7,
+  /** Circle was permanently closed by `cancel_circle`. */
+  CircleCancelled: 8,
+} as const;
 
-// Mirrors contracts/sharibo/src/lib.rs's `Error` enum discriminants 1-5 —
-// the ones `Contract::claim` (and, for #1, `get_circle`/`cancel_circle`) can
-// panic with. Codes 6-8 (RoundFull, Overflow, CircleCancelled) aren't
-// covered by Issue #53's scope and fall through to the raw-string fallback
-// below like any other unrecognized code.
-const CONTRACT_ERROR_DESCRIPTIONS: Record<number, Omit<ContractErrorDescription, "code">> = {
-  1: {
-    name: "CircleNotFound",
-    message: "No circle exists with this ID.",
-    hint: "Double-check the circle ID and that you're pointed at the right network/contract — it may never have been created, or the contract was redeployed.",
-  },
-  2: {
-    name: "RoundNotFunded",
-    message: "This round hasn't been fully funded yet.",
-    hint: "The pot must reach exactly contribution × size before anyone can claim — keep funding until the round is complete.",
-  },
-  3: {
-    name: "WrongRoundTag",
-    message: "This proof doesn't match the circle's current round.",
-    hint: "Proofs are bound to a specific circle and round; generate a fresh proof for the current round rather than reusing one from an earlier round.",
-  },
-  4: {
-    name: "AlreadyClaimed",
-    message: "This proof's nullifier was already used; each member can claim only once per circle.",
-    hint: "If you believe this is wrong, confirm you're using the identity that hasn't claimed yet — every member gets exactly one claim across all rounds of this circle.",
-  },
-  5: {
-    name: "InvalidProof",
-    message: "The zero-knowledge proof failed verification.",
-    hint: "The proof doesn't match the circle's committed membership root — make sure you're proving with the correct identity and Merkle path for this circle.",
-  },
-};
-
-/**
- * Maps a Sharibo contract error code (1-5) to a human-readable description.
- *
- * The five codes are stable and documented in
- * `contracts/sharibo/src/lib.rs`'s `Error` enum: 1 CircleNotFound,
- * 2 RoundNotFunded, 3 WrongRoundTag, 4 AlreadyClaimed, 5 InvalidProof.
- *
- * @param code - The numeric error discriminant from a `Error(Contract, #N)`
- *   failure.
- * @returns The description for a known code, or `undefined` for anything
- *   else (codes 6+ or a number that isn't a Sharibo error code at all) — the
- *   caller should fall back to displaying the raw error string in that case.
- */
-export function describeContractError(code: number): ContractErrorDescription | undefined {
-  const entry = CONTRACT_ERROR_DESCRIPTIONS[code];
-  if (!entry) return undefined;
-  return { code, ...entry };
-}
-
-// Soroban surfaces a rejected host function as a diagnostic string embedding
-// `Error(Contract, #<code>)` (see soroban-sdk's Error Display impl). The
-// stellar-sdk contract Client's `signAndSend()` throws a plain `Error` whose
-// `.message` contains this string — confirmed by the existing raw-string
-// checks in scripts/e2e.ts's replay-rejection path (`message.includes(
-// "Error(Contract, #4)")`) and scripts/smoke.ts (`msg.includes(
-// "Error(Contract, #1)")`), both matching against real signAndSend()
-// rejections. No SDK-level structured error is exposed here — this pattern
-// is the only stable extraction point.
-const CONTRACT_ERROR_PATTERN = /Error\(Contract,\s*#(\d+)\)/;
-
-/**
- * Extracts the numeric Sharibo contract error code out of a failure thrown
- * by `signAndSend()` (or anything wrapping one), if it's a contract
- * rejection at all.
- *
- * @param error - Anything caught from a contract call, typically the
- *   `Error` thrown by the stellar-sdk contract Client's `signAndSend()`.
- * @returns The parsed code, or `undefined` if `error` isn't a contract
- *   rejection in the recognized `Error(Contract, #N)` shape.
- */
-export function parseContractErrorCode(error: unknown): number | undefined {
-  if (error instanceof ContractError && typeof error.code === "number") {
-    return error.code;
-  }
-
-  const message = error instanceof Error ? error.message : typeof error === "string" ? error : undefined;
-  if (!message) return undefined;
-
-  const match = message.match(CONTRACT_ERROR_PATTERN);
-  if (!match) return undefined;
-
-  return Number(match[1]);
-}
-
-/**
- * Turns any error caught from a contract call into display-ready text.
- *
- * Tries to parse a Sharibo contract error code out of `error` and, if it's
- * one of the five known codes, renders `"<Name>: <message> <hint>"`. Falls
- * back to the error's raw message (or a generic string) for anything else —
- * an unrecognized code, a network/RPC error, or a non-Error throw — so the
- * UI never breaks on an error it doesn't specifically know about.
- *
- * @param error - Anything caught from a contract call.
- * @returns Human-readable text safe to show directly in the UI.
- */
-export function describeError(error: unknown): string {
-  const code = parseContractErrorCode(error);
-  const description = code !== undefined ? describeContractError(code) : undefined;
-  if (description) {
-    return `${description.name}: ${description.message} ${description.hint}`;
-  }
-
-  if (error instanceof Error) return error.message;
-  if (typeof error === "string") return error;
-  return "Something went wrong. Please retry.";
-}
+export type ErrorCodeValue = (typeof ErrorCode)[keyof typeof ErrorCode];
