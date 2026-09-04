@@ -6,6 +6,7 @@ import type { ContractProof, ContractVerificationKey } from "./prove.js";
 import { ContractError, RpcError } from "./errors.js";
 import { decodeContractError } from "./decodeError.js";
 import { withRetry, DEFAULT_RETRY_POLICY, type RetryPolicy } from "./retry.js";
+import { validateContractProof, validateContractVerificationKey } from "./validate.js";
 
 /**
  * Network configuration for connecting to the Sharibo contract.
@@ -249,6 +250,7 @@ export async function createCircle(
   },
   retryPolicy: RetryPolicy = DEFAULT_RETRY_POLICY,
 ): Promise<TxResult<bigint>> {
+  validateContractVerificationKey(args.vk);
   try {
     const tx: ContractTx = await withRetry(() => client.create_circle({
       admin: args.admin,
@@ -311,6 +313,7 @@ export async function claim(
   },
   retryPolicy: RetryPolicy = DEFAULT_RETRY_POLICY,
 ): Promise<TxResult<void>> {
+  validateContractProof(args.proof);
   try {
     const tx: ContractTx = await withRetry(() => client.claim({
       circle_id: args.circleId,

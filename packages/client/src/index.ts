@@ -5,6 +5,7 @@ export * from "./amount.js";
 export * from "./identity.js";
 export * from "./tree.js";
 export * from "./prove.js";
+export * from "./validate.js";
 export * from "./contract.js";
 export * from "./config.js";
 export * from "./errors.js";
