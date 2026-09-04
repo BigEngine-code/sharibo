@@ -114,3 +114,41 @@ Poseidon with a 3-element state and 8 full + 57 partial rounds — see the
 `poseidon-bls12381-circom` library). Each Merkle level adds one Poseidon
 instance plus two degree-2 mux assignments (already folded into the Poseidon
 input wires).
+
+## Depth → cost benchmarking
+
+This repository supports parameterising the Merkle tree depth using the
+`LEVELS` environment variable when running the circuits toolchain. For
+example:
+
+```bash
+# Build artifacts for a depth-8 (256 member) tree
+LEVELS=8 npm run compile
+LEVELS=8 npm run setup
+```
+
+There is a helper script that drives a set of benchmarks and collects
+artifact sizes and (where possible) constraint counts:
+
+```bash
+cd circuits
+./scripts/benchmark.sh 8 16 20
+```
+
+The script writes `build/benchmark-results.json` with one object per depth.
+
+### Results (placeholder)
+
+| levels | capacity (2^levels) | constraints | .zkey size (bytes) | wasm size (bytes) | browser prove (ms) | claim CPU (% of 100M) |
+|-------:|---------------------:|------------:|-------------------:|------------------:|-------------------:|----------------------:|
+| 4     | 16                  | 1452        | (measured)         | (measured)        | (measured)         | 48%                   |
+| 8     | 256                 | (to-run)    | (to-run)           | (to-run)          | (to-run)           | (to-run)              |
+| 16    | 65536               | (to-run)    | (to-run)           | (to-run)          | (to-run)           | (to-run)              |
+| 20    | 1,048,576           | (to-run)    | (to-run)           | (to-run)          | (to-run)           | (to-run)              |
+
+**Recommended default:** `levels=8` (capacity 256) — a conservative
+production choice balancing member capacity and proving/on-chain costs.
+
+When you run the benchmark script above, replace the `(to-run)` cells with
+the measured values and consider adjusting the recommended default based on
+the empirical results.

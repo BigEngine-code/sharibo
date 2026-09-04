@@ -17,7 +17,9 @@ const { generate: generateCircuit } = require("../scripts/gen-circuit.cjs");
 const CIRCUITS_CONFIG = JSON.parse(
   fs.readFileSync(path.join(__dirname, "..", "config.json"), "utf8"),
 );
-const LEVELS = CIRCUITS_CONFIG.levels;
+// Allow overriding the configured levels via the `LEVELS` environment
+// variable (useful for CI or local benchmarking runs):
+const LEVELS = Number(process.env.LEVELS || CIRCUITS_CONFIG.levels);
 
 const VECTORS = JSON.parse(
   fs.readFileSync(path.join(__dirname, "..", "..", "test-vectors", "poseidon.json"), "utf8"),
@@ -33,7 +35,9 @@ describe("Sharibo membership circuit (BLS12-381)", function () {
   before(async () => {
     // Regenerate membership.circom from the template + config.json so the
     // test always exercises the circuit matching the current tree depth.
-    generateCircuit();
+    // Pass the resolved LEVELS through so the generated circuit matches
+    // what the test will exercise (env var takes precedence).
+    generateCircuit(LEVELS);
 
     circuit = await wasm_tester(path.join(__dirname, "..", "membership.circom"), {
       include: path.join(__dirname, "..", "..", "node_modules"),
