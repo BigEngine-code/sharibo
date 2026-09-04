@@ -1,9 +1,16 @@
 @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;700&display=swap");
 
+/* ── Light theme (default) ──────────────────────────────────────────── */
 :root {
   /* ── Colour tokens ────────────────────────────────────────────────── */
   --bg: #fff4d6;
+  --card: #ffffff;
   --ink: #111111;
+  /* Text rendered on the bright fills (accent / accent2 / namewall / steps).
+     Stays dark in BOTH themes — those fills stay vivid in dark mode too. */
+  --on-accent: #111111;
+  --muted: #555555;
+  --faint: #737373;
   --accent: #ffcf3f;
   --accent2: #7cf5c4;
   --danger: #d93025;
@@ -102,6 +109,41 @@
   --caption-max-width: 420px;
 }
 
+/* ── Dark theme (prefers-color-scheme: dark) ────────────────────────── */
+/* Only the colour tokens flip; geometry/breakpoint tokens are untouched
+   because :root block above already covers them. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --bg: #141518;
+    --card: #1d2026;
+    --ink: #e7ebf2;
+    /* --on-accent intentionally NOT overridden: the bright fills stay the
+       same vivid accent/accent2 in dark mode, so they keep dark text. */
+    --muted: #c6ccd6;
+    --faint: #9aa2af;
+    --danger-text: #ff6b70;
+
+    --surface: #2a2e37;
+    --surface-soft: #2a2e37;
+    --surface-2: #262a31;
+    --chip: #3a2f4d;
+    --explainer: #1a1d23;
+    --banner: #262a31;
+    --edge: #3a3f49;
+    --edge-2: #3a3f49;
+    --code: #2a2e37;
+
+    --dot: #ffffff1e;
+
+    /* Borders keep the light --ink; hard shadows go dark so the offset
+       block still reads as depth instead of a blown-out glow. */
+    --shadow: 8px 8px 0 rgba(0, 0, 0, 0.55);
+    --hard: rgba(0, 0, 0, 0.55);
+  }
+}
+
 * {
   box-sizing: border-box;
 }
@@ -179,6 +221,7 @@ body {
   padding: var(--space-xs) var(--space-lg);
   border: var(--border-thick) solid var(--ink);
   background: var(--accent2);
+  color: var(--on-accent);
   transform: rotate(-1deg);
 }
 .namewall-item:nth-child(even) {
@@ -250,6 +293,7 @@ h2 {
   font-size: var(--text-lg);
   padding: var(--space-2xl) var(--space-5xl);
   background: var(--accent);
+  color: var(--on-accent);
   border: var(--border);
   box-shadow: var(--shadow-sm);
   cursor: pointer;
@@ -382,12 +426,12 @@ h2 {
 .step.active {
   border-color: var(--ink);
   background: var(--accent);
-  color: var(--ink);
+  color: var(--on-accent);
 }
 .step.done {
   border-color: var(--ink);
   background: var(--accent2);
-  color: var(--ink);
+  color: var(--on-accent);
 }
 .step-dot {
   display: inline-flex;
@@ -454,6 +498,7 @@ h2 {
 }
 .ring-node.funded {
   background: var(--accent2);
+  color: var(--on-accent);
 }
 .ring-node.pending {
   background: #ffefd5;
@@ -462,6 +507,7 @@ h2 {
 }
 .ring-node.ring-recipient {
   background: var(--accent);
+  color: var(--on-accent);
   border-style: dashed;
   transform: translate(0, var(--ring-recipient-offset));
 }
@@ -582,6 +628,7 @@ h2 {
 }
 .member.funded {
   background: var(--accent2);
+  color: var(--on-accent);
 }
 .member.pending {
   background: #ffefd5;
@@ -625,6 +672,7 @@ h2 {
 }
 .copy-btn:hover {
   background: var(--accent);
+  color: var(--on-accent);
 }
 
 .radio {
@@ -661,11 +709,25 @@ a:focus-visible {
   background: var(--accent2);
   padding: var(--space-xl);
 }
+/* The result box and funded member rows sit on the vivid accent2 fill, so
+   their text and links stay on --on-accent (dark) in BOTH themes. */
+.result .link,
+.result code,
+.member.funded .link {
+  color: var(--on-accent);
+}
+.result code {
+  background: rgba(17, 17, 17, 0.08);
+}
 .callout {
   background: var(--accent);
   border: var(--border-thin) dashed var(--ink);
   padding: var(--space-lg);
   font-size: var(--text-md);
+}
+.callout code {
+  background: rgba(17, 17, 17, 0.08);
+  color: var(--on-accent);
 }
 
 .rejected {
@@ -679,7 +741,7 @@ a:focus-visible {
 }
 
 .error {
-  color: var(--danger);
+  color: var(--danger-text);
   font-weight: 700;
   font-family: "JetBrains Mono", monospace;
   font-size: var(--text-base);
@@ -919,10 +981,7 @@ code {
     font-size: 8px;
     flex: 1 1 calc(50% - var(--space-2xs));
     font-size: var(--text-step-mobile);
-  }
-}
-
-    padding: 6px 2px;
+    padding: var(--space-sm) var(--space-2xs);
     min-height: var(--touch-min);
     justify-content: center;
   }
