@@ -711,7 +711,7 @@ fn claim_reverts_when_token_reenters_with_stale_round() {
     let root = real_root(&env);
     let vk = real_verification_key(&env);
 
-    let circle_id = client.create_circle(&admin, &reentrant_token, &root, &100i128, &5u32, &vk);
+    let circle_id = client.create_circle(&admin, &reentrant_token, &root, &100i128, &5u32, &0u32, &vk);
     let token_admin_client = token::StellarAssetClient::new(&env, &reentrant_token);
     let _ = token_admin_client;
 
@@ -828,7 +828,7 @@ fn same_identity_can_claim_two_consecutive_rounds() {
     let root = real_root(&env);
     let vk = round_reuse_verification_key(&env);
     let contribution: i128 = 100;
-    let circle_id = client.create_circle(&admin, &token, &root, &contribution, &1u32, &vk);
+    let circle_id = client.create_circle(&admin, &token, &root, &contribution, &1u32, &0u32, &vk);
 
     // ---- round 0: fund and claim with the real identity ----
     let funder = Address::generate(&env);
@@ -1018,10 +1018,10 @@ fn get_circle_count_tracks_next_circle_id() {
     let root = real_root(&env);
     let vk = real_verification_key(&env);
 
-    client.create_circle(&admin, &token, &root, &100i128, &5u32, &vk);
+    client.create_circle(&admin, &token, &root, &100i128, &5u32, &0u32, &vk);
     assert_eq!(client.get_circle_count(), 1);
 
-    client.create_circle(&admin, &token, &root, &100i128, &5u32, &vk);
+    client.create_circle(&admin, &token, &root, &100i128, &5u32, &0u32, &vk);
     assert_eq!(client.get_circle_count(), 2);
 }
 
@@ -1314,7 +1314,7 @@ fn create_circle_rejects_zero_size() {
     let token = create_token(&env, &token_admin);
     let vk = real_verification_key(&env);
 
-    client.create_circle(&admin, &token, &real_root(&env), &100i128, &0u32, &vk);
+    client.create_circle(&admin, &token, &real_root(&env), &100i128, &0u32, &0u32, &vk);
 }
 
 #[test]
@@ -1330,7 +1330,7 @@ fn create_circle_rejects_non_positive_contribution() {
     let token = create_token(&env, &token_admin);
     let vk = real_verification_key(&env);
 
-    client.create_circle(&admin, &token, &real_root(&env), &0i128, &5u32, &vk);
+    client.create_circle(&admin, &token, &real_root(&env), &0i128, &5u32, &0u32, &vk);
 }
 
 #[test]
@@ -1347,7 +1347,7 @@ fn create_circle_rejects_wrong_vk_length() {
     let mut vk = real_verification_key(&env);
     vk.ic.pop_back();
 
-    client.create_circle(&admin, &token, &real_root(&env), &100i128, &5u32, &vk);
+    client.create_circle(&admin, &token, &real_root(&env), &100i128, &5u32, &0u32, &vk);
 }
 
 #[test]
@@ -1372,7 +1372,7 @@ fn create_circle_rejects_creation_time_overflow() {
     let token = create_token(&env, &token_admin);
     let vk = real_verification_key(&env);
 
-    client.create_circle(&admin, &token, &real_root(&env), &i128::MAX, &2u32, &vk);
+    client.create_circle(&admin, &token, &real_root(&env), &i128::MAX, &2u32, &0u32, &vk);
 }
 
 #[test]
@@ -1610,7 +1610,7 @@ fn propose_admin_requires_current_admin_auth() {
     // The last auth recorded should be the current admin authorising propose_admin.
     let admin_address = client.get_circle(&s.circle_id).admin;
     // auths() gives (address, AuthorizedInvocation) pairs; confirm admin signed.
-    assert!(auths.iter().any(|(addr, _)| addr == admin_address));
+    assert!(auths.iter().any(|(addr, _)| *addr == admin_address));
 }
 
 
@@ -1649,7 +1649,7 @@ fn claim_with_truncated_ic_reverts() {
     truncated_vk.ic.pop_back(); // Remove the last ic point; len is now 3.
     assert_eq!(truncated_vk.ic.len(), 3);
 
-    let circle_id = client.create_circle(&admin, &token, &root, &100i128, &5u32, &truncated_vk);
+    let circle_id = client.create_circle(&admin, &token, &root, &100i128, &5u32, &0u32, &truncated_vk);
 
     // Fund the circle fully.
     let members: StdVec<Address> = (0..5)
@@ -1800,70 +1800,7 @@ fn nullifier_fence_survives_ttl_expiry() {
     assert!(client.has_claimed(&s.circle_id, &nullifier_hash));
 }
 
-// ---- Proptest: apply_fee invariants ----
-//
-// Two sub-suites:
-//
-// 1. Valid domain — lossless split: fee + net == amount exactly.
-//    Integer truncation in `fee = fee_bps * amount / 10_000` rounds *down*;
-//    the remainder always lands entirely in `net` — no tokens created or lost.
-//    Also asserts fee <= amount (net is non-negative) for the valid range.
-//
-//    Domain:
-//      amount  : 0 ..= i128::MAX / 2   (avoids intermediate multiplication
-//                 overflow, since fee_bps ≤ 10_000 and
-//                 10_000 * (i128::MAX / 2) < i128::MAX)
-//      fee_bps : 0 ..= 10_000          (0% – 100%)
-//
-// 2. Out-of-range rejection — fee_bps > 10_000 or amount < 0 must panic
-//    with Error::InvalidFeeParams rather than silently produce a negative net.
-mod proptest_apply_fee {
-    use super::*;
-    use proptest::prelude::*;
-
-    proptest! {
-        #[test]
-        fn fee_plus_net_equals_amount(
-            amount  in 0_i128..=(i128::MAX / 2),
-            fee_bps in 0_u32..=10_000_u32,
-        ) {
-            let env = Env::default();
-            let (fee, net) = apply_fee(&env, fee_bps, amount);
-            prop_assert_eq!(
-                fee + net,
-                amount,
-                "apply_fee({}, {}) = ({}, {}); fee + net = {}",
-                fee_bps, amount, fee, net, fee + net
-            );
-            // net must never be negative — fee cannot exceed the amount.
-            prop_assert!(net >= 0, "apply_fee({fee_bps}, {amount}) produced negative net {net}");
-        }
-
-        #[test]
-        fn rejects_fee_bps_above_10000(
-            amount  in 0_i128..=(i128::MAX / 2),
-            excess  in 1_u32..=u32::MAX - 10_000,
-        ) {
-            let env = Env::default();
-            let fee_bps = 10_000_u32 + excess;
-            let result = std::panic::catch_unwind(|| apply_fee(&env, fee_bps, amount));
-            prop_assert!(result.is_err(), "apply_fee({fee_bps}, {amount}) should have panicked");
-        }
-
-        #[test]
-        fn rejects_negative_amount(
-            amount  in i128::MIN..=-1_i128,
-            fee_bps in 0_u32..=10_000_u32,
-        ) {
-            let env = Env::default();
-            let result = std::panic::catch_unwind(|| apply_fee(&env, fee_bps, amount));
-            prop_assert!(result.is_err(), "apply_fee({fee_bps}, {amount}) should have panicked");
-        }
-    }
-}
-
-// ============================================================================
-// XDR golden tests — issue #326
+// =====================================================================// XDR golden tests — issue #326
 // ============================================================================
 //
 // These tests serialise Circle, VerificationKey, and Proof to XDR
@@ -1960,7 +1897,7 @@ mod xdr_golden {
     /// Read a committed golden (returns `None` if the file does not exist yet).
     fn read_golden(name: &str) -> Option<String> {
         let path = goldens_dir().join(name);
-        std::fs::read_to_string(&path).ok().map(|s| s.trim().to_string())
+        std::fs::read_to_string(&path).ok().map(|s| String::from(s.trim()))
     }
 
     /// Write (or overwrite) a golden file, creating the directory if needed.
@@ -2199,7 +2136,7 @@ mod proptest_circle_invariants {
             let vk = real_verification_key(&env);
             let contribution: i128 = 100;
             let size: u32 = 5;
-            let circle_id = client.create_circle(&admin, &token, &root, &contribution, &size, &vk);
+            let circle_id = client.create_circle(&admin, &token, &root, &contribution, &size, &0u32, &vk);
 
             // Pre-mint balances for a pool of potential funders.
             let mut funders: StdVec<Address> = StdVec::new();

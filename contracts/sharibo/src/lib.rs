@@ -202,7 +202,8 @@ pub enum Error {
     Overflow = 7,
     /// `cancel_circle` or `fund`/`claim` called on a cancelled circle.
     CircleCancelled = 8,
-    /// `apply_fee` called with `fee_bps > 10_000` or `amount < 0`.
+    /// Reserved: previously `apply_fee`'s parameter guard. Kept so the
+    /// on-the-wire error codes below it stay stable (see ADR on protocol fees).
     InvalidFeeParams = 9,
     /// `create_circle` rejected invalid setup parameters: zero size,
     /// non-positive contribution, or a verification key length mismatch.
@@ -210,6 +211,9 @@ pub enum Error {
     /// A payout or refund target that would strand the tokens — currently
     /// only the contract's own address.
     InvalidRecipient = 11,
+    /// `expire_round` was called before the round's deadline, or `fund` was
+    /// called on a round whose deadline has already passed.
+    RoundNotExpired = 12,
 }
 
 /// Minimum remaining TTL (in ledgers) that triggers a `extend_ttl` call.
@@ -1034,68 +1038,26 @@ fn load_active_circle(env: &Env, circle_id: u64) -> Circle {
 }
 
 /// `contribution * size` for the current round, or [`Error::Overflow`].
+/// Whether the circle's current round has passed its funding deadline.
+///
+/// A `round_deadline_ledgers` of 0 means "no deadline" — those rounds never
+/// expire, which is the behaviour circles created before deadlines existed
+/// inherit.
+fn is_round_expired(env: &Env, circle: &Circle) -> bool {
+    if circle.round_deadline_ledgers == 0 {
+        return false;
+    }
+    let deadline = circle
+        .round_started_ledger
+        .saturating_add(circle.round_deadline_ledgers);
+    env.ledger().sequence() >= deadline
+}
+
 fn pot_target(env: &Env, circle: &Circle) -> i128 {
     circle
         .contribution
         .checked_mul(circle.size as i128)
         .unwrap_or_else(|| panic_with_error!(env, Error::Overflow))
-}
-
-/// Split `amount` into a protocol fee and the net payout.
-///
-/// # Formula
-///
-/// ```text
-/// fee = fee_bps * amount / 10_000   (integer truncation — rounds down)
-/// net = amount - fee
-/// ```
-///
-/// Because `fee` is truncated, the sum `fee + net` is always exactly
-/// equal to `amount` — no tokens are created or destroyed.
-///
-/// # Overflow safety
-///
-/// The intermediate product `fee_bps * amount` would overflow `i128` for
-/// large amounts if computed naively. The implementation avoids this by
-/// splitting `amount` into a quotient and remainder:
-///
-/// ```text
-/// fee = (amount / 10_000) * fee_bps + (amount % 10_000) * fee_bps / 10_000
-/// ```
-///
-/// Both terms fit in `i128` for all `amount >= 0` and `fee_bps <= 10_000`.
-///
-/// # Arguments
-///
-/// * `fee_bps` — fee in basis points; must be in `0..=10_000` (i.e.
-///   0 % – 100 %). Values outside this range are **rejected** with
-///   [`Error::InvalidFeeParams`] — they are never silently accepted.
-/// * `amount` — gross token amount to split. Must be non-negative;
-///   negative values are **rejected** with [`Error::InvalidFeeParams`].
-///
-/// # Returns
-///
-/// `(fee, net)` where `fee + net == amount`.
-///
-/// # Errors
-///
-/// * [`Error::InvalidFeeParams`] — `fee_bps > 10_000` or `amount < 0`.
-pub fn apply_fee(env: &Env, fee_bps: u32, amount: i128) -> (i128, i128) {
-    if fee_bps > 10_000 || amount < 0 {
-        panic_with_error!(env, Error::InvalidFeeParams);
-    }
-    // Split to avoid overflow: amount = q * 10_000 + r, so
-    //   fee_bps * amount = fee_bps * q * 10_000 + fee_bps * r
-    // Dividing by 10_000:
-    //   fee = fee_bps * q + fee_bps * r / 10_000
-    // Both `fee_bps * q` and `fee_bps * r` fit in i128 for all valid inputs
-    // (q <= i128::MAX / 10_000 and r < 10_000, fee_bps <= 10_000).
-    let bps = fee_bps as i128;
-    let q = amount / 10_000;
-    let r = amount % 10_000;
-    let fee = bps * q + bps * r / 10_000;
-    let net = amount - fee;
-    (fee, net)
 }
 
 mod test;
