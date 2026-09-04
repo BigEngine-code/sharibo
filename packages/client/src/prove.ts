@@ -47,26 +47,24 @@ export interface ContractVerificationKey {
 }
 
 
+/** Everything `generateProof` hands back: the contract-ready proof, the raw
+ * snarkjs proof, and the public signals derived alongside it. */
+export interface GenerateProofResult {
+  proof: ContractProof;
+  snarkjsProof: unknown;
+  publicSignals: string[];
+  nullifierHash: bigint;
+  root: bigint;
+  externalNullifier: bigint;
+  provingTimeMs: number;
+}
+
 export interface ProofResult {
   proof: unknown;
   publicSignals: string[];
   provingTimeMs: number;
   artifactDownloadTimeMs: number;
   totalTimeMs: number;
-}
-
-export interface ContractProof {
-  a: Uint8Array;
-  b: Uint8Array;
-  c: Uint8Array;
-}
-
-export interface ContractVerificationKey {
-  alpha: Uint8Array;
-  beta: Uint8Array;
-  gamma: Uint8Array;
-  delta: Uint8Array;
-  ic: Uint8Array[];
 }
 
 let artifactPromise: Promise<ProverArtifacts> | undefined;
@@ -363,26 +361,6 @@ export async function verifyProofLocally(
   }
 
   return verifyTimeMs;
-}
-
-// ── verificationKeyToContractFormat ─────────────────────────────────────────
-
-/**
- * Converts a snarkjs verification key JSON to the byte format expected by
- * the Sharibo contract.
- *
- * @param vkJson - The raw verification key JSON object.
- * @returns The contract-formatted verification key.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function verificationKeyToContractFormat(vkJson: any): ContractVerificationKey {
-  return {
-    alpha: encodeG1(vkJson.vk_alpha_1),
-    beta: encodeG2(vkJson.vk_beta_2),
-    gamma: encodeG2(vkJson.vk_gamma_2),
-    delta: encodeG2(vkJson.vk_delta_2),
-    ic: vkJson.IC.map((pt: string[]) => encodeG1(pt)),
-  };
 }
 
 // ── fullProve (internal / artifact-caching path) ─────────────────────────────
