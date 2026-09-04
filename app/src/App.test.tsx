@@ -10,8 +10,9 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import App from "./App";
 import { I18nProvider } from "./i18n";
 
-// Activate the manual mock at <root>/__mocks__/@sharibo/client.ts.
-vi.mock("@sharibo/client");
+// Point at the manual mock explicitly: vitest resolves bare-specifier mocks
+// relative to its own root (app/), which is not where the mock lives.
+vi.mock("@sharibo/client", () => import("../../__mocks__/@sharibo/client"));
 
 vi.mock("./config", () => ({
   config: {

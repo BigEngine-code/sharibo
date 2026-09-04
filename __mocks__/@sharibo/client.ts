@@ -39,6 +39,8 @@ export const MAX_CIRCLE_SIZE = 2 ** TREE_LEVELS;
 export const FR_MODULUS =
   0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001n;
 
+const STROOPS_PER_XLM = 10_000_000n;
+
 export function xlmToStroops(xlm: number | bigint | string): bigint {
   if (typeof xlm === "bigint") return xlm * STROOPS_PER_XLM;
   const value = typeof xlm === "number" ? xlm.toString() : xlm.trim();
@@ -187,13 +189,20 @@ export const getCircle = vi.fn(
     size: 5,
     round: 0,
     pot: 0n,
+    vk: {
+      alpha: new Uint8Array(96),
+      beta: new Uint8Array(192),
+      gamma: new Uint8Array(192),
+      delta: new Uint8Array(192),
+      ic: [],
+    },
     contributors: [],
     cancelled: false,
   }),
 );
 
 export const cancelCircle = vi.fn(
-  async (_client: SharaboClient, _args: unknown): Promise<TxResult<void>> => ({
+  async (_client: ShariboClient, _args: unknown): Promise<TxResult<void>> => ({
     result: undefined,
     hash: "mockCancelHash",
   }),
@@ -263,7 +272,7 @@ export class ShariboSDK {
   }
 
   getCircleCount(): Promise<bigint> {
-    return getCircleCount(this.client);
+    return getCircleCount();
   }
 
   getStatus(): Promise<bigint> {
@@ -273,4 +282,32 @@ export class ShariboSDK {
   hasClaimed(circleId: bigint, nullifierHash: bigint): Promise<boolean> {
     return hasClaimed(this.client, circleId, nullifierHash);
   }
+}
+
+
+// ── Re-exports the UI layer needs (kept in sync with App.tsx's imports) ──────
+
+export {
+  ContractError,
+  CircleNotFoundError,
+  RoundNotFundedError,
+  WrongRoundTagError,
+  AlreadyClaimedError,
+  InvalidProofError,
+  RoundFullError,
+  OverflowError,
+  CircleCancelledError,
+  RpcError,
+  ProvingError,
+  InvalidInputError,
+  describeError,
+} from "../../packages/client/src/errors.js";
+
+export { networkOf, NETWORKS } from "../../packages/client/src/networks.js";
+export { makeCircleId } from "../../packages/client/src/brand.js";
+export type { CircleId } from "../../packages/client/src/brand.js";
+
+/** Read-only client stub — the UI only ever passes it back into other stubs. */
+export async function connectReadOnly(_config: unknown): Promise<unknown> {
+  return {};
 }
