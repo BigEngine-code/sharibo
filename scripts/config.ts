@@ -1,3 +1,4 @@
+import { NETWORKS } from "@sharibo/client/networks";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";

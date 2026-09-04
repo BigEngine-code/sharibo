@@ -1,3 +1,4 @@
+import { networkOf } from "./networks";
 import { Client as ContractClient, basicNodeSigner } from "@stellar/stellar-sdk/contract";
 import { Keypair, StrKey } from "@stellar/stellar-sdk";
 import { Api } from "@stellar/stellar-sdk/rpc";
@@ -147,7 +148,7 @@ export interface TxResult<T> {
  * @returns A fully-qualified stellar.expert URL.
  */
 export function explorerTxUrl(hash: string, networkPassphrase: string): string {
-  const subdomain = networkPassphrase.includes("Public Global")
+  const subdomain = networkOf(networkPassphrase) === "mainnet"
     ? "" // mainnet — no subdomain prefix
     : "testnet.";
   return `https://${subdomain}stellar.expert/explorer/tx/${hash}`;
