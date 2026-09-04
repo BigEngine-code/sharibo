@@ -26,6 +26,7 @@ export {
   RpcError,
   ContractError,
 } from "./errors.js";
+export * from "./brand.js";
 
 // Re-exported for convenience so consumers can import from "@sharibo/client"
 // rather than digging into the contract module.
