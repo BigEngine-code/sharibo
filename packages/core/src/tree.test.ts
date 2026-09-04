@@ -6,6 +6,21 @@ import { generateIdentity, FR_MODULUS } from "./identity.js";
 import { TREE_LEVELS } from "./config.js";
 import { referenceRoot, referenceProof, referenceVerify } from "./tree.reference.js";
 
+// vitest's toThrow() does not accept a predicate, so assert on the caught
+// error directly — this keeps the specific message checks these tests rely on.
+function expectThrows(fn: () => unknown, predicate: (err: Error) => boolean): void {
+  let caught: unknown;
+  try {
+    fn();
+  } catch (err) {
+    caught = err;
+  }
+  expect(caught, "expected the call to throw").toBeInstanceOf(Error);
+  const err = caught as Error;
+  expect(predicate(err), `error message did not match: ${err.message}`).toBe(true);
+}
+
+
 const LEVELS = TREE_LEVELS;
 
 // ---- proofOf (find a proof by leaf value) ----
@@ -47,12 +62,9 @@ describe("MerkleTree.proofOf", () => {
     const unknownLeaf = generateIdentity().commitment;
     expect(tree.indexOf(unknownLeaf)).toBe(-1);
 
-    expect(() => tree.proofOf(unknownLeaf)).toThrow(
-      (err: Error) =>
-        err.message.includes("not found in this tree") &&
+    expectThrows(() => tree.proofOf(unknownLeaf), (err: Error) => err.message.includes("not found in this tree") &&
         err.message.includes("16 slots") &&
-        err.message.includes("5 occupied"),
-    );
+        err.message.includes("5 occupied"));
   });
 
   it("error message includes a shortened hex representation of the leaf", () => {
@@ -83,11 +95,8 @@ describe("MerkleTree.proofOf", () => {
     const tree = MerkleTree.create(LEVELS, []);
     const unknownLeaf = generateIdentity().commitment;
 
-    expect(() => tree.proofOf(unknownLeaf)).toThrow(
-      (err: Error) =>
-        err.message.includes("not found in this tree") &&
-        err.message.includes("0 occupied"),
-    );
+    expectThrows(() => tree.proofOf(unknownLeaf), (err: Error) => err.message.includes("not found in this tree") &&
+        err.message.includes("0 occupied"));
   });
 });
 
@@ -156,12 +165,10 @@ describe("MerkleTree.create — leaf validation", () => {
   });
 
   it("reports the correct index for a rejected leaf", () => {
-    expect(() => MerkleTree.create(4, [42n, 1n, FR_MODULUS, 7n])).toThrow(
-      (err: unknown) => {
+    expectThrows(() => MerkleTree.create(4, [42n, 1n, FR_MODULUS, 7n]), (err: unknown) => {
         if (!(err instanceof RangeError)) return false;
         return err.message.includes("index 2") && err.message.includes(String(FR_MODULUS));
-      },
-    );
+      });
   });
 
   it("with zero leaves produces a padded tree", () => {

@@ -20,6 +20,13 @@ export * from "./retry.js";
 export * from "./events.js";
 export * from "./sdk.js";
 
+// SDK-specific error classes (base types come from @sharibo/core).
+export {
+  ProvingError,
+  RpcError,
+  ContractError,
+} from "./errors.js";
+
 // Re-exported for convenience so consumers can import from "@sharibo/client"
 // rather than digging into the contract module.
 export { explorerTxUrl } from "./contract.js";
